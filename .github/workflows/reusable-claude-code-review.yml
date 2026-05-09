@@ -1,4 +1,3 @@
----
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
@@ -46,16 +45,27 @@
 ## fetch an OIDC token. Did you remember to add 'id-token: write'
 ## to your workflow permissions?".
 ##
+## ## Secret isolation (2026-05)
+##
+## Callers MUST forward secrets via an explicit 'secrets:' map, NOT
+## 'secrets: inherit'. With inherit, GitHub Actions forwards every
+## caller-side secret (OPENAI_API_KEY, COVERITY_SCAN_TOKEN, ...) into
+## this reusable regardless of what 'workflow_call.secrets' declares
+## - the schema is documentation only, not an enforcement boundary.
+## Restricting the secrets context here to ANTHROPIC_API_KEY caps
+## the blast radius of a compromised step or action SHA: an unrelated
+## org-level secret cannot be exfiltrated through a workflow that
+## has no business reading it.
+##
 ## ## Caller responsibilities
 ##
 ## - Define the trigger schedule (typically pull_request +
 ##   issue_comment + pull_request_review_comment). Schedule cannot
 ##   live in a reusable workflow per GitHub Actions G-A-002.
 ## - Hardcode the owner in 'jobs.<id>.uses:' (G-A-001).
-## - Forward secrets via 'secrets: inherit' on the calling job.
-##   The reusable reads 'secrets.ANTHROPIC_API_KEY' directly from
-##   the caller's secret namespace; the org sets this secret at
-##   org level so every consumer wrapper picks it up.
+## - Forward ONLY the secret this reusable needs via an explicit
+##   'secrets:' map (see Caller example). Do NOT use
+##   'secrets: inherit'.
 ## - Set the 'allowed-users' input to the comma-separated list of
 ##   usernames allowed to trigger @claude. The action errors out
 ##   on actor checks if this is omitted; an explicit empty string
@@ -80,11 +90,12 @@
 ##
 ## ## Secrets
 ##
-## Read from the caller's secret namespace via 'secrets: inherit':
+## Forwarded explicitly by the caller (see Caller example):
 ##
 ## - ANTHROPIC_API_KEY  (required)  Anthropic API key. Set at org
-##                                  level; every consumer in the
-##                                  org gets it for free.
+##                                  level; every consumer wrapper
+##                                  forwards it explicitly via the
+##                                  'secrets:' map.
 ##
 ## ## Caller example
 ##
@@ -99,8 +110,9 @@
 ##     contents: read
 ##   jobs:
 ##     review:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/claude-code-review.yml@master
-##       secrets: inherit
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-claude-code-review.yml@master
+##       secrets:
+##         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ##       permissions:
 ##         contents: read
 ##         pull-requests: write
@@ -124,12 +136,12 @@ on:
         required: false
         type: number
         default: 30
-    ## Secrets schema intentionally not declared. Callers pass
-    ## 'secrets: inherit' and the action below reads
-    ## 'secrets.ANTHROPIC_API_KEY' from the caller's namespace
-    ## directly. Declaring 'workflow_call.secrets' would force every
-    ## consumer to redeclare a secret-mapping block - the very
-    ## boilerplate this design avoids.
+    ## Strict secrets schema. Caller forwards via an explicit map
+    ## (see header doc). Do NOT add unrelated secrets here - the
+    ## schema is the audit surface for what this reusable can read.
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
 
 permissions:
   contents: read
