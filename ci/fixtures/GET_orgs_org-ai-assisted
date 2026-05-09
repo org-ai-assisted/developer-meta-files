@@ -1,6 +1,7 @@
 {
   "login":"org-ai-assisted",
   "type":"Organization",
+  "plan":{"name":"enterprise"},
   "two_factor_requirement_enabled":false,
   "secret_scanning_enabled_for_new_repositories":false,
   "secret_scanning_push_protection_enabled_for_new_repositories":false,
