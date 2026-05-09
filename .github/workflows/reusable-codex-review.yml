@@ -1,11 +1,11 @@
----
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
 ## AI-Assisted
 
 ## Reusable workflow: OpenAI Codex code review on pull requests,
-## with a workflow_dispatch override path for fork PRs.
+## with a workflow_dispatch override path for fork PRs and a
+## comment-trigger path for '@codex review' from a roster actor.
 ##
 ## ## Trust footprint
 ##
@@ -13,26 +13,35 @@
 ## caller's OPENAI_API_KEY. Posts review comments via the runner's
 ## GITHUB_TOKEN scoped to the permissions block on the calling job.
 ##
+## Note: this workflow path runs alongside OpenAI's hosted Codex
+## Cloud GitHub App (chatgpt-codex-connector[bot]) which natively
+## listens for '@codex review' comments. Both will respond on a
+## comment trigger - the workflow path here is kept for parity
+## with the Claude reusable's '@claude' mention path and to keep
+## review compute under the org's control where desired.
+##
 ## ## Fork-PR safety
 ##
 ## On 'pull_request' events the job hard-skips fork PRs so
 ## attacker-controlled prompts/code cannot burn the paid OPENAI_API_KEY.
-## To review a fork PR after maintainer triage, the caller's wrapper
-## exposes a 'workflow_dispatch' trigger with a 'pr_ref' input and
-## forwards it via inputs.pr-ref here; on workflow_dispatch the
-## fork-PR skip is bypassed (workflow_dispatch is implicitly
-## maintainer-authorized).
+## Same skip applies on comment-triggered runs (the resolve step
+## errors out if the PR head repo doesn't match the caller). To
+## review a fork PR after maintainer triage, use the caller's
+## workflow_dispatch path with a 'pr_ref' input - workflow_dispatch
+## bypasses the fork skip (implicitly maintainer-authorized).
 ##
 ## ## Caller responsibilities
 ##
-## - Define triggers (pull_request, optionally workflow_dispatch
-##   with a 'pr_ref' input). Schedule cannot live in a reusable
-##   workflow per G-A-002.
+## - Define triggers. Schedule cannot live in workflow_call per G-A-002.
+##   Recommended trigger surface (matches Claude reusable):
+##     - pull_request
+##     - issue_comment (types: [created])
+##     - pull_request_review_comment (types: [created])
+##     - workflow_dispatch with pr_ref input
 ## - Hardcode the owner in 'jobs.<id>.uses:' (G-A-001).
 ## - Forward secrets via 'secrets: inherit' on the calling job.
 ##   The reusable reads 'secrets.OPENAI_API_KEY' directly from the
-##   caller's secret namespace; the org sets this secret at org
-##   level so every consumer wrapper picks it up.
+##   caller's secret namespace.
 ## - Grant the job-level permissions block listed in the caller
 ##   example below.
 ##
@@ -42,6 +51,10 @@
 ##                                 to bypass the action's actor-
 ##                                 write-access gate. Strictly
 ##                                 narrower than granting write.
+##                                 Doubles as the @codex-review
+##                                 comment-trigger roster (humans
+##                                 in this list are also allowed
+##                                 to invoke via comment).
 ##                                 Default: the org's canonical bot
 ##                                 list (set inline below).
 ## - pr-ref            (optional)  Ref to checkout (workflow_dispatch
@@ -72,6 +85,10 @@
 ##   name: OpenAI Codex Review
 ##   on:
 ##     pull_request:
+##     issue_comment:
+##       types: [created]
+##     pull_request_review_comment:
+##       types: [created]
 ##     workflow_dispatch:
 ##       inputs:
 ##         pr_ref:
@@ -82,7 +99,7 @@
 ##     contents: read
 ##   jobs:
 ##     review:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/codex-review.yml@master
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codex-review.yml@master
 ##       with:
 ##         pr-ref: ${{ inputs.pr_ref || '' }}
 ##       secrets: inherit
@@ -95,15 +112,6 @@ name: OpenAI Codex Review (reusable)
 on:
   workflow_call:
     inputs:
-      ## Org-canonical reviewer roster. Same list as the Claude
-      ## review reusable's 'allowed-users' default - one canonical
-      ## allow-list across all org AI review workflows. Update here
-      ## when the roster changes.
-      ##
-      ## Semantically the codex-action treats this as a "bot
-      ## bypass" list (humans are normally gated by GitHub-side
-      ## actor-write-access). Including humans is a no-op for them
-      ## and keeps the list shape uniform.
       allow-bot-users:
         required: false
         type: string
@@ -127,18 +135,18 @@ on:
     ## Secrets schema intentionally not declared. Callers pass
     ## 'secrets: inherit' and the action below reads
     ## 'secrets.OPENAI_API_KEY' from the caller's namespace
-    ## directly. Same rationale as claude-code-review.yml.
+    ## directly. Tighten via explicit map + schema declaration as a
+    ## follow-up - same hardening pattern as the Claude review
+    ## reusable's recent change.
 
 permissions:
   contents: read
 
-## Concurrency key includes inputs.pr-ref so manual reviews of
-## different fork PRs (workflow_dispatch with different pr_ref
-## values) get distinct groups and don't cancel each other. On
-## pull_request, inputs.pr-ref is empty and we fall through to
-## github.ref (the PR's head ref).
+## Concurrency key includes the PR/issue number so different PRs
+## don't share a group on issue_comment events (which run on the
+## default branch ref, not the PR head ref).
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.pr-ref || github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.pr-ref || github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -147,28 +155,72 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
 
-    ## Skip on PRs from forks - the action consumes
-    ## secrets.OPENAI_API_KEY and would otherwise burn paid OpenAI
-    ## calls on attacker-controlled prompts/code. Maintainer can
-    ## re-trigger via workflow_dispatch (caller wrapper exposes the
-    ## input) if a fork PR genuinely needs review. workflow_dispatch
-    ## is implicitly maintainer-authorized so it short-circuits
-    ## through.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    ## Trigger surface:
+    ##   workflow_dispatch  - always allowed (maintainer-authorized).
+    ##   pull_request       - only same-repo PRs (fork skip; fork
+    ##                        review goes via workflow_dispatch).
+    ##   issue_comment / pull_request_review_comment - only when
+    ##                        the comment body contains '@codex
+    ##                        review' AND the actor is in the
+    ##                        roster (allow-bot-users). The
+    ##                        comment-triggered run also fork-skips
+    ##                        in the resolve step below.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (
+        contains(format(',{0},', inputs.allow-bot-users), format(',{0},', github.actor)) &&
+        (
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, '@codex review')) ||
+          (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@codex review'))
+        )
+      )
 
     permissions:
       contents: read
       pull-requests: write
 
     steps:
+      ## Comment-triggered path: resolve the PR head SHA via the
+      ## REST API (github.ref on issue_comment is the default
+      ## branch, not the PR head). Hard-fail on fork PRs - same
+      ## security stance as the pull_request fork skip in the
+      ## job-level if: above.
+      - name: Resolve PR head (comment-triggered)
+        id: resolve_pr
+        if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "${{ github.event_name }}" in
+            issue_comment)
+              pr_url="${{ github.event.issue.pull_request.url }}"
+              ;;
+            pull_request_review_comment)
+              pr_url="${{ github.event.pull_request.url }}"
+              ;;
+          esac
+          if [ -z "$pr_url" ]; then
+            echo "::error::Could not resolve PR URL from ${{ github.event_name }} event"
+            exit 1
+          fi
+          json="$(gh api "$pr_url")"
+          head_repo="$(jq -r '.head.repo.full_name' <<<"$json")"
+          head_sha="$(jq -r '.head.sha' <<<"$json")"
+          if [ "$head_repo" != "${{ github.repository }}" ]; then
+            echo "::error::PR is from fork '$head_repo'. Use workflow_dispatch with pr_ref to review fork PRs."
+            exit 1
+          fi
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ## On workflow_dispatch (manual fork-PR review), check
-          ## out the ref the maintainer named in inputs.pr-ref. On
-          ## pull_request, leave ref unset (default: github.ref /
-          ## the PR's head sha).
-          ref: ${{ inputs.pr-ref }}
+          ## Three checkout cases:
+          ##   comment-triggered  -> resolved PR head SHA
+          ##   workflow_dispatch  -> caller-supplied pr-ref
+          ##   pull_request       -> default github.ref (PR head)
+          ref: ${{ steps.resolve_pr.outputs.head_sha || inputs.pr-ref }}
           persist-credentials: false
           fetch-depth: 0
 
