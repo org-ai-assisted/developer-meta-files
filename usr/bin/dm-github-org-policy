@@ -235,12 +235,13 @@ apply_code_security_config() {
 ## Pure dispatch table - all policy data (bodies, endpoints, methods,
 ## labels, UI URLs) lives in github-policy-data.bsh.
 apply_org_policy() {
-   local org kind bypass_var
+   local org kind bypass_var plan
 
    org="$1"
    kind="$(org_kind "${org}")" || return 1
+   plan="$(ghorg_org_plan "${org}")"
 
-   log notice "=== org policy: ${org} ==="
+   log notice "=== org policy: ${org} (plan=${plan}) ==="
 
    ## 1. Fork-PR contributor approval.
    policy_apply_org "${org}" FORK_PR_APPROVAL
@@ -259,19 +260,35 @@ apply_org_policy() {
    policy_skip_ui "${org}" 2FA
 
    ## 5+6. Code security via the Code Security Configurations API.
-   apply_code_security_config "${org}" || true
+   ##      GHAS-gated; only Enterprise orgs (with a GHAS license)
+   ##      can configure this. Free/Team/Business orgs return HTTP
+   ##      400 ("GitHub advanced security must be enabled when any
+   ##      GHAS feature is set to enabled") which is non-actionable
+   ##      from policy data alone, so skip with a clear message.
+   if policy_org_plan_supports "${plan}" code_security; then
+      apply_code_security_config "${org}" || true
+   else
+      log notice "skip: ${org}: code-security configuration - plan='${plan}' (requires enterprise + GHAS license)"
+   fi
 
    ## 7. Org-level branch ruleset. Bypass actor list pivots on
    ##    org_kind via the constant naming convention.
-   bypass_var="POLICY_RULESET_BYPASS_${kind^^}"
-   policy_upsert_org_ruleset "${org}" "${RULESET_NAME_BRANCH}" \
-      "$(policy_branch_ruleset_body "${RULESET_NAME_BRANCH}" org "${!bypass_var}")" \
-      || true
+   ##    Rulesets are a Team-or-higher feature; on Free orgs the
+   ##    list/upsert returns HTTP 403 'Upgrade to GitHub Team to
+   ##    enable this feature'.
+   if policy_org_plan_supports "${plan}" rulesets; then
+      bypass_var="POLICY_RULESET_BYPASS_${kind^^}"
+      policy_upsert_org_ruleset "${org}" "${RULESET_NAME_BRANCH}" \
+         "$(policy_branch_ruleset_body "${RULESET_NAME_BRANCH}" org "${!bypass_var}")" \
+         || true
 
-   ## 8. Org-level tag ruleset.
-   policy_upsert_org_ruleset "${org}" "${RULESET_NAME_TAG}" \
-      "$(policy_tag_ruleset_body "${RULESET_NAME_TAG}" org)" \
-      || true
+      ## 8. Org-level tag ruleset.
+      policy_upsert_org_ruleset "${org}" "${RULESET_NAME_TAG}" \
+         "$(policy_tag_ruleset_body "${RULESET_NAME_TAG}" org)" \
+         || true
+   else
+      log notice "skip: ${org}: org branch+tag rulesets - plan='${plan}' (requires team or higher)"
+   fi
 
    ## 9. PAT policy toggles (UI-only).
    policy_skip_ui "${org}" PAT
@@ -387,26 +404,33 @@ audit_org_state() {
    fi
 
    ## Existing rulesets matching the names we'd upsert (branch + tag).
-   result="$(ghorg_api GET "/orgs/${org}/rulesets?per_page=100")" || true
-   status="$(ghorg_status_of "${result}")"
-   if [ "${status}" = '200' ]; then
-      ruleset_body="$(ghorg_body_of "${result}")"
-      for ruleset_name in "${RULESET_NAME_BRANCH}" "${RULESET_NAME_TAG}"; do
-         log notice "  existing rulesets named \"${ruleset_name}\":"
-         ids="$(printf '%s' "${ruleset_body}" \
-            | ghorg_jq_capped -r --arg name "${ruleset_name}" -- \
-              '.[] | select(.name == $name) | .id' || true)"
-         if [ -z "${ids}" ]; then
-            log notice '    (none; --apply would create one)'
-         else
-            while IFS= read -r id; do
-               [ -z "${id}" ] && continue
-               log notice "    - id=${id}"
-            done <<< "${ids}"
-         fi
-      done
+   ## Rulesets are a Team-or-higher feature; skip the lookup on
+   ## Free orgs to avoid the HTTP 403 'Upgrade to GitHub Team'
+   ## that policy framework cannot resolve.
+   if policy_org_plan_supports "$(ghorg_org_plan "${org}")" rulesets; then
+      result="$(ghorg_api GET "/orgs/${org}/rulesets?per_page=100")" || true
+      status="$(ghorg_status_of "${result}")"
+      if [ "${status}" = '200' ]; then
+         ruleset_body="$(ghorg_body_of "${result}")"
+         for ruleset_name in "${RULESET_NAME_BRANCH}" "${RULESET_NAME_TAG}"; do
+            log notice "  existing rulesets named \"${ruleset_name}\":"
+            ids="$(printf '%s' "${ruleset_body}" \
+               | ghorg_jq_capped -r --arg name "${ruleset_name}" -- \
+                 '.[] | select(.name == $name) | .id' || true)"
+            if [ -z "${ids}" ]; then
+               log notice '    (none; --apply would create one)'
+            else
+               while IFS= read -r id; do
+                  [ -z "${id}" ] && continue
+                  log notice "    - id=${id}"
+               done <<< "${ids}"
+            fi
+         done
+      else
+         log notice "  rulesets list: HTTP ${status} (token may lack admin:org)"
+      fi
    else
-      log notice "  rulesets list: HTTP ${status} (token may lack admin:org)"
+      log notice "  rulesets: skipped - plan='$(ghorg_org_plan "${org}")' (requires team or higher)"
    fi
 
    ## Personal access tokens: count pending requests + count approved

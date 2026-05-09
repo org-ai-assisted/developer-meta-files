@@ -88,6 +88,11 @@ GHORG_MAX_ID_LEN=20
 ## Cache <owner> -> "User"|"Organization".
 declare -g -A ghorg_account_type_cache=()
 
+## Cache <org> -> plan name ("free", "team", "business",
+## "business_plus", "enterprise"). Empty string on lookup failure
+## (caller treats unknown as the most-restricted tier).
+declare -g -A ghorg_org_plan_cache=()
+
 ## Cached login of the token-owner.
 ghorg_authenticated_user_cached=''
 
@@ -590,6 +595,46 @@ ghorg_account_type() {
   esac
   ghorg_account_type_cache[${owner}]="${type}"
   printf '%s' "${type}"
+}
+
+## Echoes the org's plan tier ("free", "team", "business",
+## "business_plus", "enterprise"), cached in ghorg_org_plan_cache.
+## Echoes the literal string "unknown" on lookup failure (e.g.
+## token lacks read scope on the org); callers should treat
+## "unknown" the same as the most-restricted tier ("free") for
+## skip decisions to avoid silently attempting plan-gated calls.
+##
+## Plan tier maps to GitHub's product line and gates a handful of
+## features the policy framework otherwise tries unconditionally:
+##   - rulesets         require team or higher
+##   - GHAS code-security require enterprise plus a GHAS license
+ghorg_org_plan() {
+  local org result status body plan
+
+  org="$1"
+
+  ghorg_validate_name "${org}" user || return 1
+  if [ -n "${ghorg_org_plan_cache[${org}]+_}" ]; then
+    printf '%s' "${ghorg_org_plan_cache[${org}]}"
+    return 0
+  fi
+  result="$(ghorg_api GET "/orgs/${org}")" || {
+    ghorg_org_plan_cache[${org}]='unknown'
+    printf '%s' 'unknown'
+    return 0
+  }
+  status="$(ghorg_status_of "${result}")"
+  body="$(ghorg_body_of "${result}")"
+  if [ "${status}" != '200' ]; then
+    ghorg_org_plan_cache[${org}]='unknown'
+    printf '%s' 'unknown'
+    return 0
+  fi
+  ## .plan is absent on responses that omit it (e.g. anonymous
+  ## reads). // "unknown" guards against null in either case.
+  plan="$(printf '%s' "${body}" | ghorg_jq_capped -r -- '.plan.name // "unknown"')"
+  ghorg_org_plan_cache[${org}]="${plan}"
+  printf '%s' "${plan}"
 }
 
 ## Lists repos belonging to an owner with optional filters. The

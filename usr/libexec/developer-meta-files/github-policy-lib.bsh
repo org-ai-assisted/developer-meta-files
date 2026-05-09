@@ -315,6 +315,41 @@ policy_skip_ui() {
    log notice "skip: ${context}: ${!label_v} - see ${url}"
 }
 
+
+## policy_org_plan_supports <plan> <feature>
+## Returns 0 if <plan> includes <feature>, 1 otherwise. Plan tier
+## ordering: free < team < business <= business_plus < enterprise.
+## "unknown" (lookup failed) is treated as free.
+##
+## Features:
+##   rulesets       team or higher
+##   code_security  enterprise (and even then needs a GHAS license)
+policy_org_plan_supports() {
+   local plan feature
+
+   plan="$1"
+   feature="$2"
+
+   case "${feature}" in
+      rulesets)
+         case "${plan}" in
+            team|business|business_plus|enterprise) return 0 ;;
+            *) return 1 ;;
+         esac
+         ;;
+      code_security)
+         case "${plan}" in
+            enterprise) return 0 ;;
+            *) return 1 ;;
+         esac
+         ;;
+      *)
+         log error "policy_org_plan_supports: unknown feature '${feature}'"
+         return 1
+         ;;
+   esac
+}
+
 ## ============================================================================
 ## JSON body factories (parameterized; pure data lives in
 ## github-policy-data.bsh)
