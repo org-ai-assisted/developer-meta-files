@@ -57,6 +57,12 @@
 ## org-level secret cannot be exfiltrated through a workflow that
 ## has no business reading it.
 ##
+## The 'secrets-audit' job below enforces this invariant at runtime:
+## it probes presence flags for unrelated org-level secrets and
+## fails the workflow if any leak in. Acts as a regression guard
+## against a future caller accidentally re-introducing
+## 'secrets: inherit'.
+##
 ## ## Caller responsibilities
 ##
 ## - Define the trigger schedule (typically pull_request +
@@ -210,3 +216,56 @@ jobs:
           ## input(s) 'allowed_users', valid inputs are [...]").
           ## The roster gate is enforced one layer up via the job's
           ## 'if:' condition above.
+
+  ## Regression guard for the secret-isolation invariant. Probes
+  ## presence flags for unrelated org-level secrets that should NOT
+  ## be visible inside this reusable's secrets context. Fails the
+  ## workflow if any leaked in - which would happen if a future
+  ## caller switched back to 'secrets: inherit' or accidentally
+  ## forwarded an unrelated secret via the explicit map.
+  ##
+  ## Implementation note: 'secrets.X' references are evaluated by
+  ## the runner against the secrets context handed to this reusable
+  ## by the caller. Undeclared/unforwarded secret names evaluate to
+  ## empty string. The expression 'secrets.X != \'\''' therefore
+  ## evaluates to true iff X was actually forwarded. The boolean is
+  ## resolved at expression-evaluation time (not in shell), so the
+  ## secret value itself never lands in the env / step output.
+  ##
+  ## No 'if:' actor gate here - this audit must run on every
+  ## invocation regardless of who triggered it, including dependabot
+  ## bots that the actor-roster gate above would skip.
+  secrets-audit:
+    name: Secrets surface audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions: {}
+    env:
+      ANTHROPIC_PRESENT: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      OPENAI_PRESENT: ${{ secrets.OPENAI_API_KEY != '' }}
+      COVERITY_TOKEN_PRESENT: ${{ secrets.COVERITY_SCAN_TOKEN != '' }}
+      COVERITY_EMAIL_PRESENT: ${{ secrets.COVERITY_SCAN_EMAIL != '' }}
+    steps:
+      - name: Probe secrets surface
+        run: |
+          echo "ANTHROPIC_API_KEY present:   ${ANTHROPIC_PRESENT}"
+          echo "OPENAI_API_KEY present:      ${OPENAI_PRESENT}"
+          echo "COVERITY_SCAN_TOKEN present: ${COVERITY_TOKEN_PRESENT}"
+          echo "COVERITY_SCAN_EMAIL present: ${COVERITY_EMAIL_PRESENT}"
+          fail=0
+          if [ "${OPENAI_PRESENT}" = "true" ]; then
+            echo "::error::OPENAI_API_KEY leaked into the Claude reusable's secrets context"
+            fail=1
+          fi
+          if [ "${COVERITY_TOKEN_PRESENT}" = "true" ]; then
+            echo "::error::COVERITY_SCAN_TOKEN leaked into the Claude reusable's secrets context"
+            fail=1
+          fi
+          if [ "${COVERITY_EMAIL_PRESENT}" = "true" ]; then
+            echo "::error::COVERITY_SCAN_EMAIL leaked into the Claude reusable's secrets context"
+            fail=1
+          fi
+          if [ "${ANTHROPIC_PRESENT}" != "true" ]; then
+            echo "::warning::ANTHROPIC_API_KEY not forwarded by caller"
+          fi
+          exit "${fail}"
