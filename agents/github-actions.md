@@ -107,10 +107,6 @@ real cost:
   burns the daily slot for no result. See
   [`reusable-coverity.yml`](../.github/workflows/reusable-coverity.yml)
   inline comment.
-- **Long-running release builders**: e.g. `derivative-maker`'s
-  `run_automated_builder.yml` runs the full ansible playbook
-  for ~1-3 hours on tag push. Cancellation wastes runner time
-  AND can leave a half-published release artifact.
 
 Consumers of singleton reusables must NOT set
 `cancel-in-progress: true` at the wrapper level: a cancelled
@@ -118,6 +114,22 @@ wrapper cancels its called workflow run, defeating the
 reusable's no-cancel guarantee. Either omit `concurrency:` at
 the wrapper level (the reusable's controls), or mirror the
 reusable's `group + cancel=false` policy explicitly.
+
+**Differentiated by event type** (cancel within event-type,
+isolate across event-types):
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'tag' || 'pr' }}
+      cancel-in-progress: true
+
+Right when one workflow file serves both PR validation AND
+release-tag builds in the same file. PR pushes all share the
+`<workflow>-pr` group (latest PR push cancels older, regardless
+of which PR); tag pushes all share `<workflow>-tag` (newer tag
+supersedes); cross-event runs are isolated. So a tag push
+cannot cancel an in-flight third-party PR validation, and a PR
+push cannot cancel an in-flight 3-hour release build. Live
+example: [`derivative-maker/run_automated_builder.yml`](https://github.com/org-ai-assisted/derivative-maker/blob/master/.github/workflows/run_automated_builder.yml).
 
 **Issue-comment & PR-review-comment events** fire on the
 default branch ref, not the PR head ref - so grouping by
