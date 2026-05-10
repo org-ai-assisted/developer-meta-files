@@ -45,23 +45,13 @@
 ## fetch an OIDC token. Did you remember to add 'id-token: write'
 ## to your workflow permissions?".
 ##
-## ## Secret isolation (2026-05)
+## ## Secret isolation
 ##
-## Callers MUST forward secrets via an explicit 'secrets:' map, NOT
-## 'secrets: inherit'. With inherit, GitHub Actions forwards every
-## caller-side secret (OPENAI_API_KEY, COVERITY_SCAN_TOKEN, ...) into
-## this reusable regardless of what 'workflow_call.secrets' declares
-## - the schema is documentation only, not an enforcement boundary.
-## Restricting the secrets context here to ANTHROPIC_API_KEY caps
-## the blast radius of a compromised step or action SHA: an unrelated
-## org-level secret cannot be exfiltrated through a workflow that
-## has no business reading it.
-##
-## The 'secrets-audit' job below enforces this invariant at runtime:
-## it probes presence flags for unrelated org-level secrets and
-## fails the workflow if any leak in. Acts as a regression guard
-## against a future caller accidentally re-introducing
-## 'secrets: inherit'.
+## 'workflow_call.secrets' is documentation - 'secrets: inherit'
+## bypasses it. Callers must use an explicit 'secrets:' map for
+## the schema to actually constrain what flows in. Run
+## .github/workflows/secrets-audit.yml manually (workflow_dispatch)
+## to verify the secrets context.
 ##
 ## ## Caller responsibilities
 ##
@@ -69,9 +59,8 @@
 ##   issue_comment + pull_request_review_comment). Schedule cannot
 ##   live in a reusable workflow per GitHub Actions G-A-002.
 ## - Hardcode the owner in 'jobs.<id>.uses:' (G-A-001).
-## - Forward ONLY the secret this reusable needs via an explicit
-##   'secrets:' map (see Caller example). Do NOT use
-##   'secrets: inherit'.
+## - Forward via explicit 'secrets:' map (see Caller example). Not
+##   'inherit'.
 ## - Set the 'allowed-users' input to the comma-separated list of
 ##   usernames allowed to trigger @claude. The action errors out
 ##   on actor checks if this is omitted; an explicit empty string
@@ -95,8 +84,6 @@
 ## - timeout-minutes  (optional)  Job timeout. Default 30.
 ##
 ## ## Secrets
-##
-## Forwarded explicitly by the caller (see Caller example):
 ##
 ## - ANTHROPIC_API_KEY  (required)  Anthropic API key. Set at org
 ##                                  level; every consumer wrapper
@@ -142,9 +129,6 @@ on:
         required: false
         type: number
         default: 30
-    ## Strict secrets schema. Caller forwards via an explicit map
-    ## (see header doc). Do NOT add unrelated secrets here - the
-    ## schema is the audit surface for what this reusable can read.
     secrets:
       ANTHROPIC_API_KEY:
         required: true
@@ -216,56 +200,3 @@ jobs:
           ## input(s) 'allowed_users', valid inputs are [...]").
           ## The roster gate is enforced one layer up via the job's
           ## 'if:' condition above.
-
-  ## Regression guard for the secret-isolation invariant. Probes
-  ## presence flags for unrelated org-level secrets that should NOT
-  ## be visible inside this reusable's secrets context. Fails the
-  ## workflow if any leaked in - which would happen if a future
-  ## caller switched back to 'secrets: inherit' or accidentally
-  ## forwarded an unrelated secret via the explicit map.
-  ##
-  ## Implementation note: 'secrets.X' references are evaluated by
-  ## the runner against the secrets context handed to this reusable
-  ## by the caller. Undeclared/unforwarded secret names evaluate to
-  ## empty string. The expression 'secrets.X != \'\''' therefore
-  ## evaluates to true iff X was actually forwarded. The boolean is
-  ## resolved at expression-evaluation time (not in shell), so the
-  ## secret value itself never lands in the env / step output.
-  ##
-  ## No 'if:' actor gate here - this audit must run on every
-  ## invocation regardless of who triggered it, including dependabot
-  ## bots that the actor-roster gate above would skip.
-  secrets-audit:
-    name: Secrets surface audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    permissions: {}
-    env:
-      ANTHROPIC_PRESENT: ${{ secrets.ANTHROPIC_API_KEY != '' }}
-      OPENAI_PRESENT: ${{ secrets.OPENAI_API_KEY != '' }}
-      COVERITY_TOKEN_PRESENT: ${{ secrets.COVERITY_SCAN_TOKEN != '' }}
-      COVERITY_EMAIL_PRESENT: ${{ secrets.COVERITY_SCAN_EMAIL != '' }}
-    steps:
-      - name: Probe secrets surface
-        run: |
-          echo "ANTHROPIC_API_KEY present:   ${ANTHROPIC_PRESENT}"
-          echo "OPENAI_API_KEY present:      ${OPENAI_PRESENT}"
-          echo "COVERITY_SCAN_TOKEN present: ${COVERITY_TOKEN_PRESENT}"
-          echo "COVERITY_SCAN_EMAIL present: ${COVERITY_EMAIL_PRESENT}"
-          fail=0
-          if [ "${OPENAI_PRESENT}" = "true" ]; then
-            echo "::error::OPENAI_API_KEY leaked into the Claude reusable's secrets context"
-            fail=1
-          fi
-          if [ "${COVERITY_TOKEN_PRESENT}" = "true" ]; then
-            echo "::error::COVERITY_SCAN_TOKEN leaked into the Claude reusable's secrets context"
-            fail=1
-          fi
-          if [ "${COVERITY_EMAIL_PRESENT}" = "true" ]; then
-            echo "::error::COVERITY_SCAN_EMAIL leaked into the Claude reusable's secrets context"
-            fail=1
-          fi
-          if [ "${ANTHROPIC_PRESENT}" != "true" ]; then
-            echo "::warning::ANTHROPIC_API_KEY not forwarded by caller"
-          fi
-          exit "${fail}"

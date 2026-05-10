@@ -1,4 +1,3 @@
----
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
@@ -20,6 +19,15 @@
 ## .coverity-tool-sha256.expected file in the consumer repo root.
 ## See ci/coverity-download.sh for the verification logic.
 ##
+## ## Secret isolation
+##
+## Strict 'workflow_call.secrets' schema below requires the caller
+## to forward exactly COVERITY_SCAN_TOKEN and COVERITY_SCAN_EMAIL.
+## Callers must use an explicit 'secrets:' map - 'secrets: inherit'
+## bypasses the schema (it forwards every caller-side secret
+## regardless). Run .github/workflows/secrets-audit.yml manually to
+## verify the secrets surface.
+##
 ## ## Caller responsibilities
 ##
 ## - Define the trigger schedule. Coverity Scan rate-limits
@@ -27,8 +35,8 @@
 ##   typical choice. Schedule cannot live in workflow_call per
 ##   G-A-002.
 ## - Hardcode the owner in 'jobs.<id>.uses:' (G-A-001).
-## - Pass 'secrets: inherit' so the reusable can read
-##   COVERITY_SCAN_TOKEN / COVERITY_SCAN_EMAIL.
+## - Forward via explicit 'secrets:' map (see Caller example). Not
+##   'inherit'.
 ## - Set repo variable 'COVERITY_PROJECT' to the project name as it
 ##   appears in the scan.coverity.com URL (or pass project-name
 ##   input to override).
@@ -64,7 +72,7 @@
 ##
 ## ## Secrets
 ##
-## Read from caller's namespace via 'secrets: inherit':
+## Forwarded explicitly by the caller (see Caller example):
 ##
 ## - COVERITY_SCAN_TOKEN  (required)  Coverity project token.
 ##                                    MUST be set as a repository
@@ -74,8 +82,8 @@
 ##                                    consumers (helper-scripts,
 ##                                    kloak, security-misc) are
 ##                                    distinct Coverity projects
-##                                    with distinct tokens.
-##                                    Cannot be set org-wide.
+##                                    with distinct tokens. Cannot
+##                                    be set org-wide.
 ## - COVERITY_SCAN_EMAIL  (required)  Notification email registered
 ##                                    on the Coverity project. CAN
 ##                                    be set org-wide if every
@@ -93,10 +101,12 @@
 ##     contents: read
 ##   jobs:
 ##     coverity:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/coverity.yml@master
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-coverity.yml@master
 ##       with:
 ##         project-name: helper-scripts
-##       secrets: inherit
+##       secrets:
+##         COVERITY_SCAN_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+##         COVERITY_SCAN_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
 ##       permissions:
 ##         contents: read
 ##
@@ -104,12 +114,14 @@
 ##
 ##   jobs:
 ##     coverity:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/coverity.yml@master
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-coverity.yml@master
 ##       with:
 ##         apt-packages: 'libevdev-dev libinput-dev libwayland-dev libxkbcommon-dev pkg-config'
 ##         build-command: ./cov-analysis/bin/cov-build --dir cov-int make
 ##         project-name: kloak
-##       secrets: inherit
+##       secrets:
+##         COVERITY_SCAN_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+##         COVERITY_SCAN_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
 ##       permissions:
 ##         contents: read
 
@@ -138,6 +150,11 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      COVERITY_SCAN_TOKEN:
+        required: true
+      COVERITY_SCAN_EMAIL:
+        required: true
 
 permissions:
   contents: read
@@ -170,10 +187,6 @@ jobs:
 
     env:
       COVERITY_PROJECT: ${{ inputs.project-name != '' && inputs.project-name || (vars.COVERITY_PROJECT != '' && vars.COVERITY_PROJECT || github.event.repository.name) }}
-      ## Token and email come from caller's secret namespace via
-      ## 'secrets: inherit'. Hoisted to env so each step reads
-      ## them via $COVERITY_TOKEN / $COVERITY_EMAIL rather than
-      ## interpolating ${{ secrets.* }} into a shell string.
       COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
       COVERITY_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
 
