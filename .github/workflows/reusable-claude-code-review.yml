@@ -49,9 +49,9 @@
 ##
 ## 'workflow_call.secrets' is documentation - 'secrets: inherit'
 ## bypasses it. Callers must use an explicit 'secrets:' map for
-## the schema to actually constrain what flows in. The
-## 'secrets-audit' delegate job below enforces this at runtime via
-## reusable-secrets-audit.yml.
+## the schema to actually constrain what flows in. Run
+## .github/workflows/secrets-audit.yml manually (workflow_dispatch)
+## to verify the secrets context.
 ##
 ## ## Caller responsibilities
 ##
@@ -200,10 +200,3 @@ jobs:
           ## input(s) 'allowed_users', valid inputs are [...]").
           ## The roster gate is enforced one layer up via the job's
           ## 'if:' condition above.
-
-  ## Delegates to reusable-secrets-audit.yml. Runs on every
-  ## invocation regardless of actor (no actor gate) so bot triggers
-  ## also exercise the regression guard.
-  secrets-audit:
-    uses: ./.github/workflows/reusable-secrets-audit.yml
-    secrets: inherit
