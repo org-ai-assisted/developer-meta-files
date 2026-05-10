@@ -64,7 +64,13 @@ runs:
       env:
         CI: "true"
         GENMKFILE_OWNER: ${{ inputs.genmkfile-owner != '' && inputs.genmkfile-owner || github.repository_owner }}
-      run: ${{ github.action_path }}/install-genmkfile.sh
+      ## $GITHUB_ACTION_PATH (shell env, runtime-resolved) instead of
+      ## ${{ github.action_path }} (template, expanded before the
+      ## shell runs). When the caller job uses 'container:', the
+      ## template expands to the host path which the container
+      ## cannot see; the env var resolves to the container-mapped
+      ## path correctly.
+      run: "$GITHUB_ACTION_PATH/install-genmkfile.sh"
 
     - name: Install helper-scripts
       if: ${{ inputs.install-helper-scripts == 'true' }}
@@ -72,7 +78,7 @@ runs:
       env:
         CI: "true"
         HELPER_SCRIPTS_OWNER: ${{ inputs.helper-scripts-owner != '' && inputs.helper-scripts-owner || github.repository_owner }}
-      run: ${{ github.action_path }}/install-helper-scripts.sh
+      run: "$GITHUB_ACTION_PATH/install-helper-scripts.sh"
 
     - name: Install caller repo via genmkfile
       if: ${{ inputs.install-self == 'true' }}
