@@ -476,3 +476,54 @@ The github-org-* / dm-* tools implement R-140 via
 `ghorg_validate_name` and `ghorg_safe_print`; see
 [github-org-tools.md](github-org-tools.md) G-001 through G-004
 for the project-specific implementation.
+
+
+## Comments
+
+**R-150: Don't repeat rationale comments within a file.** State
+the WHY once - near the first occurrence, or near the file's
+top-level construct it explains. At subsequent sites, drop the
+comment or use a one-liner referencing a rule ID (R-NNN, G-A-NNN,
+W-NNN) or pointing to the canonical comment's location.
+
+Bad:
+
+    # site 1
+    permissions:
+      ## actions/checkout reads the repo via this token.
+      ## Required because job-level permissions REPLACE top-
+      ## level (not merge), so the workflow-level 'contents:
+      ## read' does not propagate here. See ...
+      contents: read
+      security-events: write
+
+    # site 2 - same file, copy-pasted rationale
+    permissions:
+      ## actions/checkout reads the repo via this token.
+      ## Required because job-level permissions REPLACE top-
+      ## level (not merge), so the workflow-level 'contents:
+      ## read' does not propagate here. See ...
+      contents: read
+      security-events: write
+
+Good:
+
+    # near top-of-file: state the WHY once
+    ## Default-deny at workflow level; every job that needs
+    ## more redeclares its full set. Job-level permissions
+    ## REPLACE (not merge with) top-level (G-A-006).
+    permissions:
+      contents: read
+
+    # site 1, 2, ...: no rationale repeat
+    permissions:
+      contents: read
+      security-events: write
+
+Why: copy-pasted multi-line rationale rots. Over time, the
+explanation at site N+1 drifts from site 1 (someone edits one,
+forgets the others); readers stop trusting all of them; the file
+grows linearly with the number of sites instead of staying flat.
+Single source of truth survives. Applies to any source file the
+org maintains (bash, YAML, python, markdown, ...) - documented
+here because this is the org's canonical style doc.
