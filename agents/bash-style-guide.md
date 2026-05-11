@@ -503,3 +503,15 @@ Why: obvious comments dilute attention from the ones that matter;
 reviewers learn to skim past them and miss the rare comment
 documenting a real gotcha. Be concise: if removing the comment
 wouldn't confuse a future reader, don't write it.
+
+
+**R-152: Match the file's existing comment style.** Before
+adding comments to an existing file, read the comments already
+there - density, tone, idiom, voice - and match them. Don't
+impose your preferred style on a file someone else established
+(unless an explicit rule above says you must).
+
+Why: file-local consistency keeps each file readable as a unified
+document; jarring shifts in voice signal copy-paste and undermine
+trust in the prose. Match locally; impose org-wide style only
+when it would otherwise conflict.
