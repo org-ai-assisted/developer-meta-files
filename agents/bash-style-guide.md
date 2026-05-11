@@ -489,3 +489,17 @@ Why: copy-pasted rationale rots - site N+1 drifts from site 1
 over time; readers stop trusting all of them. Single source of
 truth survives. Applies to any source file the org maintains
 (bash, YAML, python, markdown).
+
+
+**R-151: Comment when the code couldn't express the intent.** A
+comment is an admission the code failed to express itself; prefer
+renaming, extracting, or restructuring first. When unavoidable,
+reserve comments for hidden constraints, subtle invariants, bug
+workarounds, surprising side effects. Don't restate WHAT (well-
+named identifiers do that). Bad: `## initialize i with 0` over
+`i=0`.
+
+Why: obvious comments dilute attention from the ones that matter;
+reviewers learn to skim past them and miss the rare comment
+documenting a real gotcha. Be concise: if removing the comment
+wouldn't confuse a future reader, don't write it.
