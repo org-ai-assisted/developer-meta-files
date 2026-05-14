@@ -209,6 +209,10 @@ jobs:
       ## (helper-scripts, kloak, ...) get distinct caches; key
       ## includes the reusable workflow file's hash so a change to
       ## the apt-install logic invalidates the cache.
+      ## See agents/github-actions.md G-A-007 - exact-match only,
+      ## NO restore-keys: fallback; canonical-repos gate above
+      ## restricts cache writers to whitelisted repos; wrapper
+      ## triggers exclude pull_request* entirely.
       - name: Cache apt packages
         if: steps.gate.outputs.allowed == 'true' && steps.cfg.outputs.apt_packages != ''
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5

@@ -204,8 +204,56 @@ in this repo: (1) no `pull_request_target` triggers anywhere,
 pinned to `hashFiles(<this workflow>)` with no catch-all
 `restore-keys:` fallback, (4) cached payloads are apt `.deb`s
 re-verified by `apt-get install` against fresh `Packages`
-metadata. See
-<https://adnanthekhan.com/2024/05/06/the-monsters-in-your-build-cache-github-actions-cache-poisoning/>.
+metadata. References:
+<https://adnanthekhan.com/2024/05/06/the-monsters-in-your-build-cache-github-actions-cache-poisoning/>
+(the class), and
+<https://adnanthekhan.com/posts/angular-compromise-through-dev-infra/>
+(the Angular dev-infra compromise of Dec-2025 - same vector via
+a reusable composite action that consumed cache entries without
+source validation).
+
+Vulnerable patterns to NEVER introduce:
+
+    ## (a) fuzzy restore-keys fallback - attacker poisons the
+    ##     prefix once, harvests on the next legitimate cache miss
+    - uses: actions/cache@<sha>
+      with:
+        path: ~/.npm
+        key: npm-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          npm-                       ## <-- attacker bait
+
+    ## (b) pull_request_target + caching - PR head code runs with
+    ##     write-token, can populate the default branch's cache
+    on:
+      pull_request_target:
+    jobs:
+      x:
+        steps:
+          - uses: actions/setup-node@<sha>
+            with: { cache: 'npm' }   ## <-- wraps actions/cache
+
+    ## (c) setup-X with cache enabled on a workflow that ALSO runs
+    ##     release/deploy jobs in the same repo (cache crosses the
+    ##     trust boundary on a workflow-file change)
+    - uses: actions/setup-python@<sha>
+      with: { cache: 'pip' }
+
+Secure pattern in this repo (literal copy from `reusable-bandit.yml`):
+
+    - name: Cache apt packages
+      uses: actions/cache@<sha>
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ runner.os }}-apt-bandit-${{ hashFiles('.github/workflows/reusable-bandit.yml') }}
+        ## NO restore-keys: - exact-match only. A poisoned entry
+        ## cannot be served on a key miss.
+
+The `hashFiles(<this workflow>)` term is the integrity anchor: an
+attacker who cannot modify the reusable file cannot predict the
+key, and the absence of `restore-keys:` means a wrong-key miss
+falls through to fresh download instead of serving an attacker
+prefix.
 
 ## See also
 
