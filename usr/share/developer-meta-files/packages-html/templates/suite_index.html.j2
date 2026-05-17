@@ -1,0 +1,37 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ suite }} -- {{ site_name }}{% endblock %}
+{% block content %}
+<nav class="breadcrumbs">
+<a href="{{ base_url }}">{{ site_name }}</a> / <span>{{ suite }}</span>
+</nav>
+<h1>Suite: {{ suite }}</h1>
+<p>{{ packages|length }} binary package{{ "s" if packages|length != 1 else "" }},
+{{ source_count }} source package{{ "s" if source_count != 1 else "" }}.</p>
+
+{% set ns = namespace(last_letter="") %}
+<nav class="alpha-jump">
+{% for letter in "abcdefghijklmnopqrstuvwxyz" %}
+<a href="#letter-{{ letter }}">{{ letter|upper }}</a>
+{% endfor %}
+</nav>
+
+<table class="pkg-list">
+<thead>
+<tr><th>Package</th><th>Version</th><th>Summary</th></tr>
+</thead>
+<tbody>
+{% for p in packages %}
+{% set first = p.name[:1]|lower %}
+{% if first != ns.last_letter %}
+<tr class="letter-row" id="letter-{{ first }}"><td colspan="3">{{ first|upper }}</td></tr>
+{% set ns.last_letter = first %}
+{% endif %}
+<tr>
+<td><a href="{{ base_url }}{{ suite }}/{{ p.name }}/">{{ p.name }}</a></td>
+<td class="version">{{ p.version }}</td>
+<td>{{ p.summary }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endblock %}

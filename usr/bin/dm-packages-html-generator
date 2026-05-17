@@ -1,0 +1,623 @@
+#!/usr/bin/python3 -su
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Generate a static HTML browse interface (packages.debian.org-style)
+## from a reprepro-managed Debian apt repository on disk. Output is
+## intended to be uploaded alongside the binary repository (e.g.
+## packages.whonix.org). No JavaScript, no NPM, build is fully offline.
+
+# pylint: disable=invalid-name
+
+"""
+Static HTML generator for Debian apt repositories.
+
+Reads a reprepro-managed repository tree
+(dists/<suite>/<component>/binary-<arch>/Packages.gz and
+dists/<suite>/<component>/source/Sources.gz) and renders
+packages.debian.org-style HTML using Jinja2.
+
+URL scheme (suite-first, Debian-style):
+    /                            site index
+    /<suite>/                    binary package list for suite
+    /<suite>/<package>/          binary package page
+    /source/<suite>/<srcpkg>/    source package page
+
+Dependencies declared by Whonix packages on Whonix packages are
+linked locally; dependencies on Debian-stock packages are linked
+to packages.debian.org (with the suite-suffix stripped, so
+'trixie-testers' deps resolve against Debian's 'trixie').
+
+Usage:
+    dm-packages-html-generator \\
+        --repo   /path/to/aptrepo/<derivative> \\
+        --output /path/to/output \\
+        --site-name "Whonix Packages" \\
+        --base-url "https://packages.whonix.org/" \\
+        --suites trixie,trixie-testers,trixie-proposed-updates,trixie-developers
+"""
+
+import argparse
+import datetime
+import gzip
+import html
+import io
+import re
+import shutil
+import sys
+from pathlib import Path
+
+from debian.deb822 import Packages, Sources, PkgRelation
+from jinja2 import ChainableUndefined, Environment, FileSystemLoader, select_autoescape
+
+
+def find_data_dir() -> Path:
+    """Locate the templates+static asset dir. Prefer the in-tree
+    copy when run from a source checkout so dev iteration does not
+    need a reinstall."""
+
+    script_dir = Path(__file__).resolve().parent
+    if str(script_dir) != "/usr/bin":
+        candidate = script_dir.parent / "share" / "developer-meta-files" / "packages-html"
+        if candidate.is_dir():
+            return candidate
+    return Path("/usr/share/developer-meta-files/packages-html")
+
+
+def open_index(path: Path) -> io.TextIOBase:
+    """Open a Packages or Sources index file. Transparently handles
+    .gz; falls back to the uncompressed sibling if present."""
+
+    if path.suffix == ".gz" and path.is_file():
+        return io.TextIOWrapper(gzip.open(path, "rb"), encoding="utf-8")
+    uncompressed = path.with_suffix("")
+    if uncompressed.is_file():
+        return uncompressed.open("r", encoding="utf-8")
+    if path.is_file():
+        return path.open("r", encoding="utf-8")
+    raise FileNotFoundError(str(path))
+
+
+def discover_suites(repo: Path) -> list[str]:
+    """List subdirectories of dists/ that contain a Release file.
+    Skips symlinks (reprepro sometimes points 'stable' at a
+    codename); we want the canonical names only."""
+
+    dists = repo / "dists"
+    if not dists.is_dir():
+        return []
+    out: list[str] = []
+    for entry in sorted(dists.iterdir()):
+        if entry.is_symlink() or not entry.is_dir():
+            continue
+        if (entry / "Release").is_file():
+            out.append(entry.name)
+    return out
+
+
+def collect_binaries(
+    repo: Path,
+    suite: str,
+) -> dict[str, dict]:
+    """Walk binary-<arch>/Packages.gz for one suite. Returns a dict
+    keyed by binary package name with merged architecture list and
+    a representative stanza (highest version wins on ties)."""
+
+    suite_dir = repo / "dists" / suite
+    out: dict[str, dict] = {}
+    if not suite_dir.is_dir():
+        return out
+    for component_dir in sorted(suite_dir.iterdir()):
+        if not component_dir.is_dir():
+            continue
+        component = component_dir.name
+        for arch_dir in sorted(component_dir.iterdir()):
+            if not arch_dir.is_dir() or not arch_dir.name.startswith("binary-"):
+                continue
+            arch = arch_dir.name[len("binary-"):]
+            index_path = arch_dir / "Packages.gz"
+            if not index_path.is_file():
+                index_path = arch_dir / "Packages"
+                if not index_path.is_file():
+                    continue
+            with open_index(index_path) as fh:
+                for stanza in Packages.iter_paragraphs(fh):
+                    name = stanza.get("Package")
+                    if not name:
+                        continue
+                    version = stanza.get("Version", "")
+                    entry = out.get(name)
+                    if entry is None:
+                        out[name] = {
+                            "name": name,
+                            "version": version,
+                            "component": component,
+                            "stanza": dict(stanza),
+                            "architectures": {arch},
+                        }
+                        continue
+                    entry["architectures"].add(arch)
+                    if version_greater(version, entry["version"]):
+                        entry["version"] = version
+                        entry["component"] = component
+                        entry["stanza"] = dict(stanza)
+    return out
+
+
+def collect_sources(
+    repo: Path,
+    suite: str,
+) -> dict[str, dict]:
+    """Walk source/Sources.gz for one suite."""
+
+    suite_dir = repo / "dists" / suite
+    out: dict[str, dict] = {}
+    if not suite_dir.is_dir():
+        return out
+    for component_dir in sorted(suite_dir.iterdir()):
+        if not component_dir.is_dir():
+            continue
+        component = component_dir.name
+        index_path = component_dir / "source" / "Sources.gz"
+        if not index_path.is_file():
+            index_path = component_dir / "source" / "Sources"
+            if not index_path.is_file():
+                continue
+        with open_index(index_path) as fh:
+            for stanza in Sources.iter_paragraphs(fh):
+                name = stanza.get("Package")
+                if not name:
+                    continue
+                version = stanza.get("Version", "")
+                entry = out.get(name)
+                if entry is None or version_greater(version, entry["version"]):
+                    out[name] = {
+                        "name": name,
+                        "version": version,
+                        "component": component,
+                        "stanza": dict(stanza),
+                    }
+    return out
+
+
+_VERSION_NONDIGIT = re.compile(r"(\d+|[^\d]+)")
+
+
+def version_greater(a: str, b: str) -> bool:
+    """Coarse version comparison good enough to pick a winner when
+    reprepro publishes the same package at the same version across
+    multiple architectures. Not a full dpkg --compare-versions
+    substitute; reprepro never serves two versions of the same
+    (package, suite) so the cases that would expose its corners do
+    not arise in practice."""
+
+    if a == b:
+        return False
+    tokens_a = _VERSION_NONDIGIT.findall(a)
+    tokens_b = _VERSION_NONDIGIT.findall(b)
+    for ta, tb in zip(tokens_a, tokens_b):
+        if ta == tb:
+            continue
+        if ta.isdigit() and tb.isdigit():
+            return int(ta) > int(tb)
+        return ta > tb
+    return len(tokens_a) > len(tokens_b)
+
+
+def debian_suite_for(suite: str) -> str:
+    """Map a Whonix-side suite name to the Debian codename used by
+    packages.debian.org. 'trixie-testers' -> 'trixie' etc. If the
+    suffix is one of Debian's own pocket names ('backports',
+    'updates', 'security') keep it; those route correctly on
+    packages.debian.org."""
+
+    keep_pockets = {"backports", "updates", "security", "proposed-updates"}
+    parts = suite.split("-", 1)
+    if len(parts) == 1:
+        return suite
+    base, suffix = parts
+    if suffix in keep_pockets:
+        return suite
+    return base
+
+
+SHORT_DESC_RE = re.compile(r"^([^\n]*)")
+
+
+def split_description(raw: str) -> tuple[str, str]:
+    """Split a Debian-format Description: field into (summary,
+    long). The first line is the short summary; remaining lines
+    (de-indented; ' .' -> blank paragraph break) are the long
+    description."""
+
+    if not raw:
+        return ("", "")
+    lines = raw.splitlines()
+    summary = lines[0].strip()
+    body_lines: list[str] = []
+    for line in lines[1:]:
+        if line.startswith(" "):
+            stripped = line[1:]
+        else:
+            stripped = line
+        if stripped == ".":
+            body_lines.append("")
+        else:
+            body_lines.append(stripped)
+    body = "\n".join(body_lines).strip("\n")
+    return (summary, body)
+
+
+def format_long_description(body: str) -> str:
+    """Render the long description as escaped HTML with paragraph
+    breaks on blank lines and <br> inside paragraphs. No Markdown
+    parsing -- Debian descriptions are plain text."""
+
+    if not body:
+        return ""
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in body.split("\n"):
+        if line.strip() == "":
+            if current:
+                paragraphs.append("<br>\n".join(html.escape(x) for x in current))
+                current = []
+        else:
+            current.append(line)
+    if current:
+        paragraphs.append("<br>\n".join(html.escape(x) for x in current))
+    return "\n".join("<p>{0}</p>".format(p) for p in paragraphs)
+
+
+RELATION_FIELDS = [
+    "Pre-Depends",
+    "Depends",
+    "Recommends",
+    "Suggests",
+    "Enhances",
+    "Breaks",
+    "Conflicts",
+    "Replaces",
+    "Provides",
+]
+
+BUILD_RELATION_FIELDS = [
+    "Build-Depends",
+    "Build-Depends-Indep",
+    "Build-Depends-Arch",
+    "Build-Conflicts",
+    "Build-Conflicts-Indep",
+    "Build-Conflicts-Arch",
+]
+
+
+def render_relations(
+    raw: str,
+    local_names: set[str],
+    suite: str,
+    base_url: str,
+) -> str:
+    """Render a Debian relation field (e.g. Depends) as an HTML
+    fragment. Each top-level alternative group is separated by
+    ', '; alternatives within a group by ' | '. Each package name
+    is hyperlinked: to the local site if the name is one of our
+    own packages in this suite, otherwise to packages.debian.org."""
+
+    if not raw:
+        return ""
+    try:
+        parsed = PkgRelation.parse_relations(raw)
+    except Exception:  # pylint: disable=broad-exception-caught
+        return html.escape(raw)
+    debian_suite = debian_suite_for(suite)
+    pieces: list[str] = []
+    for alt_group in parsed:
+        alts: list[str] = []
+        for alt in alt_group:
+            pkg = alt.get("name", "")
+            arch_q = alt.get("archqual") or ""
+            version = alt.get("version")
+            arches = alt.get("arch")
+            restrictions = alt.get("restrictions")
+            label_pkg = html.escape(pkg)
+            if arch_q:
+                label_pkg = "{0}:{1}".format(label_pkg, html.escape(arch_q))
+            if pkg in local_names:
+                href = "{0}{1}/{2}/".format(base_url, suite, pkg)
+            else:
+                href = "https://packages.debian.org/{0}/{1}".format(debian_suite, pkg)
+            text = "<a href=\"{0}\">{1}</a>".format(html.escape(href, quote=True), label_pkg)
+            if version is not None:
+                op, ver = version
+                text += " ({0} {1})".format(html.escape(op), html.escape(ver))
+            if arches:
+                arch_parts = []
+                for entry in arches:
+                    sign = "!" if entry[0] else ""
+                    arch_parts.append("{0}{1}".format(sign, entry[1]))
+                text += " [{0}]".format(html.escape(" ".join(arch_parts)))
+            if restrictions:
+                restr_parts = []
+                for restr in restrictions:
+                    inner = " ".join(
+                        ("!" if neg else "") + name for neg, name in restr
+                    )
+                    restr_parts.append("<{0}>".format(inner))
+                text += " {0}".format(html.escape(" ".join(restr_parts)))
+            alts.append(text)
+        pieces.append(" | ".join(alts))
+    return ", ".join(pieces)
+
+
+def collect_files_field(raw) -> list[dict]:
+    """Parse a Sources Files: / Checksums-Sha256: block into a list
+    of {hash, size, name} dicts. python-debian pre-parses these
+    multi-line fields into a list[dict] for Sources stanzas; older
+    or alternate code paths may hand us the raw string. Handle
+    both."""
+
+    out: list[dict] = []
+    if not raw:
+        return out
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            hash_val = (
+                item.get("sha256")
+                or item.get("md5sum")
+                or item.get("sha1")
+                or ""
+            )
+            out.append({
+                "hash": hash_val,
+                "size": str(item.get("size", "")),
+                "name": item.get("name", ""),
+            })
+        return out
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        out.append({"hash": parts[0], "size": parts[1], "name": parts[2]})
+    return out
+
+
+def merge_source_files(stanza: dict) -> list[dict]:
+    """Prefer Checksums-Sha256 when present; fall back to Files
+    (MD5)."""
+
+    sha = collect_files_field(stanza.get("Checksums-Sha256", ""))
+    if sha:
+        return sha
+    return collect_files_field(stanza.get("Files", ""))
+
+
+def build_jinja_env(data_dir: Path) -> Environment:
+    """Construct the Jinja2 environment used to render all pages."""
+
+    env = Environment(
+        loader=FileSystemLoader(str(data_dir / "templates")),
+        autoescape=select_autoescape(["html"]),
+        undefined=ChainableUndefined,
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+    env.globals["generator"] = "dm-packages-html-generator"
+    return env
+
+
+def write_atomic(path: Path, content: str) -> None:
+    """Write file content to disk, creating parent directories.
+    No atomic-rename dance is needed -- output dir is a build
+    artifact, not a live-serving tree."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def render_site(
+    repo: Path,
+    output: Path,
+    site_name: str,
+    base_url: str,
+    suites: list[str],
+    data_dir: Path,
+) -> None:
+    """Render all HTML pages and copy static assets to output."""
+
+    env = build_jinja_env(data_dir)
+    tpl_root = env.get_template("root_index.html.j2")
+    tpl_suite = env.get_template("suite_index.html.j2")
+    tpl_pkg = env.get_template("package.html.j2")
+    tpl_src = env.get_template("source.html.j2")
+
+    if not base_url.endswith("/"):
+        base_url = base_url + "/"
+    if not suites:
+        suites = discover_suites(repo)
+
+    generated_at = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%d %H:%M UTC"
+    )
+
+    common_ctx = {
+        "site_name": site_name,
+        "base_url": base_url,
+        "suites": suites,
+        "generated_at": generated_at,
+    }
+
+    suite_summaries: list[dict] = []
+
+    for suite in suites:
+        binaries = collect_binaries(repo, suite)
+        sources = collect_sources(repo, suite)
+        local_names = set(binaries.keys())
+        local_source_names = set(sources.keys())
+
+        for entry in binaries.values():
+            stanza = entry["stanza"]
+            summary, long_body = split_description(stanza.get("Description", ""))
+            entry["summary"] = summary
+            entry["long_html"] = format_long_description(long_body)
+            relations_html: dict[str, str] = {}
+            for field in RELATION_FIELDS:
+                raw = stanza.get(field, "")
+                if raw:
+                    relations_html[field] = render_relations(
+                        raw, local_names, suite, base_url
+                    )
+            entry["relations_html"] = relations_html
+            src_field = stanza.get("Source", "") or stanza.get("Package", "")
+            src_name = src_field.split(" ", 1)[0]
+            entry["source_name"] = src_name
+            entry["source_link"] = src_name in local_source_names
+            entry["arch_list"] = sorted(entry["architectures"])
+
+        for entry in sources.values():
+            stanza = entry["stanza"]
+            build_relations_html: dict[str, str] = {}
+            for field in BUILD_RELATION_FIELDS:
+                raw = stanza.get(field, "")
+                if raw:
+                    build_relations_html[field] = render_relations(
+                        raw, local_names, suite, base_url
+                    )
+            entry["build_relations_html"] = build_relations_html
+            binary_field = stanza.get("Binary", "")
+            binaries_list = [b.strip() for b in binary_field.split(",") if b.strip()]
+            entry["binaries"] = [
+                {"name": b, "local": b in local_names} for b in binaries_list
+            ]
+            entry["files"] = merge_source_files(stanza)
+
+        suite_dir = output / suite
+        sorted_bin = sorted(binaries.values(), key=lambda x: x["name"])
+        write_atomic(
+            suite_dir / "index.html",
+            tpl_suite.render(
+                **common_ctx,
+                suite=suite,
+                packages=sorted_bin,
+                source_count=len(sources),
+            ),
+        )
+
+        for entry in binaries.values():
+            page_path = suite_dir / entry["name"] / "index.html"
+            write_atomic(
+                page_path,
+                tpl_pkg.render(
+                    **common_ctx,
+                    suite=suite,
+                    pkg=entry,
+                ),
+            )
+
+        for entry in sources.values():
+            page_path = output / "source" / suite / entry["name"] / "index.html"
+            write_atomic(
+                page_path,
+                tpl_src.render(
+                    **common_ctx,
+                    suite=suite,
+                    src=entry,
+                    sibling_binaries=[
+                        b for b in binaries.values()
+                        if b["source_name"] == entry["name"]
+                    ],
+                ),
+            )
+
+        suite_summaries.append({
+            "name": suite,
+            "binary_count": len(binaries),
+            "source_count": len(sources),
+        })
+
+    write_atomic(
+        output / "index.html",
+        tpl_root.render(**common_ctx, suite_summaries=suite_summaries),
+    )
+
+    static_src = data_dir / "static"
+    static_dst = output / "static"
+    if static_src.is_dir():
+        if static_dst.is_dir():
+            shutil.rmtree(static_dst)
+        shutil.copytree(static_src, static_dst)
+
+
+def parse_args() -> argparse.Namespace:
+    """CLI surface."""
+
+    parser = argparse.ArgumentParser(
+        description=("Generate a packages.debian.org-style static HTML "
+                     "interface from a reprepro repository tree."),
+    )
+    parser.add_argument(
+        "--repo",
+        type=Path,
+        required=True,
+        help="Path to the reprepro repository root (contains conf/ and dists/).",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output directory; will be created/overwritten.",
+    )
+    parser.add_argument(
+        "--site-name",
+        default="Packages",
+        help="Site title shown in the page header.",
+    )
+    parser.add_argument(
+        "--base-url",
+        default="/",
+        help="Base URL for absolute links between pages (trailing slash recommended).",
+    )
+    parser.add_argument(
+        "--suites",
+        default="",
+        help=("Comma-separated allowlist of suites to render. If empty, "
+              "all suites with a Release file under dists/ are rendered."),
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Entry point."""
+
+    args = parse_args()
+    if not args.repo.is_dir():
+        print("FATAL: --repo path is not a directory: {0}".format(args.repo),
+              file=sys.stderr)
+        return 1
+    if not (args.repo / "dists").is_dir():
+        print("FATAL: --repo path has no dists/ subdir: {0}".format(args.repo),
+              file=sys.stderr)
+        return 1
+    suites = [s.strip() for s in args.suites.split(",") if s.strip()]
+    args.output.mkdir(parents=True, exist_ok=True)
+    render_site(
+        repo=args.repo,
+        output=args.output,
+        site_name=args.site_name,
+        base_url=args.base_url,
+        suites=suites,
+        data_dir=find_data_dir(),
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

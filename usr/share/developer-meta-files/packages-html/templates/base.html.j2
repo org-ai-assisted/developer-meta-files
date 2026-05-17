@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ site_name }}{% endblock %}</title>
+<link rel="stylesheet" href="{{ base_url }}static/style.css">
+<meta name="generator" content="{{ generator }}">
+</head>
+<body>
+<header class="site-header">
+<div class="container">
+<a class="site-title" href="{{ base_url }}">{{ site_name }}</a>
+<nav class="site-nav">
+<ul>
+{% for s in suites %}
+<li><a href="{{ base_url }}{{ s }}/">{{ s }}</a></li>
+{% endfor %}
+</ul>
+</nav>
+</div>
+</header>
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+<footer class="site-footer">
+<div class="container">
+<p>Generated {{ generated_at }} by <code>{{ generator }}</code>.</p>
+</div>
+</footer>
+</body>
+</html>
