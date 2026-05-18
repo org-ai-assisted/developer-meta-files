@@ -1771,8 +1771,15 @@ pkg_git_push_remotes() {
    #fi
 
    if [ "$batch_current_package_reponame" = "derivative-maker" ]; then
-      ## Manual tag creation when deemed ready.
-      dry_run_or_run genmkfile git-commit-verify >/dev/null
+      ## Manual tag creation when deemed ready - commit-verify only.
+      ## `genmkfile git-commit-verify` can't be used here: its
+      ## make_git_tag_shared preamble dies for derivative-maker
+      ## unless make_git_tag_sign_appendix is set (only
+      ## dm-bump-derivative-maker-version sets it). Call sq-git
+      ## directly to skip that preamble.
+      [ -n "${sq_git_trust_root:-}" ] || sq_git_trust_root="HEAD"
+      [ -n "${sq_git_policy_file:-}" ] || sq_git_policy_file="${derivative_maker_source_code_dir}/buildconfig.d/openpgp-policy.toml"
+      dry_run_or_run sq-git log --policy-file "${sq_git_policy_file}" --trust-root "${sq_git_trust_root}" -- HEAD >/dev/null
    else
       dry_run_or_run genmkfile git-verify >/dev/null
    fi
