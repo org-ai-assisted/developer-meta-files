@@ -5911,35 +5911,35 @@ Date:   Sun May 10 14:31:16 2026 -0400
 
     ## What changed
 
-    - `usr/libexec/developer-meta-files/github-policy-data.bsh` —
-    `DEPENDABOT_FIXES_OFF` preamble → one-line G-035 cite.
+    - `usr/libexec/developer-meta-files/github-policy-data.bsh` -
+    `DEPENDABOT_FIXES_OFF` preamble -> one-line G-035 cite.
     - `usr/bin/dm-github-org-policy`
-    - `apply_repo_policy` "Order on the disable side matters…" block →
+    - `apply_repo_policy` "Order on the disable side matters..." block ->
     one-line G-035 cite.
-    - `apply_code_security_config` 16-line PAID-PLAN-ONLY re-derivation →
+    - `apply_code_security_config` 16-line PAID-PLAN-ONLY re-derivation ->
     cite + the Free-compatible field list (kept because it's not in the
     doc).
-    - `usr/libexec/developer-meta-files/github-org-lib.bsh` —
-    `ghorg_validate_name` 17-line docstring restating G-001 → one-line G-001
+    - `usr/libexec/developer-meta-files/github-org-lib.bsh` -
+    `ghorg_validate_name` 17-line docstring restating G-001 -> one-line G-001
     cite.
     - `usr/bin/github-org-clone`, `usr/bin/github-org-fork`,
-    `usr/bin/github-org-push` — 3-line "Mode is mutually exclusive…"
-    preamble → one-line G-030 cite.
+    `usr/bin/github-org-push` - 3-line "Mode is mutually exclusive..."
+    preamble -> one-line G-030 cite.
 
     ## What the commit message overstates (audit was off)
 
-    For full transparency — three bullets in the commit message describe
+    For full transparency - three bullets in the commit message describe
     edits that **did not happen** because the audit's claims didn't match
     the current file state:
 
-    1. **`github-org-fork` clone-hardening block** — file does not contain
+    1. **`github-org-fork` clone-hardening block** - file does not contain
     any `GIT_LFS_SKIP_SMUDGE` / `protocol.file.allow` rationale; it does API
     forks, not git clones. Nothing to cite.
-    2. **`dm-github-fork-sync` mode-flag preamble** — no such block. The
+    2. **`dm-github-fork-sync` mode-flag preamble** - no such block. The
     mode comment that exists is wrapper-specific (explains why the wrapper
     checks too) and is a real gotcha, so left alone.
     3. **`ghorg_jq_capped` / `GHORG_JQ_MAX_BYTES` inline reminders at call
-    sites** — none exist. The helper name is already used self-documenting
+    sites** - none exist. The helper name is already used self-documenting
     at call sites.
 
     ## Out of scope (deliberately left)
@@ -5956,7 +5956,7 @@ Date:   Sun May 10 14:31:16 2026 -0400
 
     ## Test plan
 
-    - [ ] CI passes (no code changed, so test suite should be unaffected —
+    - [ ] CI passes (no code changed, so test suite should be unaffected -
     change is comment-only).
     - [ ] `shellcheck` clean on the 6 modified files.
     - [ ] Confirm collapsed cites still resolve (G-001, G-020/021, G-030,
