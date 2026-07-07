@@ -61,7 +61,7 @@ iso_dest="${iso_dest_dir}/VBoxGuestAdditions.iso"
 ## hash against the signed Packages index. Sets: downloaded_deb.
 apt_download_verified_deb() {
    local workdir apt_root sources_list status_file
-   local -a apt_opts deb_matches
+   local -a deb_matches
 
    workdir="$1"
    apt_root="${workdir}/aptroot"
@@ -81,11 +81,17 @@ apt_download_verified_deb() {
    overwrite "${sources_list}" \
       "deb [signed-by=${oracle_key}] ${oracle_apt_uri} ${vbox_apt_suite} ${oracle_apt_component}"
 
-   ## The Dir:: options redirect apt's state and cache to the throwaway tree so
-   ## the host's apt state is not modified. Option-array passed as
-   ## 'apt-get "${apt_opts[@]}"', matching derivative-maker's DIST_APTGETOPT
-   ## convention (help-steps/variables).
-   apt_opts=(
+   ## Follow derivative-maker's DIST_APTGETOPT convention (help-steps/variables,
+   ## dist-installer-cli): inherit any apt options the caller serialized (proxy,
+   ## torification, ...), then append the isolation options that point apt at
+   ## the throwaway tree so the host's apt state is not modified.
+   if [[ -v DIST_APTGETOPT_SERIALIZED ]]; then
+      # shellcheck disable=SC2128
+      mapfile -t DIST_APTGETOPT <<< "${DIST_APTGETOPT_SERIALIZED}"
+   else
+      DIST_APTGETOPT=()
+   fi
+   DIST_APTGETOPT+=(
       -o Dir::Etc::sourcelist="${sources_list}"
       -o Dir::Etc::sourceparts="${apt_root}/etc/apt/empty"
       -o Dir::Etc::trustedparts="${apt_root}/etc/apt/trusted.gpg.d"
@@ -97,12 +103,12 @@ apt_download_verified_deb() {
    )
 
    log info "apt-get update against ${oracle_apt_uri} (${vbox_apt_suite} ${oracle_apt_component})"
-   apt-get "${apt_opts[@]}" update
+   apt-get "${DIST_APTGETOPT[@]}" update
 
    ## 'apt-get download' writes the .deb into the current directory.
    log info "apt-get download ${vbox_apt_package}"
    pushd -- "${workdir}" >/dev/null
-   apt-get "${apt_opts[@]}" download "${vbox_apt_package}"
+   apt-get "${DIST_APTGETOPT[@]}" download "${vbox_apt_package}"
    popd >/dev/null
 
    readarray -t deb_matches < <(find "${workdir}" -maxdepth 1 -type f -name "${vbox_apt_package}_*.deb")
