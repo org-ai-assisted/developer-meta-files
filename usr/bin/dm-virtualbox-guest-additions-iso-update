@@ -8,13 +8,13 @@
 ## Re-acquire the VirtualBox Guest Additions ISO for the
 ## packages/kicksecure/virtualbox-guest-additions-iso package.
 ##
-## Trust anchor (maximum security, given the ISO is not built from source):
-## apt's OpenPGP verification of Oracle's signed APT repository. The ISO is
-## extracted from the gpg-verified .deb, NOT downloaded as a bare file. As a
-## second, independent pin it is then cross-checked against Oracle's published
-## SHA256SUMS/MD5SUMS (fetched over TLS), and those sums files are committed
-## next to the ISO so the package build (make-helper-overrides.bsh) re-verifies
-## the exact bytes on every build.
+## Trust anchor (the ISO is not built from source): apt's OpenPGP verification
+## of Oracle's signed APT repository, using derivative-maker's own committed
+## Oracle key (build_sources/oracle_vbox_2016.asc). The ISO is extracted from
+## the verified .deb, NOT downloaded as a bare file. As a second, independent
+## pin it is then cross-checked against Oracle's published SHA256SUMS/MD5SUMS
+## (over TLS), and those sums files are committed next to the ISO so the package
+## build (make-helper-overrides.bsh) re-verifies the exact bytes on every build.
 
 set -x
 set -o errexit
@@ -28,7 +28,6 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 source /usr/libexec/helper-scripts/has.sh
 source /usr/libexec/helper-scripts/log_run_die.sh
-source /usr/libexec/helper-scripts/git.sh
 
 ## XXX: hardcoded path (overridable for installed / alternate checkouts).
 [ -v derivative_maker_source_code_dir ] || derivative_maker_source_code_dir="$HOME/derivative-maker"
@@ -43,57 +42,31 @@ source /usr/libexec/helper-scripts/git.sh
 
 oracle_apt_uri="https://download.virtualbox.org/virtualbox/debian"
 oracle_apt_component="contrib"
-## Independently published fingerprint of the Oracle VirtualBox 2016 archive
-## signing key (Oracle Corporation, info@virtualbox.org). Pinned so a swapped
-## in-repo key is caught before it is ever trusted.
-oracle_key_fpr="B9F8D658297AF3EFC18D5CDFA2F683C52980AECF"
 
-dmf_pkg="${derivative_maker_source_code_dir}/packages/kicksecure/developer-meta-files"
+## Reuse derivative-maker's own committed Oracle VirtualBox 2016 signing key
+## (the same file build-steps.d/2100_create-debian-packages uses as its
+## repo_signing_key), instead of shipping a second copy. Debian apt reads the
+## ASCII-armored key directly via 'signed-by', so there is no dearmor step and
+## no PGP tool dependency; trust in this file is the same anchor the build
+## itself already relies on.
+oracle_key="${derivative_maker_source_code_dir}/build_sources/oracle_vbox_2016.asc"
+
 gaiso_pkg="${derivative_maker_source_code_dir}/packages/kicksecure/virtualbox-guest-additions-iso"
-oracle_key_asc="${dmf_pkg}/usr/share/developer-meta-files/oracle-virtualbox-2016.asc"
 iso_dest_dir="${gaiso_pkg}/usr/share/virtualbox"
 iso_dest="${iso_dest_dir}/VBoxGuestAdditions.iso"
 
-require_tools() {
-   local tool
-   for tool in apt-get dpkg-deb gpg tar dd sha256sum md5sum scurl debchange dpkg-parsechangelog git safe-rm; do
-      has "${tool}" || die 1 "required tool not on PATH: '${tool}'"
-   done
-}
-
-## Fail closed if the committed Oracle key does not match the pinned
-## fingerprint, so an in-repo key substitution cannot silently redirect trust.
-verify_oracle_key_fingerprint() {
-   local actual_fpr colons pub_count
-
-   test -f "${oracle_key_asc}" || die 1 "Oracle key missing: '${oracle_key_asc}'"
-
-   colons="$(gpg --show-keys --with-colons -- "${oracle_key_asc}" 2>/dev/null)"
-
-   ## Reject a key file carrying more than one primary key: the fingerprint
-   ## check below only inspects the first, but 'gpg --dearmor' imports ALL keys
-   ## into the apt keyring, so a bundled extra key would silently become trusted.
-   pub_count="$(grep -c '^pub:' <<< "${colons}" || true)"
-   [ "${pub_count}" = "1" ] || die 1 \
-      "Oracle key file '${oracle_key_asc}' must contain exactly one public key, found '${pub_count}'."
-
-   actual_fpr="$(awk -F: '/^fpr:/{print $10; exit}' <<< "${colons}")"
-   [ "${actual_fpr}" = "${oracle_key_fpr}" ] || die 1 \
-      "Oracle key fingerprint mismatch: got '${actual_fpr}', expected '${oracle_key_fpr}' ('${oracle_key_asc}')."
-   log info "Oracle key fingerprint OK (single key): ${oracle_key_fpr}"
-}
-
 ## Download the VirtualBox .deb from Oracle's signed APT repository into an
-## isolated apt tree (no root, no host apt state touched). apt verifies the
-## repository signature with the pinned Oracle key and the .deb hash against
-## the signed Packages index. Sets: downloaded_deb.
+## isolated apt tree (no root; the host's apt state is not modified). apt
+## verifies the repository signature with the reused Oracle key and the .deb
+## hash against the signed Packages index. Sets: downloaded_deb.
 apt_download_verified_deb() {
-   local workdir apt_root keyring
+   local workdir apt_root sources_list status_file
    local -a apt_opts deb_matches
 
    workdir="$1"
    apt_root="${workdir}/aptroot"
-   keyring="${apt_root}/oracle.gpg"
+   sources_list="${apt_root}/etc/apt/sources.list.d/oracle.list"
+   status_file="${apt_root}/var/lib/dpkg/status"
 
    mkdir --parents -- \
       "${apt_root}/etc/apt/sources.list.d" \
@@ -102,31 +75,25 @@ apt_download_verified_deb() {
       "${apt_root}/var/lib/apt/lists/partial" \
       "${apt_root}/var/cache/apt/archives/partial" \
       "${apt_root}/var/lib/dpkg"
-   : > "${apt_root}/var/lib/dpkg/status"
 
-   gpg --dearmor < "${oracle_key_asc}" > "${keyring}"
+   ## Debian apt reads the ASCII-armored key directly via signed-by; no dearmor
+   ## / keyring conversion is needed.
+   overwrite "${sources_list}" \
+      "deb [signed-by=${oracle_key}] ${oracle_apt_uri} ${vbox_apt_suite} ${oracle_apt_component}"
 
-   printf 'deb [signed-by=%s] %s %s %s\n' \
-      "${keyring}" "${oracle_apt_uri}" "${vbox_apt_suite}" "${oracle_apt_component}" \
-      > "${apt_root}/etc/apt/sources.list.d/oracle.list"
-
-   ## The Dir:: options redirect apt's state/cache/keyring to the throwaway
-   ## tree (nothing on the host is modified). Host /etc/apt/apt.conf.d is still
-   ## read (so a host apt proxy keeps working), so the auth-enforcing options
-   ## below are set explicitly on the command line (highest precedence) to
-   ## defeat a host config that might otherwise weaken signature verification.
+   ## The Dir:: options redirect apt's state and cache to the throwaway tree so
+   ## the host's apt state is not modified. Option-array passed as
+   ## 'apt-get "${apt_opts[@]}"', matching derivative-maker's DIST_APTGETOPT
+   ## convention (help-steps/variables).
    apt_opts=(
-      -o Dir::Etc::sourcelist="${apt_root}/etc/apt/sources.list.d/oracle.list"
+      -o Dir::Etc::sourcelist="${sources_list}"
       -o Dir::Etc::sourceparts="${apt_root}/etc/apt/empty"
       -o Dir::Etc::trustedparts="${apt_root}/etc/apt/trusted.gpg.d"
       -o Dir::Etc::trusted="${apt_root}/etc/apt/trusted.gpg"
       -o Dir::State="${apt_root}/var/lib/apt"
-      -o Dir::State::status="${apt_root}/var/lib/dpkg/status"
+      -o Dir::State::status="${status_file}"
       -o Dir::Cache="${apt_root}/var/cache/apt"
       -o Acquire::Languages=none
-      -o APT::Get::AllowUnauthenticated=false
-      -o Acquire::AllowInsecureRepositories=false
-      -o Acquire::AllowDowngradeToInsecureRepositories=false
    )
 
    log info "apt-get update against ${oracle_apt_uri} (${vbox_apt_suite} ${oracle_apt_component})"
@@ -134,7 +101,9 @@ apt_download_verified_deb() {
 
    ## 'apt-get download' writes the .deb into the current directory.
    log info "apt-get download ${vbox_apt_package}"
-   ( cd -- "${workdir}" && apt-get "${apt_opts[@]}" download "${vbox_apt_package}" )
+   pushd -- "${workdir}" >/dev/null
+   apt-get "${apt_opts[@]}" download "${vbox_apt_package}"
+   popd >/dev/null
 
    readarray -t deb_matches < <(find "${workdir}" -maxdepth 1 -type f -name "${vbox_apt_package}_*.deb")
    [ "${#deb_matches[@]}" = "1" ] || die 1 \
@@ -238,15 +207,16 @@ current_package_version() {
 }
 
 main() {
-   local workdir new_version
+   local workdir new_version gaiso_status DEBCHANGE_MSG _confirm
 
-   require_tools
-   verify_oracle_key_fingerprint
+   die_if_not_has apt-get dpkg-deb tar dd sha256sum md5sum scurl overwrite debchange dpkg-parsechangelog git safe-rm
 
    test -d "${gaiso_pkg}" || die 1 "package directory missing: '${gaiso_pkg}'"
 
    ## Refuse to run on a dirty package tree so the produced commit is reviewable.
-   ( cd -- "${gaiso_pkg}" && nothing_to_commit ) || die 1 \
+   ## '--porcelain' is stable and locale-independent (unlike parsing 'git status').
+   gaiso_status="$(git -C "${gaiso_pkg}" status --porcelain)"
+   [ -z "${gaiso_status}" ] || die 1 \
       "uncommitted changes in '${gaiso_pkg}'; commit or stash them first."
 
    workdir="$(mktemp --directory)"
@@ -290,31 +260,26 @@ main() {
    else
       new_version="${iso_version}-1"
    fi
-   (
-      cd -- "${gaiso_pkg}"
-      DEBCHANGE_MSG="New upstream version (local package)."
-      debchange --newversion "${new_version}" "${DEBCHANGE_MSG}"
-      debchange --release ""
-   )
+   DEBCHANGE_MSG="New upstream version (local package)."
+   pushd "${gaiso_pkg}" >/dev/null
+   debchange --newversion "${new_version}" "${DEBCHANGE_MSG}"
+   debchange --release ""
+   popd >/dev/null
 
-   (
-      cd -- "${gaiso_pkg}"
-      git --no-pager diff HEAD
+   git -C "${gaiso_pkg}" --no-pager diff HEAD
 
-      ## Interactive pause so the operator can inspect the diff above before
-      ## the commit. A TTY is guaranteed here (checked before any mutation
-      ## above). Any input (a bare Enter included) proceeds; this is a pause,
-      ## not a yes/no gate.
-      true "press enter to continue"
-      read -r _confirm
+   ## Interactive pause so the operator can inspect the diff above before the
+   ## commit. A TTY is guaranteed here (checked before any mutation above). Any
+   ## input (a bare Enter included) proceeds; this is a pause, not a yes/no gate.
+   true "press enter to continue"
+   read -r _confirm
 
-      git add -- \
-         'usr/share/virtualbox/VBoxGuestAdditions.iso' \
-         'usr/share/virtualbox/SHA256SUMS' \
-         'usr/share/virtualbox/MD5SUMS' \
-         'debian/changelog'
-      git commit --message "New upstream VirtualBox Guest Additions ISO ${iso_version}"
-   )
+   git -C "${gaiso_pkg}" add -- \
+      'usr/share/virtualbox/VBoxGuestAdditions.iso' \
+      'usr/share/virtualbox/SHA256SUMS' \
+      'usr/share/virtualbox/MD5SUMS' \
+      'debian/changelog'
+   git -C "${gaiso_pkg}" commit --message "New upstream VirtualBox Guest Additions ISO ${iso_version}"
 
    safe-rm --recursive --force -- "${workdir}"
    log info "OK: updated to ${iso_version}."
