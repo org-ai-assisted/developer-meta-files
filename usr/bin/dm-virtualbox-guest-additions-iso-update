@@ -30,8 +30,8 @@ source /usr/libexec/helper-scripts/has.sh
 source /usr/libexec/helper-scripts/log_run_die.sh
 source /usr/libexec/helper-scripts/git.sh
 
-## XXX: hardcoded path
-derivative_maker_source_code_dir="$HOME/derivative-maker"
+## XXX: hardcoded path (overridable for installed / alternate checkouts).
+[ -v derivative_maker_source_code_dir ] || derivative_maker_source_code_dir="$HOME/derivative-maker"
 
 ## The Oracle APT package that embeds the Guest Additions ISO. Bump the major
 ## as new VirtualBox series appear (virtualbox-7.2 -> virtualbox-7.3 -> ...).
@@ -64,15 +64,23 @@ require_tools() {
 ## Fail closed if the committed Oracle key does not match the pinned
 ## fingerprint, so an in-repo key substitution cannot silently redirect trust.
 verify_oracle_key_fingerprint() {
-   local actual_fpr
+   local actual_fpr colons pub_count
 
    test -f "${oracle_key_asc}" || die 1 "Oracle key missing: '${oracle_key_asc}'"
 
-   actual_fpr="$(gpg --show-keys --with-colons -- "${oracle_key_asc}" 2>/dev/null \
-      | awk -F: '/^fpr:/{print $10; exit}')"
+   colons="$(gpg --show-keys --with-colons -- "${oracle_key_asc}" 2>/dev/null)"
+
+   ## Reject a key file carrying more than one primary key: the fingerprint
+   ## check below only inspects the first, but 'gpg --dearmor' imports ALL keys
+   ## into the apt keyring, so a bundled extra key would silently become trusted.
+   pub_count="$(grep -c '^pub:' <<< "${colons}" || true)"
+   [ "${pub_count}" = "1" ] || die 1 \
+      "Oracle key file '${oracle_key_asc}' must contain exactly one public key, found '${pub_count}'."
+
+   actual_fpr="$(awk -F: '/^fpr:/{print $10; exit}' <<< "${colons}")"
    [ "${actual_fpr}" = "${oracle_key_fpr}" ] || die 1 \
       "Oracle key fingerprint mismatch: got '${actual_fpr}', expected '${oracle_key_fpr}' ('${oracle_key_asc}')."
-   log info "Oracle key fingerprint OK: ${oracle_key_fpr}"
+   log info "Oracle key fingerprint OK (single key): ${oracle_key_fpr}"
 }
 
 ## Download the VirtualBox .deb from Oracle's signed APT repository into an
@@ -260,6 +268,13 @@ main() {
    fi
    log info "updating ISO: ${current_version} -> ${iso_version}"
 
+   ## The commit below has an interactive confirmation pause. Bail out now,
+   ## before mutating the package tree, if there is no TTY to confirm on (e.g.
+   ## an unattended run), rather than copying the ISO and bumping the changelog
+   ## and only then aborting at 'read', which would leave a dirty tree.
+   [ -t 0 ] || die 1 \
+      "no TTY for the confirmation pause; refusing to modify '${gaiso_pkg}' unattended."
+
    mkdir --parents -- "${iso_dest_dir}"
    cp --verbose -- "${extracted_iso}" "${iso_dest}"
    cp --verbose -- "${upstream_sha256sums}" "${iso_dest_dir}/SHA256SUMS"
@@ -286,12 +301,10 @@ main() {
       cd -- "${gaiso_pkg}"
       git --no-pager diff HEAD
 
-      ## Interactive pause: this script is meant to be run by hand, so the
-      ## operator can inspect the diff above before the commit. Any input
-      ## (a bare Enter included) proceeds; this is a pause, not a yes/no gate.
-      ## A non-interactive run has no stdin, so 'read' hits EOF and, under
-      ## errexit, aborts BEFORE the commit -- fail safe, leaving the updated
-      ## files staged in the work tree for the operator to commit by hand.
+      ## Interactive pause so the operator can inspect the diff above before
+      ## the commit. A TTY is guaranteed here (checked before any mutation
+      ## above). Any input (a bare Enter included) proceeds; this is a pause,
+      ## not a yes/no gate.
       true "press enter to continue"
       read -r _confirm
 
