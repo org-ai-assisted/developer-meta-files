@@ -56,7 +56,7 @@ iso_dest="${iso_dest_dir}/VBoxGuestAdditions.iso"
 
 require_tools() {
    local tool
-   for tool in apt-get dpkg-deb gpg tar dd sha256sum md5sum scurl debchange dpkg-parsechangelog git; do
+   for tool in apt-get dpkg-deb gpg tar dd sha256sum md5sum scurl debchange dpkg-parsechangelog git safe-rm; do
       has "${tool}" || die 1 "required tool not on PATH: '${tool}'"
    done
 }
@@ -255,7 +255,7 @@ main() {
    current_package_version
    if [ "${iso_version}" = "${current_version}" ]; then
       log info "already up to date: package version ${current_version} matches upstream ${iso_version}. Nothing to do."
-      rm --recursive --force -- "${workdir}"
+      safe-rm --recursive --force -- "${workdir}"
       exit 0
    fi
    log info "updating ISO: ${current_version} -> ${iso_version}"
@@ -303,7 +303,7 @@ main() {
       git commit --message "New upstream VirtualBox Guest Additions ISO ${iso_version}"
    )
 
-   rm --recursive --force -- "${workdir}"
+   safe-rm --recursive --force -- "${workdir}"
    log info "OK: updated to ${iso_version}."
 }
 
