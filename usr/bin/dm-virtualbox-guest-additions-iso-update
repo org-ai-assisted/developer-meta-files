@@ -81,7 +81,7 @@ verify_oracle_key_fingerprint() {
 ## the signed Packages index. Sets: downloaded_deb.
 apt_download_verified_deb() {
    local workdir apt_root keyring
-   local -a apt_opts
+   local -a apt_opts deb_matches
 
    workdir="$1"
    apt_root="${workdir}/aptroot"
@@ -90,6 +90,7 @@ apt_download_verified_deb() {
    mkdir --parents -- \
       "${apt_root}/etc/apt/sources.list.d" \
       "${apt_root}/etc/apt/trusted.gpg.d" \
+      "${apt_root}/etc/apt/empty" \
       "${apt_root}/var/lib/apt/lists/partial" \
       "${apt_root}/var/cache/apt/archives/partial" \
       "${apt_root}/var/lib/dpkg"
@@ -101,15 +102,23 @@ apt_download_verified_deb() {
       "${keyring}" "${oracle_apt_uri}" "${vbox_apt_suite}" "${oracle_apt_component}" \
       > "${apt_root}/etc/apt/sources.list.d/oracle.list"
 
+   ## The Dir:: options redirect apt's state/cache/keyring to the throwaway
+   ## tree (nothing on the host is modified). Host /etc/apt/apt.conf.d is still
+   ## read (so a host apt proxy keeps working), so the auth-enforcing options
+   ## below are set explicitly on the command line (highest precedence) to
+   ## defeat a host config that might otherwise weaken signature verification.
    apt_opts=(
       -o Dir::Etc::sourcelist="${apt_root}/etc/apt/sources.list.d/oracle.list"
-      -o Dir::Etc::sourceparts=/dev/null
+      -o Dir::Etc::sourceparts="${apt_root}/etc/apt/empty"
       -o Dir::Etc::trustedparts="${apt_root}/etc/apt/trusted.gpg.d"
       -o Dir::Etc::trusted="${apt_root}/etc/apt/trusted.gpg"
       -o Dir::State="${apt_root}/var/lib/apt"
       -o Dir::State::status="${apt_root}/var/lib/dpkg/status"
       -o Dir::Cache="${apt_root}/var/cache/apt"
       -o Acquire::Languages=none
+      -o APT::Get::AllowUnauthenticated=false
+      -o Acquire::AllowInsecureRepositories=false
+      -o Acquire::AllowDowngradeToInsecureRepositories=false
    )
 
    log info "apt-get update against ${oracle_apt_uri} (${vbox_apt_suite} ${oracle_apt_component})"
@@ -129,6 +138,7 @@ apt_download_verified_deb() {
 ## Extract VBoxGuestAdditions.iso from the .deb. Sets: extracted_iso.
 extract_iso_from_deb() {
    local deb workdir
+   local -a iso_matches
 
    deb="$1"
    workdir="$2"
@@ -160,14 +170,16 @@ iso_version_from_label() {
 
 ## Extract the single 'VBoxGuestAdditions_*.iso' hash from an Oracle sums file.
 sums_file_iso_hash() {
-   local sums_file
+   local sums_file hash
    local -a matched
 
    sums_file="$1"
    readarray -t matched < <(grep -E ' \*?VBoxGuestAdditions_[^ ]+\.iso$' -- "${sums_file}" || true)
    [ "${#matched[@]}" = "1" ] || die 1 \
       "expected exactly one 'VBoxGuestAdditions_*.iso' line in '${sums_file}', found '${#matched[@]}'."
-   printf '%s\n' "${matched[0]%% *}"
+   hash="${matched[0]%% *}"
+   [ -n "${hash}" ] || die 1 "could not parse expected hash from '${sums_file}'."
+   printf '%s\n' "${hash}"
 }
 
 ## Fetch Oracle's published SHA256SUMS/MD5SUMS for this version and confirm the
@@ -230,8 +242,10 @@ main() {
       "uncommitted changes in '${gaiso_pkg}'; commit or stash them first."
 
    workdir="$(mktemp --directory)"
-   ## Temp dir is intentionally left on disk for post-run review.
-   log info "work directory (kept for review): ${workdir}"
+   ## The work dir holds the ~114 MB .deb plus the extracted ~53 MB ISO, so it
+   ## is removed on the success paths below and kept only on failure (a 'die'
+   ## exits without reaching the cleanup), where it is useful for inspection.
+   log info "work directory: ${workdir}"
 
    apt_download_verified_deb "${workdir}"
    extract_iso_from_deb "${downloaded_deb}" "${workdir}"
@@ -241,6 +255,7 @@ main() {
    current_package_version
    if [ "${iso_version}" = "${current_version}" ]; then
       log info "already up to date: package version ${current_version} matches upstream ${iso_version}. Nothing to do."
+      rm --recursive --force -- "${workdir}"
       exit 0
    fi
    log info "updating ISO: ${current_version} -> ${iso_version}"
@@ -271,9 +286,12 @@ main() {
       cd -- "${gaiso_pkg}"
       git --no-pager diff HEAD
 
-      ## Interactive gate: this script is meant to be run by hand. The read
-      ## blocks so the operator can inspect the diff before the commit.
-      ## Non-interactive runs (CI etc.) will hang here by design.
+      ## Interactive pause: this script is meant to be run by hand, so the
+      ## operator can inspect the diff above before the commit. Any input
+      ## (a bare Enter included) proceeds; this is a pause, not a yes/no gate.
+      ## A non-interactive run has no stdin, so 'read' hits EOF and, under
+      ## errexit, aborts BEFORE the commit -- fail safe, leaving the updated
+      ## files staged in the work tree for the operator to commit by hand.
       true "press enter to continue"
       read -r _confirm
 
@@ -285,6 +303,7 @@ main() {
       git commit --message "New upstream VirtualBox Guest Additions ISO ${iso_version}"
    )
 
+   rm --recursive --force -- "${workdir}"
    log info "OK: updated to ${iso_version}."
 }
 
