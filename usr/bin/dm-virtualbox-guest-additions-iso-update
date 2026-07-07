@@ -1,0 +1,291 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Re-acquire the VirtualBox Guest Additions ISO for the
+## packages/kicksecure/virtualbox-guest-additions-iso package.
+##
+## Trust anchor (maximum security, given the ISO is not built from source):
+## apt's OpenPGP verification of Oracle's signed APT repository. The ISO is
+## extracted from the gpg-verified .deb, NOT downloaded as a bare file. As a
+## second, independent pin it is then cross-checked against Oracle's published
+## SHA256SUMS/MD5SUMS (fetched over TLS), and those sums files are committed
+## next to the ISO so the package build (make-helper-overrides.bsh) re-verifies
+## the exact bytes on every build.
+
+set -x
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+
+true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
+
+source /usr/libexec/helper-scripts/has.sh
+source /usr/libexec/helper-scripts/log_run_die.sh
+source /usr/libexec/helper-scripts/git.sh
+
+## XXX: hardcoded path
+derivative_maker_source_code_dir="$HOME/derivative-maker"
+
+## The Oracle APT package that embeds the Guest Additions ISO. Bump the major
+## as new VirtualBox series appear (virtualbox-7.2 -> virtualbox-7.3 -> ...).
+[ -v vbox_apt_package ] || vbox_apt_package="virtualbox-7.2"
+## The Guest Additions ISO is identical across Debian/Ubuntu suites for a given
+## VirtualBox version, so any suite Oracle publishes works; bookworm is always
+## present.
+[ -v vbox_apt_suite ] || vbox_apt_suite="bookworm"
+
+oracle_apt_uri="https://download.virtualbox.org/virtualbox/debian"
+oracle_apt_component="contrib"
+## Independently published fingerprint of the Oracle VirtualBox 2016 archive
+## signing key (Oracle Corporation, info@virtualbox.org). Pinned so a swapped
+## in-repo key is caught before it is ever trusted.
+oracle_key_fpr="B9F8D658297AF3EFC18D5CDFA2F683C52980AECF"
+
+dmf_pkg="${derivative_maker_source_code_dir}/packages/kicksecure/developer-meta-files"
+gaiso_pkg="${derivative_maker_source_code_dir}/packages/kicksecure/virtualbox-guest-additions-iso"
+oracle_key_asc="${dmf_pkg}/usr/share/developer-meta-files/oracle-virtualbox-2016.asc"
+iso_dest_dir="${gaiso_pkg}/usr/share/virtualbox"
+iso_dest="${iso_dest_dir}/VBoxGuestAdditions.iso"
+
+require_tools() {
+   local tool
+   for tool in apt-get dpkg-deb gpg tar dd sha256sum md5sum scurl debchange dpkg-parsechangelog git; do
+      has "${tool}" || die 1 "required tool not on PATH: '${tool}'"
+   done
+}
+
+## Fail closed if the committed Oracle key does not match the pinned
+## fingerprint, so an in-repo key substitution cannot silently redirect trust.
+verify_oracle_key_fingerprint() {
+   local actual_fpr
+
+   test -f "${oracle_key_asc}" || die 1 "Oracle key missing: '${oracle_key_asc}'"
+
+   actual_fpr="$(gpg --show-keys --with-colons -- "${oracle_key_asc}" 2>/dev/null \
+      | awk -F: '/^fpr:/{print $10; exit}')"
+   [ "${actual_fpr}" = "${oracle_key_fpr}" ] || die 1 \
+      "Oracle key fingerprint mismatch: got '${actual_fpr}', expected '${oracle_key_fpr}' ('${oracle_key_asc}')."
+   log info "Oracle key fingerprint OK: ${oracle_key_fpr}"
+}
+
+## Download the VirtualBox .deb from Oracle's signed APT repository into an
+## isolated apt tree (no root, no host apt state touched). apt verifies the
+## repository signature with the pinned Oracle key and the .deb hash against
+## the signed Packages index. Sets: downloaded_deb.
+apt_download_verified_deb() {
+   local workdir apt_root keyring
+   local -a apt_opts
+
+   workdir="$1"
+   apt_root="${workdir}/aptroot"
+   keyring="${apt_root}/oracle.gpg"
+
+   mkdir --parents -- \
+      "${apt_root}/etc/apt/sources.list.d" \
+      "${apt_root}/etc/apt/trusted.gpg.d" \
+      "${apt_root}/var/lib/apt/lists/partial" \
+      "${apt_root}/var/cache/apt/archives/partial" \
+      "${apt_root}/var/lib/dpkg"
+   : > "${apt_root}/var/lib/dpkg/status"
+
+   gpg --dearmor < "${oracle_key_asc}" > "${keyring}"
+
+   printf 'deb [signed-by=%s] %s %s %s\n' \
+      "${keyring}" "${oracle_apt_uri}" "${vbox_apt_suite}" "${oracle_apt_component}" \
+      > "${apt_root}/etc/apt/sources.list.d/oracle.list"
+
+   apt_opts=(
+      -o Dir::Etc::sourcelist="${apt_root}/etc/apt/sources.list.d/oracle.list"
+      -o Dir::Etc::sourceparts=/dev/null
+      -o Dir::Etc::trustedparts="${apt_root}/etc/apt/trusted.gpg.d"
+      -o Dir::Etc::trusted="${apt_root}/etc/apt/trusted.gpg"
+      -o Dir::State="${apt_root}/var/lib/apt"
+      -o Dir::State::status="${apt_root}/var/lib/dpkg/status"
+      -o Dir::Cache="${apt_root}/var/cache/apt"
+      -o Acquire::Languages=none
+   )
+
+   log info "apt-get update against ${oracle_apt_uri} (${vbox_apt_suite} ${oracle_apt_component})"
+   apt-get "${apt_opts[@]}" update
+
+   ## 'apt-get download' writes the .deb into the current directory.
+   log info "apt-get download ${vbox_apt_package}"
+   ( cd -- "${workdir}" && apt-get "${apt_opts[@]}" download "${vbox_apt_package}" )
+
+   readarray -t deb_matches < <(find "${workdir}" -maxdepth 1 -type f -name "${vbox_apt_package}_*.deb")
+   [ "${#deb_matches[@]}" = "1" ] || die 1 \
+      "expected exactly one '${vbox_apt_package}_*.deb' in '${workdir}', found '${#deb_matches[@]}'."
+   downloaded_deb="${deb_matches[0]}"
+   log info "verified .deb: ${downloaded_deb}"
+}
+
+## Extract VBoxGuestAdditions.iso from the .deb. Sets: extracted_iso.
+extract_iso_from_deb() {
+   local deb workdir
+
+   deb="$1"
+   workdir="$2"
+
+   mkdir --parents -- "${workdir}/deb-extract"
+   dpkg-deb --fsys-tarfile "${deb}" \
+      | tar --extract --directory "${workdir}/deb-extract" --wildcards '*/VBoxGuestAdditions.iso'
+
+   readarray -t iso_matches < <(find "${workdir}/deb-extract" -type f -name 'VBoxGuestAdditions.iso')
+   [ "${#iso_matches[@]}" = "1" ] || die 1 \
+      "expected exactly one 'VBoxGuestAdditions.iso' inside '${deb}', found '${#iso_matches[@]}'."
+   extracted_iso="${iso_matches[0]}"
+   log info "extracted ISO: ${extracted_iso}"
+}
+
+## Read the VirtualBox version from the ISO's ISO-9660 volume identifier
+## (primary volume descriptor, offset 32808). Sets: iso_version.
+iso_version_from_label() {
+   local iso label
+
+   iso="$1"
+   label="$(dd if="${iso}" bs=1 skip=32808 count=32 2>/dev/null | tr -d '\0')"
+   ## Example label: "VBOXADDITIONS_7.2.12_174389" (space padded).
+   [[ "${label}" =~ VBOXADDITIONS_([0-9]+\.[0-9]+\.[0-9]+)_ ]] || die 1 \
+      "could not parse VirtualBox version from ISO volume label: '${label}'"
+   iso_version="${BASH_REMATCH[1]}"
+   log info "ISO version (from volume label): ${iso_version}"
+}
+
+## Extract the single 'VBoxGuestAdditions_*.iso' hash from an Oracle sums file.
+sums_file_iso_hash() {
+   local sums_file
+   local -a matched
+
+   sums_file="$1"
+   readarray -t matched < <(grep -E ' \*?VBoxGuestAdditions_[^ ]+\.iso$' -- "${sums_file}" || true)
+   [ "${#matched[@]}" = "1" ] || die 1 \
+      "expected exactly one 'VBoxGuestAdditions_*.iso' line in '${sums_file}', found '${#matched[@]}'."
+   printf '%s\n' "${matched[0]%% *}"
+}
+
+## Fetch Oracle's published SHA256SUMS/MD5SUMS for this version and confirm the
+## extracted ISO matches both (independent of the apt/gpg check above). Sets:
+## upstream_sha256sums, upstream_md5sums (paths kept for the commit step).
+cross_check_iso() {
+   local iso version workdir base expected_sha actual_sha expected_md5 actual_md5
+
+   iso="$1"
+   version="$2"
+   workdir="$3"
+   base="https://download.virtualbox.org/virtualbox/${version}"
+
+   upstream_sha256sums="${workdir}/SHA256SUMS"
+   upstream_md5sums="${workdir}/MD5SUMS"
+
+   scurl --output "${upstream_sha256sums}" "${base}/SHA256SUMS"
+   scurl --output "${upstream_md5sums}" "${base}/MD5SUMS"
+
+   expected_sha="$(sums_file_iso_hash "${upstream_sha256sums}")"
+   actual_sha="$(sha256sum -- "${iso}")"
+   actual_sha="${actual_sha%% *}"
+   [ "${expected_sha}" = "${actual_sha}" ] || die 1 \
+      "sha256 cross-check FAILED: extracted ISO '${actual_sha}' != upstream '${expected_sha}'."
+
+   expected_md5="$(sums_file_iso_hash "${upstream_md5sums}")"
+   actual_md5="$(md5sum -- "${iso}")"
+   actual_md5="${actual_md5%% *}"
+   [ "${expected_md5}" = "${actual_md5}" ] || die 1 \
+      "md5 cross-check FAILED: extracted ISO '${actual_md5}' != upstream '${expected_md5}'."
+
+   log info "cross-check OK: ISO matches upstream SHA256SUMS and MD5SUMS for ${version}."
+}
+
+## The upstream version currently recorded in the package changelog (epoch and
+## revision stripped). Sets: current_version, current_epoch.
+current_package_version() {
+   local full
+
+   full="$(dpkg-parsechangelog --file "${gaiso_pkg}/debian/changelog" --show-field Version)"
+   if [[ "${full}" == *:* ]]; then
+      current_epoch="${full%%:*}"
+      full="${full#*:}"
+   else
+      current_epoch=""
+   fi
+   current_version="${full%%-*}"
+}
+
+main() {
+   local workdir new_version
+
+   require_tools
+   verify_oracle_key_fingerprint
+
+   test -d "${gaiso_pkg}" || die 1 "package directory missing: '${gaiso_pkg}'"
+
+   ## Refuse to run on a dirty package tree so the produced commit is reviewable.
+   ( cd -- "${gaiso_pkg}" && nothing_to_commit ) || die 1 \
+      "uncommitted changes in '${gaiso_pkg}'; commit or stash them first."
+
+   workdir="$(mktemp --directory)"
+   ## Temp dir is intentionally left on disk for post-run review.
+   log info "work directory (kept for review): ${workdir}"
+
+   apt_download_verified_deb "${workdir}"
+   extract_iso_from_deb "${downloaded_deb}" "${workdir}"
+   iso_version_from_label "${extracted_iso}"
+   cross_check_iso "${extracted_iso}" "${iso_version}" "${workdir}"
+
+   current_package_version
+   if [ "${iso_version}" = "${current_version}" ]; then
+      log info "already up to date: package version ${current_version} matches upstream ${iso_version}. Nothing to do."
+      exit 0
+   fi
+   log info "updating ISO: ${current_version} -> ${iso_version}"
+
+   mkdir --parents -- "${iso_dest_dir}"
+   cp --verbose -- "${extracted_iso}" "${iso_dest}"
+   cp --verbose -- "${upstream_sha256sums}" "${iso_dest_dir}/SHA256SUMS"
+   cp --verbose -- "${upstream_md5sums}" "${iso_dest_dir}/MD5SUMS"
+
+   ## Set the new upstream version in the package changelog. The epoch is
+   ## preserved. genmkfile's own bump targets keep the upstream version
+   ## verbatim (version_numbers_by_upstream=true); the actual upstream version
+   ## is driven from the ISO here, so set it directly via debchange (which is
+   ## what genmkfile calls internally).
+   if [ -n "${current_epoch}" ]; then
+      new_version="${current_epoch}:${iso_version}-1"
+   else
+      new_version="${iso_version}-1"
+   fi
+   (
+      cd -- "${gaiso_pkg}"
+      DEBCHANGE_MSG="New upstream version (local package)."
+      debchange --newversion "${new_version}" "${DEBCHANGE_MSG}"
+      debchange --release ""
+   )
+
+   (
+      cd -- "${gaiso_pkg}"
+      git --no-pager diff HEAD
+
+      ## Interactive gate: this script is meant to be run by hand. The read
+      ## blocks so the operator can inspect the diff before the commit.
+      ## Non-interactive runs (CI etc.) will hang here by design.
+      true "press enter to continue"
+      read -r _confirm
+
+      git add -- \
+         'usr/share/virtualbox/VBoxGuestAdditions.iso' \
+         'usr/share/virtualbox/SHA256SUMS' \
+         'usr/share/virtualbox/MD5SUMS' \
+         'debian/changelog'
+      git commit --message "New upstream VirtualBox Guest Additions ISO ${iso_version}"
+   )
+
+   log info "OK: updated to ${iso_version}."
+}
+
+main "$@"
