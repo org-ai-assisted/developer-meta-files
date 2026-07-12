@@ -145,6 +145,10 @@ expect_rule "R-030/R-031" "printf ${sq}${nl}${sq}"              "present"
 expect_rule "R-030/R-031" "printf ${sq}%s${nl}${sq}"            "present"
 expect_rule "R-030/R-031" "printf ${sq}%s${nl}${sq} ${dq}${dq}" "absent"
 expect_rule "R-030/R-031" "printf ${sq}%s${nl}${sq} hello"      "absent"
+## A trailing comment does not supply a data argument, so a commented bare
+## form is still a violation; the compliant form stays spared even commented.
+expect_rule "R-030/R-031" "printf ${sq}%s${nl}${sq} # blank"        "present"
+expect_rule "R-030/R-031" "printf ${sq}%s${nl}${sq} ${dq}${dq} # ok" "absent"
 
 ## The compliant 'printf %s\n' "" IS a blank-line separator, so R-042 (not
 ## R-031) is the rule that owns it -- proves the two checks divide the work
@@ -155,6 +159,8 @@ expect_rule "R-042" "printf ${sq}%s${nl}${sq} ${dq}${dq}"       "present"
 ## a string or as another command's argument must be SPARED (the command-
 ## position anchoring that replaced the old '[[:space:]]echo' form).
 expect_rule "R-034" "echo hi"                                   "present"
+## echo run as a condition command (line-start keyword) must also be FLAGGED.
+expect_rule "R-034" "if echo hi${sc} then"                      "present"
 expect_rule "R-034" "printf ${sq}%s${nl}${sq} ${dq}a echo b${dq}" "absent"
 expect_rule "R-034" "has echo"                                  "absent"
 

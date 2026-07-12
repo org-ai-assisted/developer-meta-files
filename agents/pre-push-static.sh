@@ -530,11 +530,12 @@ check_R031_bare_newline() {
    ## The compliant '' data-arg form is deliberately NOT matched here
    ## (dropping a needless blank separator is R-042's separate job):
    ## the trailing group requires end-of-line or an immediately
-   ## following redirect/pipe/';'/'&', so 'printf %s\n' "" (which has a
-   ## following data arg) never trips it. Covers single- and
-   ## double-quoted format strings and repeated '\n'.
+   ## following redirect/pipe/';'/'&', or a '#' (trailing comment), so
+   ## 'printf %s\n' "" (which has a following data arg) never trips it while
+   ## a commented bare form ('printf %s\n' # x) still does. Covers single-
+   ## and double-quoted format strings and repeated '\n'.
    hits="$(grep --line-number --extended-regexp \
-      "printf[[:space:]]+['\"](%s)?(\\\\n)+['\"][[:space:]]*(\$|[|;&>])" \
+      "printf[[:space:]]+['\"](%s)?(\\\\n)+['\"][[:space:]]*(\$|[|;&>#])" \
       -- "${fs[@]}" 2>/dev/null || true)"
    emit_hits "R-030/R-031 newline printf needs explicit \"\" arg" "${hits}"
 }
@@ -721,17 +722,19 @@ check_R034_echo() {
       fi
       ## 'echo' in COMMAND POSITION only: at line start, or immediately after
       ## a command separator (; & | && || ( ) { } backtick) or a control
-      ## keyword (then/do/else/in). Modeled on check_R103_exec. This is the
-      ## fix for the old '[[:space:]]echo' form, which matched 'echo' as a
-      ## bareword anywhere after a space -- flagging it inside a string
-      ## ('the echo test') or as an argument ('has echo'), neither of which
-      ## runs echo as a command. A leading '#' blocks the '[^#]*' prefix, so
-      ## comment lines are excluded. Residual (accepted, same as R-103): a
-      ## separator inside a string ('a; echo b') still matches.
+      ## keyword (if/elif/while/until/then/do/else/in, whether the keyword is
+      ## at line start as in 'if echo x' or mid-line as in '; then echo x').
+      ## Modeled on check_R103_exec. This is the fix for the old
+      ## '[[:space:]]echo' form, which matched 'echo' as a bareword anywhere
+      ## after a space -- flagging it inside a string ('the echo test') or as
+      ## an argument ('has echo'), neither of which runs echo as a command. A
+      ## leading '#' blocks the '[^#]*' prefix, so comment lines are excluded.
+      ## Residual (accepted, same as R-103): a separator inside a string
+      ## ('a; echo b') still matches.
       hits="$(grep --line-number --extended-regexp \
          --regexp='^[[:space:]]*echo([[:space:]]|$)' \
          --regexp='^[[:space:]]*[^#]*[;&|(){}`][[:space:]]*echo([[:space:]]|$)' \
-         --regexp='^[[:space:]]*[^#]*[[:space:]](then|do|else|in)[[:space:]]+echo([[:space:]]|$)' \
+         --regexp='^[[:space:]]*([^#]*[[:space:]])?(then|do|else|in|if|elif|while|until)[[:space:]]+echo([[:space:]]|$)' \
          -- "${script}" 2>/dev/null || true)"
       if [ -z "${hits}" ]; then
          continue
