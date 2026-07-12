@@ -134,7 +134,11 @@ for org in "${ORGS[@]}"; do
    ## enough at current scale (~100 total org-wide); add a Link-header
    ## walk if alert count outgrows it.
    result="$(ghorg_api GET "/orgs/${org}/code-scanning/alerts?state=open&per_page=100")" \
-      || { log warn "${org}: api call failed"; policy_warn_seen=1; continue; }
+      || {
+         log warn "${org}: api call failed"
+         policy_warn_seen=1
+         continue
+      }
    status="$(ghorg_status_of "${result}")"
    if [ "${status}" != '200' ]; then
       log warn "${org}: HTTP ${status}"
@@ -158,7 +162,11 @@ for org in "${ORGS[@]}"; do
                | gsub(\"\\n\"; \" \"))
          ]
       | \"| \" + join(\" | \") + \" |\"
-   ")" || { log warn "${org}: jq parse failed"; policy_warn_seen=1; continue; }
+   ")" || {
+      log warn "${org}: jq parse failed"
+      policy_warn_seen=1
+      continue
+   }
 
    if [ -z "${rows}" ]; then
       log notice "  ${org}: no matching alerts"

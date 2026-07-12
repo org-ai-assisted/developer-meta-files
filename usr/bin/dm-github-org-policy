@@ -66,10 +66,16 @@ org_kind() {
    local org name
    org="$1"
    for name in "${SOURCE_ORGS[@]}"; do
-      [ "${name}" = "${org}" ] && { printf '%s\n' source; return 0; }
+      if [ "${name}" = "${org}" ]; then
+         printf '%s\n' source
+         return 0
+      fi
    done
    for name in "${MIRROR_ORGS[@]}"; do
-      [ "${name}" = "${org}" ] && { printf '%s\n' mirror; return 0; }
+      if [ "${name}" = "${org}" ]; then
+         printf '%s\n' mirror
+         return 0
+      fi
    done
    log error "org_kind: '${org}' not in SOURCE_ORGS or MIRROR_ORGS"
    return 1
