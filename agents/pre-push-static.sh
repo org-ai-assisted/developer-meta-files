@@ -572,7 +572,13 @@ check_R074_flow_chaining() {
    ## bash's syntactic ';' (';;', a C-style for-loop, or the keyword on its own
    ## line). filter_self keeps this script's own regex/examples from self-matching.
    ##
-   ## TODO: `exit` is another common offender, add it too?
+   ## 'exit' is deliberately NOT in the set. Unlike break/continue/return it
+   ## is a frequent statement separator INSIDE inline awk/sed program strings
+   ## (awk '{print; exit}'), which is not bash ';'-chaining and would be a
+   ## false positive; and ';'-then-exit is common in the tolerated one-liner
+   ## guard idiom '|| { printf ... >&2; exit 1; }' used by self-contained
+   ## bootstrap scripts. So it is not the low-false-positive subset a
+   ## single-grep Tier-1 rule needs.
    mapfile -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    hits="$(grep --line-number --extended-regexp \
@@ -713,13 +719,19 @@ check_R034_echo() {
          -- "${script}"; then
          continue
       fi
-      ## 'echo' as a word at start-of-line or after whitespace (command position).
-      ## A leading '#' blocks the '[^#]*' prefix, so comment lines are excluded.
-      ## FIXME: This will flag any file that uses the word 'echo' in a string.
-      ## The `[^#]*` portion of the regex will match almost any characters
-      ## needed to get to " echo " in the middle of the string.
+      ## 'echo' in COMMAND POSITION only: at line start, or immediately after
+      ## a command separator (; & | && || ( ) { } backtick) or a control
+      ## keyword (then/do/else/in). Modeled on check_R103_exec. This is the
+      ## fix for the old '[[:space:]]echo' form, which matched 'echo' as a
+      ## bareword anywhere after a space -- flagging it inside a string
+      ## ('the echo test') or as an argument ('has echo'), neither of which
+      ## runs echo as a command. A leading '#' blocks the '[^#]*' prefix, so
+      ## comment lines are excluded. Residual (accepted, same as R-103): a
+      ## separator inside a string ('a; echo b') still matches.
       hits="$(grep --line-number --extended-regexp \
-         '^[[:space:]]*[^#]*[[:space:]]echo([[:space:]]|$)|^[[:space:]]*echo([[:space:]]|$)' \
+         --regexp='^[[:space:]]*echo([[:space:]]|$)' \
+         --regexp='^[[:space:]]*[^#]*[;&|(){}`][[:space:]]*echo([[:space:]]|$)' \
+         --regexp='^[[:space:]]*[^#]*[[:space:]](then|do|else|in)[[:space:]]+echo([[:space:]]|$)' \
          -- "${script}" 2>/dev/null || true)"
       if [ -z "${hits}" ]; then
          continue
