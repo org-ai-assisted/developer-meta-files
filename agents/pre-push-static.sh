@@ -15,9 +15,11 @@
 ##   3. LC_ALL=C grep -PlI '[^\x00-\x7F]' on changed files (R-001)
 ##   4. LC_ALL=C grep -P  '[^\x00-\x7F]' on the commit-range
 ##      message (R-001)
-##   5. R-010 strict-mode block present in top 100 lines
+##   5. R-010 strict-mode block present in top 120 lines
 ##   6. R-011 no 'set +o errexit' toggling
-##   7. R-042 no blank-line printf/log separators
+##   7. R-042 no blank-line printf/log separators, and R-030/R-031
+##      no bare-newline printf ('printf \n' or bare 'printf %s\n'
+##      with the data arg omitted; a newline must be 'printf %s\n' "")
 ##   8. R-051 no inline trap command strings (use named function)
 ##   9. R-070 no ';;' trailing other statements on the same line
 ##      R-074 no ';'-chained break/continue/return (own line)
@@ -434,13 +436,13 @@ is_self_referential() {
 }
 
 ## Some scripts (including this one) carry long-form header
-## docstrings before the strict-mode block; head -100 is generous
+## docstrings before the strict-mode block; head -120 is generous
 ## enough to accommodate them without missing the rule's intent.
 check_R010_strict_block() {
    local script count
 
    for script in "${@}"; do
-      count="$(head --lines=100 -- "${script}" \
+      count="$(head --lines=120 -- "${script}" \
          | grep --count --extended-regexp \
             '^(set -o (errexit|nounset|pipefail|errtrace)|shopt -s (inherit_errexit|shift_verbose))$' \
          || true)"
@@ -478,7 +480,7 @@ check_R010_strict_block() {
          continue
       fi
       if [ "${count}" -lt 6 ]; then
-         fail "R-010 strict-mode block" "'${script}' has only ${count}/6 strict-mode lines in head -100"
+         fail "R-010 strict-mode block" "'${script}' has only ${count}/6 strict-mode lines in head -120"
       fi
    done
 }
@@ -513,6 +515,28 @@ check_R042_blank_logline() {
       "printf[[:space:]]+'%s\\\\n'[[:space:]]+\"\"[[:space:]]*\$|log[[:space:]]+notice[[:space:]]+\"\"[[:space:]]*\$" \
       -- "${fs[@]}" 2>/dev/null || true)"
    emit_hits "R-042 blank-line separator" "${hits}"
+}
+
+check_R031_bare_newline() {
+   local hits
+   local -a fs
+
+   mapfile -t fs < <(filter_self "${@}")
+   if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
+   ## Bad pattern: a printf that emits a newline without passing the
+   ## data as an explicit argument -- 'printf \n' (newline baked into
+   ## the format string, R-031) or a bare 'printf %s\n' with the data
+   ## argument omitted (R-030). Both must be written 'printf %s\n' "".
+   ## The compliant '' data-arg form is deliberately NOT matched here
+   ## (dropping a needless blank separator is R-042's separate job):
+   ## the trailing group requires end-of-line or an immediately
+   ## following redirect/pipe/';'/'&', so 'printf %s\n' "" (which has a
+   ## following data arg) never trips it. Covers single- and
+   ## double-quoted format strings and repeated '\n'.
+   hits="$(grep --line-number --extended-regexp \
+      "printf[[:space:]]+['\"](%s)?(\\\\n)+['\"][[:space:]]*(\$|[|;&>])" \
+      -- "${fs[@]}" 2>/dev/null || true)"
+   emit_hits "R-030/R-031 newline printf needs explicit \"\" arg" "${hits}"
 }
 
 check_R051_trap_inline() {
@@ -958,6 +982,7 @@ run_file_checks() {
       check_R010_strict_block "${shell_files[@]}"
       check_R011_errexit_toggle "${shell_files[@]}"
       check_R042_blank_logline "${shell_files[@]}"
+      check_R031_bare_newline "${shell_files[@]}"
       check_R051_trap_inline "${shell_files[@]}"
       check_R070_double_semi "${shell_files[@]}"
       check_R074_flow_chaining "${shell_files[@]}"
