@@ -33,7 +33,7 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 ## Symmetry with dm-github-org-policy's ORGS_OVERRIDE convention so
 ## the same wrapper runs in tests.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
-readonly MIRROR_ORGS=( 'org-ai-assisted' )
+readonly MIRROR_ORGS=( 'org-ai-assisted' 'output-lies' )
 if [ -n "${ORGS_OVERRIDE:-}" ]; then
    IFS=',' read -ra ORGS <<< "${ORGS_OVERRIDE}"
 else
