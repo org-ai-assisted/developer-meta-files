@@ -182,24 +182,12 @@ else
 fi
 fail_count=0
 
-## Strip terminal control bytes (ESC and other C0 controls, plus DEL) from
-## text that may include attacker-influenced content: a flagged source line
-## or a commit message can carry ANSI escape sequences, and ESC (0x1b) is
-## ASCII so the R-001 check does not catch it. Printable characters, tab
-## (0x09) and newline (0x0a) are kept, so a tab in a filename stays visible.
-sanitize() {
-   ## C0 controls except tab (0x09) and newline (0x0a), plus DEL (0x7f) and
-   ## the C1 range (0x80-0x9f). C1 covers a raw 8-bit CSI (0x9b) and, by
-   ## deleting the 0x9b byte, defangs its UTF-8 form (0xc2 0x9b) too, which a
-   ## terminal in 8-bit mode would otherwise honor as an escape introducer.
-   printf '%s' "${1}" | LC_ALL=C tr --delete '\000-\010\013-\037\177\200-\237'
-}
-
+## Untrusted content (a flagged source line, a commit-message line) is
+## emitted as-is. Terminal-safe rendering is the DISPLAY layer's job, not
+## this dependency-free hook's: pipe the output through 'sanitize-string' /
+## 'stcat' if you need ANSI/control-byte defanging (R-140 display sink).
 note() {
-   local msg
-
-   msg="$(sanitize "${1}")"
-   printf '%s\n' "pre-push-static: ${msg}" >&2
+   printf '%s\n' "pre-push-static: ${1}" >&2
 }
 
 fail() {
@@ -315,7 +303,7 @@ check_ascii_files() {
 }
 
 check_ascii_commit_msg() {
-   local msg hits safe_hits
+   local msg hits
 
    if [ "${staged_mode}" -eq 1 ]; then
       if [ -z "${message_file}" ]; then
@@ -335,8 +323,7 @@ check_ascii_commit_msg() {
    fi
    fail "R-001 ASCII" "commit-range message contains non-ASCII"
    note "offending line(s):"
-   safe_hits="$(sanitize "${hits}")"
-   printf '%s\n' "${safe_hits}" >&2
+   printf '%s\n' "${hits}" >&2
 }
 
 ## --- Packaging-convention check: debian/changelog is genmkfile-owned ---
