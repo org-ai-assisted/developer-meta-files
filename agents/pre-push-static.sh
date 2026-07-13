@@ -139,6 +139,10 @@ if [ "${staged_mode}" -eq 1 ] && [ "${per_commit_mode}" -eq 1 ]; then
    printf '%s\n' 'pre-push-static: --staged and --per-commit are mutually exclusive' >&2
    exit 2
 fi
+if [ "${staged_all}" -eq 1 ] && [ "${staged_mode}" -eq 0 ]; then
+   printf '%s\n' 'pre-push-static: --all only applies with --staged' >&2
+   exit 2
+fi
 
 if [ -n "${message_file}" ] && [ ! -f "${message_file}" ]; then
    printf '%s\n' "pre-push-static: --message-file '${message_file}' not found" >&2
@@ -149,7 +153,10 @@ fi
 ## so a relative --message-file passed from a subdirectory would otherwise
 ## resolve against the wrong directory after the cd.
 if [ -n "${message_file}" ]; then
-   message_file="$(readlink --canonicalize -- "${message_file}")"
+   message_file="$(readlink --canonicalize -- "${message_file}")" || {
+      printf '%s\n' "pre-push-static: could not resolve --message-file path" >&2
+      exit 2
+   }
 fi
 
 ## Nested-brace expansion `${1:-@{u}}` mis-parses: bash terminates
@@ -181,7 +188,11 @@ fail_count=0
 ## ASCII so the R-001 check does not catch it. Printable characters, tab
 ## (0x09) and newline (0x0a) are kept, so a tab in a filename stays visible.
 sanitize() {
-   printf '%s' "${1}" | LC_ALL=C tr --delete '\000-\010\013-\037\177'
+   ## C0 controls except tab (0x09) and newline (0x0a), plus DEL (0x7f) and
+   ## the C1 range (0x80-0x9f). C1 covers a raw 8-bit CSI (0x9b) and, by
+   ## deleting the 0x9b byte, defangs its UTF-8 form (0xc2 0x9b) too, which a
+   ## terminal in 8-bit mode would otherwise honor as an escape introducer.
+   printf '%s' "${1}" | LC_ALL=C tr --delete '\000-\010\013-\037\177\200-\237'
 }
 
 note() {
@@ -530,9 +541,12 @@ check_R010_strict_block() {
       ## subject to the check below. This condition also leaves this script
       ## itself enforced: it keeps all six distinct column-0 directives, so
       ## it never enters the skip despite naming the tokens.
+      ## '^[^#]*' requires the guard call in CODE, not a comment: without it
+      ## a mere '## TODO: add was_executed guard' would exempt a script that
+      ## has no strict-mode block at all -- an unauditable bypass.
       if [ "${present}" -eq 0 ] \
          && grep --quiet --extended-regexp \
-            '\b(was_executed|was_sourced)\b' -- "${script}"; then
+            '^[^#]*\b(was_executed|was_sourced)\b' -- "${script}"; then
          note "R-010 skipped: source-able guarded script '${script}'"
          continue
       fi
@@ -969,12 +983,30 @@ is_text_file() {
 
 run_precommit_hook() {
    local hook
+   local -a flags files
+
    hook="${1}"
    shift
-   if [ "$#" -eq 0 ]; then
+   ## Split the remaining args at '--' into leading hook flags and the
+   ## trailing FILE list. Untrusted filenames MUST go after '--' so a path
+   ## named like an option ('--fix=lf', '--maxkb=99999999') is a positional
+   ## argument, not a flag the argparse-based hook honors (R-062). Without
+   ## this a changed file could flip a fixer into rewrite mode or neuter a
+   ## checker. Callers always pass '<hook> [flags...] -- <files...>'.
+   flags=()
+   while [ "$#" -ge 1 ] && [ "${1}" != "--" ]; do
+      flags+=("${1}")
+      shift
+   done
+   if [ "${1:-}" = "--" ]; then
+      shift
+   fi
+   files=("${@}")
+   if [ "${#files[@]}" -eq 0 ]; then
       return 0
    fi
-   "${hook}" "${@}" || fail "${hook}" "exited non-zero (hook output printed above)"
+   "${hook}" "${flags[@]}" -- "${files[@]}" \
+      || fail "${hook}" "exited non-zero (hook output printed above)"
 }
 
 ## Fixer hooks (end-of-file-fixer, trailing-whitespace-fixer, ...) REWRITE
@@ -994,14 +1026,20 @@ run_precommit_fixer() {
    if [ "$#" -eq 0 ]; then
       return 0
    fi
-   mirror="$(mktemp --directory)"
+   mirror=""
+   mirror="$(mktemp --directory)" || true
+   if [ -z "${mirror}" ] || [ ! -d "${mirror}" ]; then
+      fail "${hook}" "mktemp failed; cannot sandbox the fixer run"
+      return 0
+   fi
    for f in "${@}"; do
       dir="$(dirname -- "${f}")"
       mkdir --parents -- "${mirror}/${dir}"
       cp --no-dereference --preserve=mode -- "${f}" "${mirror}/${f}"
    done
    rc=0
-   ( cd -- "${mirror}" && "${hook}" "${@}" ) || rc=$?
+   ## '--' so a filename that looks like a flag stays a positional arg (R-062).
+   ( cd -- "${mirror}" && "${hook}" -- "${@}" ) || rc=$?
    ## Plain 'rm' on our own mktemp dir: this bootstrap script cannot depend
    ## on safe-rm (same deviation as the command -v use), and R-120 skips it.
    rm --recursive --force -- "${mirror}"
@@ -1061,72 +1099,66 @@ check_precommit_hooks() {
    done
 
    ## filename-blind:
-   run_precommit_hook check-added-large-files                            "${@}"
-   run_precommit_hook check-case-conflict                                "${@}"
-   run_precommit_hook destroyed-symlinks                                 "${@}"
-   run_precommit_hook forbid-new-submodules                              "${@}"
+   ## '--enforce-all' so check-added-large-files inspects the files we pass
+   ## instead of intersecting with 'git diff --staged' (empty at push time,
+   ## which left it dead in default/union/per-commit mode).
+   run_precommit_hook check-added-large-files --enforce-all -- "${@}"
+   run_precommit_hook check-case-conflict     -- "${@}"
+   run_precommit_hook destroyed-symlinks      -- "${@}"
+   run_precommit_hook forbid-new-submodules   -- "${@}"
 
    ## text-only:
-   run_precommit_hook check-merge-conflict                               "${text_files[@]}"
-   run_precommit_hook check-vcs-permalinks                               "${text_files[@]}"
-   run_precommit_hook detect-aws-credentials --allow-missing-credentials "${text_files[@]}"
-   run_precommit_hook detect-private-key                                 "${text_files[@]}"
-   run_precommit_fixer fix-byte-order-marker                             "${text_files[@]}"
-   run_precommit_fixer end-of-file-fixer                                 "${text_files[@]}"
-   run_precommit_fixer trailing-whitespace-fixer                         "${text_files[@]}"
-   run_precommit_hook mixed-line-ending --fix=no                         "${text_files[@]}"
-   run_precommit_hook check-shebang-scripts-are-executable               "${text_files[@]}"
+   run_precommit_hook check-merge-conflict    -- "${text_files[@]}"
+   run_precommit_hook check-vcs-permalinks    -- "${text_files[@]}"
+   run_precommit_hook detect-aws-credentials --allow-missing-credentials -- "${text_files[@]}"
+   run_precommit_hook detect-private-key      -- "${text_files[@]}"
+   run_precommit_fixer fix-byte-order-marker     "${text_files[@]}"
+   run_precommit_fixer end-of-file-fixer         "${text_files[@]}"
+   run_precommit_fixer trailing-whitespace-fixer "${text_files[@]}"
+   run_precommit_hook mixed-line-ending --fix=no -- "${text_files[@]}"
+   run_precommit_hook check-shebang-scripts-are-executable -- "${text_files[@]}"
 
    ## text AND executable:
-   run_precommit_hook check-executables-have-shebangs                    "${exec_text_files[@]}"
+   run_precommit_hook check-executables-have-shebangs -- "${exec_text_files[@]}"
 
    ## symlinks:
-   run_precommit_hook check-symlinks                                     "${symlink_files[@]}"
+   run_precommit_hook check-symlinks -- "${symlink_files[@]}"
 
    ## type by extension:
-   run_precommit_hook check-yaml                "${yaml_files[@]}"
-   run_precommit_hook check-json                "${json_files[@]}"
-   run_precommit_hook check-toml                "${toml_files[@]}"
-   run_precommit_hook check-xml                 "${xml_files[@]}"
-   run_precommit_hook check-ast                 "${python_files[@]}"
-   run_precommit_hook check-builtin-literals    "${python_files[@]}"
-   run_precommit_hook debug-statement-hook      "${python_files[@]}"
+   run_precommit_hook check-yaml             -- "${yaml_files[@]}"
+   run_precommit_hook check-json             -- "${json_files[@]}"
+   run_precommit_hook check-toml             -- "${toml_files[@]}"
+   run_precommit_hook check-xml              -- "${xml_files[@]}"
+   run_precommit_hook check-ast              -- "${python_files[@]}"
+   run_precommit_hook check-builtin-literals -- "${python_files[@]}"
+   run_precommit_hook debug-statement-hook   -- "${python_files[@]}"
    run_precommit_fixer double-quote-string-fixer "${python_files[@]}"
    run_precommit_fixer pretty-format-json        "${json_files[@]}"
    run_precommit_fixer requirements-txt-fixer    "${req_files[@]}"
 }
 
-## Staged mode reads working-tree copies, not staged blobs. Warn (do not
-## fail) for any checked path whose working tree differs from the index,
-## so a "passed" result is not mistaken for a check of the exact blob the
-## commit will record. Skipped under --all (there the working tree IS the
-## set being recorded).
-warn_staged_worktree_skew() {
-   local file rc
+## Warn (do not fail) when a checked path's working-tree content differs
+## from what the current mode actually records, so a "passed" result is not
+## mistaken for a check of the exact bytes. 'ref' is the diff target: empty
+## for STAGED mode (working tree vs the index), 'HEAD' for UNION/push mode
+## (working tree vs the pushed commit). 'hint' is the mode-specific advice.
+## Both modes would otherwise pass silently on content the check never saw.
+warn_worktree_skew() {
+   local mode ref hint file rc
 
+   mode="${1}"
+   ref="${2}"
+   hint="${3}"
+   shift 3
    for file in "${@}"; do
       rc=0
-      git diff --quiet -- "${file}" || rc=$?
-      if [ "${rc}" -ne 0 ]; then
-         note "staged mode: '${file}' has unstaged changes; checks ran against the working tree, not the staged blob (re-stage to verify the exact committed content)"
+      if [ -n "${ref}" ]; then
+         git diff --quiet "${ref}" -- "${file}" 2>/dev/null || rc=$?
+      else
+         git diff --quiet -- "${file}" 2>/dev/null || rc=$?
       fi
-   done
-}
-
-## Union (default push) mode reads WORKING-TREE content, but the range
-## base...HEAD names the COMMITS being pushed. If the working tree differs
-## from HEAD for a changed file, the checks did not see the exact bytes
-## being pushed: a violation fixed only in the working tree would pass, and
-## a clean commit could fail on a dirty edit. Warn loudly rather than pass
-## silently; --per-commit checks each commit's content exactly.
-warn_push_worktree_skew() {
-   local file rc
-
-   for file in "${@}"; do
-      rc=0
-      git diff --quiet HEAD -- "${file}" 2>/dev/null || rc=$?
       if [ "${rc}" -ne 0 ]; then
-         note "push mode: '${file}' differs between the working tree and HEAD; checks ran against the working tree, not the pushed commit (use --per-commit to check commit content exactly)"
+         note "${mode}: '${file}' ${hint}"
       fi
    done
 }
@@ -1183,10 +1215,14 @@ run_file_checks() {
 
    if [ "${#file_list[@]}" -gt 0 ]; then
       if [ "${staged_mode}" -eq 1 ] && [ "${staged_all}" -eq 0 ]; then
-         warn_staged_worktree_skew "${file_list[@]}"
+         warn_worktree_skew "staged mode" "" \
+            "has unstaged changes; checks ran against the working tree, not the staged blob (re-stage to verify the exact committed content)" \
+            "${file_list[@]}"
       fi
       if [ "${staged_mode}" -eq 0 ] && [ "${per_commit_mode}" -eq 0 ]; then
-         warn_push_worktree_skew "${file_list[@]}"
+         warn_worktree_skew "push mode" "HEAD" \
+            "differs between the working tree and HEAD; checks ran against the working tree, not the pushed commit (use --per-commit to check commit content exactly)" \
+            "${file_list[@]}"
       fi
       check_ascii_files "${file_list[@]}"
       check_precommit_hooks "${file_list[@]}"
