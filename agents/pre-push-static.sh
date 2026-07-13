@@ -934,6 +934,39 @@ run_precommit_hook() {
    "${hook}" "${@}" || fail "${hook}" "exited non-zero (hook output printed above)"
 }
 
+## Fixer hooks (end-of-file-fixer, trailing-whitespace-fixer, ...) REWRITE
+## files in place. Run each against throwaway COPIES so the working tree
+## (default mode) and the detached --per-commit checkout are never mutated:
+## an in-place fix would silently edit the user's tree, and in --per-commit
+## mode it dirties the checkout so the next 'git checkout <sha>' aborts and
+## leaves a wedged detached HEAD. The non-zero exit (the hook's "would
+## modify" signal) still fails the gate. Only pure file-content fixers use
+## this; the git-aware hooks (check-added-large-files, ...) must see the
+## real repo and stay on run_precommit_hook.
+run_precommit_fixer() {
+   local hook rc mirror f dir
+
+   hook="${1}"
+   shift
+   if [ "$#" -eq 0 ]; then
+      return 0
+   fi
+   mirror="$(mktemp --directory)"
+   for f in "${@}"; do
+      dir="$(dirname -- "${f}")"
+      mkdir --parents -- "${mirror}/${dir}"
+      cp --no-dereference --preserve=mode -- "${f}" "${mirror}/${f}"
+   done
+   rc=0
+   ( cd -- "${mirror}" && "${hook}" "${@}" ) || rc=$?
+   ## Plain 'rm' on our own mktemp dir: this bootstrap script cannot depend
+   ## on safe-rm (same deviation as the command -v use), and R-120 skips it.
+   rm --recursive --force -- "${mirror}"
+   if [ "${rc}" -ne 0 ]; then
+      fail "${hook}" "would modify file(s) -- run '${hook}' locally and commit the result"
+   fi
+}
+
 check_precommit_hooks() {
    if ! command -v check-yaml >/dev/null 2>&1; then
       note "pre-commit-hooks not on PATH; skipping (apt-get install pre-commit-hooks)"
@@ -995,9 +1028,9 @@ check_precommit_hooks() {
    run_precommit_hook check-vcs-permalinks                               "${text_files[@]}"
    run_precommit_hook detect-aws-credentials --allow-missing-credentials "${text_files[@]}"
    run_precommit_hook detect-private-key                                 "${text_files[@]}"
-   run_precommit_hook fix-byte-order-marker                              "${text_files[@]}"
-   run_precommit_hook end-of-file-fixer                                  "${text_files[@]}"
-   run_precommit_hook trailing-whitespace-fixer                          "${text_files[@]}"
+   run_precommit_fixer fix-byte-order-marker                             "${text_files[@]}"
+   run_precommit_fixer end-of-file-fixer                                 "${text_files[@]}"
+   run_precommit_fixer trailing-whitespace-fixer                         "${text_files[@]}"
    run_precommit_hook mixed-line-ending --fix=no                         "${text_files[@]}"
    run_precommit_hook check-shebang-scripts-are-executable               "${text_files[@]}"
 
@@ -1015,9 +1048,9 @@ check_precommit_hooks() {
    run_precommit_hook check-ast                 "${python_files[@]}"
    run_precommit_hook check-builtin-literals    "${python_files[@]}"
    run_precommit_hook debug-statement-hook      "${python_files[@]}"
-   run_precommit_hook double-quote-string-fixer "${python_files[@]}"
-   run_precommit_hook pretty-format-json        "${json_files[@]}"
-   run_precommit_hook requirements-txt-fixer    "${req_files[@]}"
+   run_precommit_fixer double-quote-string-fixer "${python_files[@]}"
+   run_precommit_fixer pretty-format-json        "${json_files[@]}"
+   run_precommit_fixer requirements-txt-fixer    "${req_files[@]}"
 }
 
 ## Staged mode reads working-tree copies, not staged blobs. Warn (do not
@@ -1033,6 +1066,24 @@ warn_staged_worktree_skew() {
       git diff --quiet -- "${file}" || rc=$?
       if [ "${rc}" -ne 0 ]; then
          note "staged mode: '${file}' has unstaged changes; checks ran against the working tree, not the staged blob (re-stage to verify the exact committed content)"
+      fi
+   done
+}
+
+## Union (default push) mode reads WORKING-TREE content, but the range
+## base...HEAD names the COMMITS being pushed. If the working tree differs
+## from HEAD for a changed file, the checks did not see the exact bytes
+## being pushed: a violation fixed only in the working tree would pass, and
+## a clean commit could fail on a dirty edit. Warn loudly rather than pass
+## silently; --per-commit checks each commit's content exactly.
+warn_push_worktree_skew() {
+   local file rc
+
+   for file in "${@}"; do
+      rc=0
+      git diff --quiet HEAD -- "${file}" 2>/dev/null || rc=$?
+      if [ "${rc}" -ne 0 ]; then
+         note "push mode: '${file}' differs between the working tree and HEAD; checks ran against the working tree, not the pushed commit (use --per-commit to check commit content exactly)"
       fi
    done
 }
@@ -1090,6 +1141,9 @@ run_file_checks() {
    if [ "${#file_list[@]}" -gt 0 ]; then
       if [ "${staged_mode}" -eq 1 ] && [ "${staged_all}" -eq 0 ]; then
          warn_staged_worktree_skew "${file_list[@]}"
+      fi
+      if [ "${staged_mode}" -eq 0 ] && [ "${per_commit_mode}" -eq 0 ]; then
+         warn_push_worktree_skew "${file_list[@]}"
       fi
       check_ascii_files "${file_list[@]}"
       check_precommit_hooks "${file_list[@]}"
