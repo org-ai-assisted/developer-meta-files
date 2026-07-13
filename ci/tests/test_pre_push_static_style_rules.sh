@@ -202,8 +202,14 @@ expect_rule "R-090" "## uses command${sp}-v not has"             "absent"
 ## variable operand is SPARED. (Body assembled below via ${sp} so this
 ## comment carries no literal invocation.)
 expect_rule "R-102" "bash${sp}ci/dry-run-start"                  "present"
+expect_rule "R-102" "sh${sp}/usr/local/bin/foo"                  "present"
 expect_rule "R-102" "bash${sp}--norc script"                     "absent"
 expect_rule "R-102" "bash${sp}\${script}"                        "absent"
+## A short flag ending in 'sh' and a .sh script run AS the command (with a
+## path argument) are NOT interpreter prepends; both matched the old '\b'
+## anchor ('\b' also fires after '-' and '.'), so pin them SPARED.
+expect_rule "R-102" "du${sp}-sh${sp}/home/user/.cache"           "absent"
+expect_rule "R-102" "run${sp}wrapper.sh${sp}/etc/config"         "absent"
 
 ## R-120: a separator-glued 'rm', and a real 'rm' next to a safe-rm on one
 ## line, are both FLAGGED (the invert no longer spares the whole line).

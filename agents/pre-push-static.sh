@@ -748,10 +748,18 @@ check_R102_interpreter_prepend() {
    ##      script', 'foo.sh as a subprocess') which has no slash. The previous
    ##      regex 2 required a literal leading '.', so a bare 'bash ci/foo'
    ##      slipped; a slash-anywhere test catches it without matching prose.
+   ##
+   ## The interpreter word must sit at line start or after a genuine command
+   ## separator/space -- NOT a plain '\b' word boundary. '\b' also matches
+   ## after '-' and '.', so a short flag ending in sh ('du -sh /path') and a
+   ## script run AS the command with a path argument ('wrapper.sh /etc/x')
+   ## both false-positived as an 'sh' prepend. The explicit prefix class
+   ## keeps every real form: line start, 'cd x && bash y', '$(bash y)',
+   ## 'true; bash y', 'timeout 5 bash y'.
    mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    hits="$(grep --with-filename --line-number --extended-regexp \
-      '\b(bash|sh)[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bsh|bash)\b|\b(bash|sh)[[:space:]]+[^-$"[:space:]][A-Za-z0-9._-]*/[A-Za-z0-9._/-]*(\b|$)' \
+      '(^|[[:space:]([;&|])(bash|sh)[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bsh|bash)\b|(^|[[:space:]([;&|])(bash|sh)[[:space:]]+[^-$"[:space:]][A-Za-z0-9._-]*/[A-Za-z0-9._/-]*(\b|$)' \
       -- "${fs[@]}" 2>/dev/null \
       | grep --invert-match --extended-regexp \
          '\b(bash|sh)[[:space:]]+-[ceilnsxv]+(\b|[[:space:]])' \
