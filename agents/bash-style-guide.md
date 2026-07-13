@@ -304,11 +304,25 @@ adding `--` to a new tool invocation.
 
 ## Case statements
 
-**R-070: `;;` on its own line, never trailing the last
-statement.**
+**R-070: A case arm is fully multi-line: the pattern label, each
+statement, and the closing `;;` each on their own line.** No compact
+one-liner arms, spaced or jammed (`amd64) arch="x86_64" ;;` and
+`amd64) arch="x86_64";;` are both wrong).
 
-**R-071: One statement per line in a case arm.** Multi-statement
-single-line arms get split.
+    amd64)
+       arch="x86_64"
+       ;;
+    "")
+       arch=""
+       ;;
+
+The `;;`-on-its-own-line half is GATE-ENFORCED: any `;;` with other
+content on the line fails the static gate. The one-element-per-line
+half (a label or statement must not share a line) is manual review;
+a bare `)` is too ambiguous to grep (`$(...)`, `func()`, arithmetic,
+globs), but a compact arm trips the `;;` check anyway.
+
+**R-071: (folded into R-070.)** One element per line in a case arm.
 
 **R-072: Reserved-name and metachar-looking literals are quoted.**
 `'.git'` not `.git`, `'-'*` not `-*`.
@@ -338,10 +352,10 @@ own line. Bash's syntactic `;` (case-arm `;;`, C-style for-loop
 glue two arbitrary commands onto one line is prohibited.
 
 The control-flow keywords `break`, `continue` and `return` are the
-commonest offenders (loop bodies, one-line `if`s, `case` arms,
-`--) shift; break ;;` argument parsers). A `;`-chained
+commonest offenders (loop bodies, one-line `if`s). A `;`-chained
 `break`/`continue`/`return` is GATE-ENFORCED -- it fails the static
-gate -- so always put the keyword on its own line.
+gate -- so always put the keyword on its own line. (A case arm cannot
+produce this form under R-070, which already forbids the one-liner.)
 
 Bad:
 
@@ -349,7 +363,6 @@ Bad:
     foo --quiet; bar --verbose
     if match; then hit=1; continue; fi
     [ -e "${x}" ] && { found="${x}"; break; }
-    --) shift; break ;;
 
 Good:
 

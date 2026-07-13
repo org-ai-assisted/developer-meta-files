@@ -495,7 +495,9 @@ emit_hits() {
 
 is_self_referential() {
    case "${1}" in
-      agents/pre-push-static.sh) return 0 ;;
+      agents/pre-push-static.sh)
+         return 0
+         ;;
    esac
    return 1
 }
@@ -655,12 +657,11 @@ check_R051_trap_inline() {
 check_R070_double_semi() {
    local hits
 
-   ## ';;' JAMMED onto a statement with no separating space ('bar;;'). The
-   ## spaced single-line arm ('bar ;;') is a deliberate, pervasive codebase
-   ## style (simple case arms across github-org-lib.bsh, get_os.sh, the test
-   ## suite, this file), so it is intentionally NOT flagged -- only the
-   ## no-space jam is.
-   hits="$(grep --with-filename --line-number --extended-regexp '[^[:space:]];;[[:space:]]*$' -- "${@}" 2>/dev/null || true)"
+   ## R-070: ';;' must be on its own line (optional indent + ';;' only).
+   ## Flag any ';;' at end-of-line with other non-whitespace before it --
+   ## spaced ('bar ;;') OR jammed ('bar;;'). A compact one-line case arm is
+   ## thus always caught; the arm must be written multi-line.
+   hits="$(grep --with-filename --line-number --extended-regexp '[^[:space:]][[:space:]]*;;[[:space:]]*$' -- "${@}" 2>/dev/null || true)"
    emit_hits "R-070 ';;' on own line" "${hits}"
 }
 
@@ -922,7 +923,9 @@ check_R080_shellcheck_source_path() {
 
 is_yaml_file() {
    case "${1}" in
-      *.yml|*.yaml) return 0 ;;
+      *.yml|*.yaml)
+         return 0
+         ;;
    esac
    return 1
 }
@@ -1084,11 +1087,21 @@ check_precommit_hooks() {
          fi
       fi
       case "${f}" in
-         *.yml|*.yaml) yaml_files+=("${f}") ;;
-         *.json)       json_files+=("${f}") ;;
-         *.toml)       toml_files+=("${f}") ;;
-         *.xml)        xml_files+=("${f}") ;;
-         *.py)         python_files+=("${f}") ;;
+         *.yml|*.yaml)
+            yaml_files+=("${f}")
+            ;;
+         *.json)
+            json_files+=("${f}")
+            ;;
+         *.toml)
+            toml_files+=("${f}")
+            ;;
+         *.xml)
+            xml_files+=("${f}")
+            ;;
+         *.py)
+            python_files+=("${f}")
+            ;;
       esac
       case "${f}" in
          requirements*.txt|constraints*.txt \

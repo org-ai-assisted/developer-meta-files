@@ -178,9 +178,9 @@ expect_rule "R-034" "if echo hi${sc} then"                      "present"
 expect_rule "R-034" "printf ${sq}%s${nl}${sq} ${dq}a echo b${dq}" "absent"
 expect_rule "R-034" "has echo"                                  "absent"
 
-## R-070: the spaced single-line arm ('esac ;;') is a deliberate, pervasive
-## codebase style and must be SPARED; only the no-space jam is flagged.
-expect_rule "R-070" "esac${sp}${dsemi}"                          "absent"
+## R-070: ';;' must be on its own line. Both the jammed ('esac;;') and the
+## spaced ('esac ;;') compact forms are FLAGGED; only a bare ';;' is spared.
+expect_rule "R-070" "esac${sp}${dsemi}"                          "present"
 
 ## R-042: a DOUBLE-quoted blank-separator format is the same violation.
 expect_rule "R-042" "printf ${dq}%s${nl}${dq} ${dq}${dq}"        "present"
