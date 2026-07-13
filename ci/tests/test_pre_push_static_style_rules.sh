@@ -223,6 +223,13 @@ sixdistinct=$'set -o errexit\nset -o nounset\nset -o pipefail\nset -o errtrace\n
 expect_rule "R-010" "${sixsame}"                                 "present"
 expect_rule "R-010" "${sixdistinct}"                             "absent"
 
+## R-080: a 'shellcheck source=' path must be relative, anchored with ./ or
+## ../ (start with '.'). An absolute path OR a bare name (no ./) is FLAGGED.
+expect_rule "R-080" "# shellcheck source=get_colors.sh"          "present"
+expect_rule "R-080" "# shellcheck source=/usr/lib/foo.sh"        "present"
+expect_rule "R-080" "# shellcheck source=./get_colors.sh"        "absent"
+expect_rule "R-080" "# shellcheck source=../../foo.sh"           "absent"
+
 if [ "${failures}" -ne 0 ]; then
    printf '%s\n' "test_pre_push_static_style_rules: ${failures} assertion(s) FAILED." >&2
    exit 1

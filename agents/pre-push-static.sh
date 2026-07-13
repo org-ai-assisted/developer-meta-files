@@ -900,12 +900,16 @@ check_R103_exec() {
 check_R080_shellcheck_source_path() {
    local hits
 
-   ## R-080: 'source=' must point at a relative source-tree path.
-   ## /dev/null is also covered by R-081 but rejected here too.
+   ## R-080: a 'shellcheck source=' path must be a RELATIVE source-tree path
+   ## anchored with './' or '../', i.e. it must start with '.'. This flags an
+   ## absolute path ('source=/usr/...', and /dev/null), AND a bare relative
+   ## name ('source=get_colors.sh' instead of './get_colors.sh') -- shellcheck
+   ## resolves the bare form the same, but it breaks the codebase convention
+   ## that anchors a same-directory sibling as './<file>'.
    hits="$(grep --with-filename --line-number --extended-regexp \
-      '^[[:space:]]*#[[:space:]]*shellcheck[[:space:]]+source=(/[A-Za-z]|/dev/null\b)' \
+      '^[[:space:]]*#[[:space:]]*shellcheck[[:space:]]+source=[^.]' \
       -- "${@}" 2>/dev/null || true)"
-   emit_hits "R-080 shellcheck source= must be relative" "${hits}"
+   emit_hits "R-080 shellcheck source= must be relative (start with ./ or ../)" "${hits}"
 }
 
 is_yaml_file() {

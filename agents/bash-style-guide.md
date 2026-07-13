@@ -419,6 +419,13 @@ Forbidden forms:
   not portable across machines / CI.
 - `# shellcheck source=/dev/null`: silences cross-file checks
   entirely (also covered by R-081).
+- `# shellcheck source=<bare-name>` with no `./` or `../` prefix
+  (e.g. `source=get_colors.sh`): shellcheck resolves it the same, but
+  the convention anchors a same-directory sibling as `./get_colors.sh`.
+
+GATE-ENFORCED: the `source=` path must start with `.` (a `./` or `../`
+relative source-tree path); an absolute or bare-name path fails the
+static gate.
 - Omitting the directive when shellcheck can resolve the path on
   its own: works for installed-path sources but doesn't track the
   source-tree copy; mandate the directive uniformly for predict-
