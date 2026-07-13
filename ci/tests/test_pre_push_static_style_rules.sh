@@ -8,8 +8,11 @@
 ## Functional test for the pre-push-static single-grep style checks: assert that
 ## R-070 (';;' trailing a statement), R-074 (';'-chained break/continue/return),
 ## R-030/R-031 (a newline printf missing its explicit "" data argument), R-042
-## (a blank-line separator), and R-034 (echo run as a command) actually FLAG a
-## violating shell file and SPARE a compliant one. It drives the
+## (a blank-line separator), R-034 (echo run as a command), R-011 (set +e),
+## R-051 (a quoted inline trap), R-090 (command -v), R-102 (an extensionless
+## 'bash script' operand), R-120 (a separator-glued/adjacent rm), and R-010
+## (distinct strict-mode directives) actually FLAG a violating shell file and
+## SPARE a compliant one. It drives the
 ## real, shipped agents/pre-push-static.sh as a subprocess against a throwaway git
 ## repo, so it exercises the check end to end (regex + file selection + reporting),
 ## not a private copy of the regex.
@@ -118,6 +121,11 @@ sq="'"
 dq='"'
 ## Literal backslash-n (two chars), single-quoted so it is not interpreted.
 nl='\n'
+## A literal space and 'rm' as a value, so assertion bodies needing a real
+## space-before-'rm' (R-120) or 'command -v' (R-090) do not embed a token
+## the gate would flag in THIS tracked file.
+sp=' '
+del='rm'
 
 ## R-074: a ';'-chained break / continue / return must be FLAGGED; the same
 ## keyword on its own line must be SPARED.
@@ -164,8 +172,46 @@ expect_rule "R-034" "if echo hi${sc} then"                      "present"
 expect_rule "R-034" "printf ${sq}%s${nl}${sq} ${dq}a echo b${dq}" "absent"
 expect_rule "R-034" "has echo"                                  "absent"
 
+## R-070: the spaced single-line arm ('esac ;;') is a deliberate, pervasive
+## codebase style and must be SPARED; only the no-space jam is flagged.
+expect_rule "R-070" "esac${sp}${dsemi}"                          "absent"
+
+## R-042: a DOUBLE-quoted blank-separator format is the same violation.
+expect_rule "R-042" "printf ${dq}%s${nl}${dq} ${dq}${dq}"        "present"
+
+## R-011: both the long toggle and the short 'set +e' must be FLAGGED.
+expect_rule "R-011" "set +o errexit"                             "present"
+expect_rule "R-011" "set +e"                                     "present"
+
+## R-051: a double-quoted inline trap command is FLAGGED; clearing a trap
+## with an empty string is SPARED.
+expect_rule "R-051" "trap ${dq}${del} -f x${dq} EXIT"            "present"
+expect_rule "R-051" "trap ${dq}${dq} EXIT"                       "absent"
+
+## R-090: 'command -v' in code is FLAGGED; in a comment it is SPARED.
+expect_rule "R-090" "if ! command${sp}-v foo"                    "present"
+expect_rule "R-090" "## uses command${sp}-v not has"             "absent"
+
+## R-102: an extensionless but slashed path operand is FLAGGED; a flag or a
+## variable operand is SPARED. (Body assembled below via ${sp} so this
+## comment carries no literal invocation.)
+expect_rule "R-102" "bash${sp}ci/dry-run-start"                  "present"
+expect_rule "R-102" "bash${sp}--norc script"                     "absent"
+
+## R-120: a separator-glued 'rm', and a real 'rm' next to a safe-rm on one
+## line, are both FLAGGED (the invert no longer spares the whole line).
+expect_rule "R-120" "true${sc}${del} -rf x"                      "present"
+expect_rule "R-120" "safe-${del} -- a${sc}${sp}${del} -rf b"     "present"
+
+## R-010: six COPIES of one directive must NOT satisfy the block (DISTINCT
+## directives are counted); the six distinct directives pass.
+sixsame=$'set -o errexit\nset -o errexit\nset -o errexit\nset -o errexit\nset -o errexit\nset -o errexit'
+sixdistinct=$'set -o errexit\nset -o nounset\nset -o pipefail\nset -o errtrace\nshopt -s inherit_errexit\nshopt -s shift_verbose'
+expect_rule "R-010" "${sixsame}"                                 "present"
+expect_rule "R-010" "${sixdistinct}"                             "absent"
+
 if [ "${failures}" -ne 0 ]; then
    printf '%s\n' "test_pre_push_static_style_rules: ${failures} assertion(s) FAILED." >&2
    exit 1
 fi
-printf '%s\n' "test_pre_push_static_style_rules: OK -- R-070, R-074, R-030/R-031, R-042 and R-034 enforced as expected."
+printf '%s\n' "test_pre_push_static_style_rules: OK -- R-070, R-074, R-030/R-031, R-042, R-034, R-011, R-051, R-090, R-102, R-120 and R-010 enforced as expected."

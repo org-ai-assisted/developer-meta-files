@@ -706,17 +706,18 @@ check_R102_interpreter_prepend() {
    ##
    ## Two regexes:
    ##   1. 'bash foo.sh' / 'sh foo.bsh' / etc - explicit extension.
-   ##   2. 'bash foo' / 'sh foo' where the operand STARTS with a path
-   ##      character ([A-Za-z0-9./_]) so an extensionless script name
-   ##      ('bash ci/dry-run-start', 'bash ./build', 'bash /usr/bin/x')
-   ##      matches, while a flag ('bash --norc') or a variable
-   ##      ('bash "${x}"', 'bash ${x}') does not. The invert below then
-   ##      drops the '-c'/'-e'/... short-flag forms. The previous regex 2
-   ##      required a literal leading '.', so a bare 'bash ci/foo' slipped.
+   ##   2. 'bash foo' / 'sh foo' where the operand is a PATH: it starts with
+   ##      a path character (not '-', so a flag is skipped; not '$'/'"', so a
+   ##      variable is skipped) and CONTAINS a '/'. Requiring a slash is what
+   ##      separates a real extensionless invocation ('bash ci/dry-run-start',
+   ##      'bash ./build', 'bash /usr/bin/x') from English prose ('a bash
+   ##      script', 'foo.sh as a subprocess') which has no slash. The previous
+   ##      regex 2 required a literal leading '.', so a bare 'bash ci/foo'
+   ##      slipped; a slash-anywhere test catches it without matching prose.
    mapfile -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    hits="$(grep --with-filename --line-number --extended-regexp \
-      '\b(bash|sh)[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bsh|bash)\b|\b(bash|sh)[[:space:]]+[A-Za-z0-9./_][A-Za-z0-9_./-]*(\b|$)' \
+      '\b(bash|sh)[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bsh|bash)\b|\b(bash|sh)[[:space:]]+[^-$"[:space:]][A-Za-z0-9._-]*/[A-Za-z0-9._/-]*(\b|$)' \
       -- "${fs[@]}" 2>/dev/null \
       | grep --invert-match --extended-regexp \
          '\b(bash|sh)[[:space:]]+-[ceilnsxv]+(\b|[[:space:]])' \

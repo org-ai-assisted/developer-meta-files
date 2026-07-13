@@ -55,8 +55,9 @@ policy.
     shopt -s shift_verbose
 
 Why: `errexit` aborts on first uncaught failure. `nounset` catches
-unset-variable typos. `pipefail` makes the exit code of a pipeline
-the first non-zero (so failures earlier in the pipe propagate).
+unset-variable typos. `pipefail` makes a pipeline's exit code the
+last (rightmost) non-zero status, so a failure anywhere in the pipe
+is not masked by a later command's success.
 `errtrace` makes ERR traps inherit into shell functions.
 `inherit_errexit` makes `$()` subshells respect errexit (bash >= 4.4).
 `shift_verbose` logs when `shift` runs past argv end.
@@ -96,8 +97,11 @@ Good:
 
 Why: `(( expr ))` returns rc=1 when `expr` evaluates to 0 (POSIX
 arithmetic-expression semantics), which `errexit` interprets as a
-command failure. `var=$((expr))` is an assignment - rc is always
-the assignment's rc (0), not the computed value.
+command failure. `var=$((expr))` is an assignment: for a well-formed
+expression its rc is the assignment's (0), not the computed value. A
+genuine evaluation error (division by zero, a malformed expression)
+still fails and, under `errexit`, still aborts - the fix is about the
+value-zero case, not a claim that arithmetic can never fail.
 
 
 ## Variables
