@@ -144,6 +144,13 @@ if [ -n "${message_file}" ] && [ ! -f "${message_file}" ]; then
    printf '%s\n' "pre-push-static: --message-file '${message_file}' not found" >&2
    exit 2
 fi
+## Canonicalize to an absolute path now, at the invocation directory:
+## main() cd's to the repo root before any cat/head reads the message file,
+## so a relative --message-file passed from a subdirectory would otherwise
+## resolve against the wrong directory after the cd.
+if [ -n "${message_file}" ]; then
+   message_file="$(readlink --canonicalize -- "${message_file}")"
+fi
 
 ## Nested-brace expansion `${1:-@{u}}` mis-parses: bash terminates
 ## the outer expansion at the first `}`, leaving a literal `}`
@@ -168,8 +175,20 @@ else
 fi
 fail_count=0
 
+## Strip terminal control bytes (ESC and other C0 controls, plus DEL) from
+## text that may include attacker-influenced content: a flagged source line
+## or a commit message can carry ANSI escape sequences, and ESC (0x1b) is
+## ASCII so the R-001 check does not catch it. Printable characters, tab
+## (0x09) and newline (0x0a) are kept, so a tab in a filename stays visible.
+sanitize() {
+   printf '%s' "${1}" | LC_ALL=C tr --delete '\000-\010\013-\037\177'
+}
+
 note() {
-   printf '%s\n' "pre-push-static: ${1}" >&2
+   local msg
+
+   msg="$(sanitize "${1}")"
+   printf '%s\n' "pre-push-static: ${msg}" >&2
 }
 
 fail() {
@@ -285,7 +304,7 @@ check_ascii_files() {
 }
 
 check_ascii_commit_msg() {
-   local msg hits
+   local msg hits safe_hits
 
    if [ "${staged_mode}" -eq 1 ]; then
       if [ -z "${message_file}" ]; then
@@ -305,7 +324,8 @@ check_ascii_commit_msg() {
    fi
    fail "R-001 ASCII" "commit-range message contains non-ASCII"
    note "offending line(s):"
-   printf '%s\n' "${hits}" >&2
+   safe_hits="$(sanitize "${hits}")"
+   printf '%s\n' "${safe_hits}" >&2
 }
 
 ## --- Packaging-convention check: debian/changelog is genmkfile-owned ---
@@ -407,13 +427,20 @@ check_changelog_no_manual_staged() {
    local -a changed
 
    changed=()
-   mapfile -t changed < <(list_changed_files)
+   ## list_changed_files emits NUL-terminated records; read them NUL-safely
+   ## (mapfile -d ''). A plain 'mapfile -t' collapses the whole NUL stream
+   ## into one mangled element, so with more than one staged file the
+   ## changelog paths are never recognized and a hand edit slips the gate.
+   mapfile -d '' -t changed < <(list_changed_files)
    if [ "${#changed[@]}" -eq 0 ]; then
       return 0
    fi
    touches_changelog=0
    only_family=1
    for file in "${changed[@]}"; do
+      if [ -z "${file}" ]; then
+         continue
+      fi
       if is_changelog_path "${file}"; then
          touches_changelog=1
       fi
@@ -543,11 +570,15 @@ check_R011_errexit_toggle() {
 ## passed in; needed for R-042/R-051/R-081/R-102 whose grep
 ## needles appear literally in this script's own doc comments
 ## and/or code lines.
+## Emits the kept paths NUL-terminated (not newline), so a path containing
+## a newline survives the round trip; callers read with 'mapfile -d ""'.
+## A newline-delimited re-emit here would undo run_file_checks's NUL-safe
+## read and silently split/drop such a path from the self-filtered checks.
 filter_self() {
    local f
    for f in "${@}"; do
       is_self_referential "${f}" && continue
-      printf '%s\n' "${f}"
+      printf '%s\0' "${f}"
    done
 }
 
@@ -555,7 +586,7 @@ check_R042_blank_logline() {
    local hits
    local -a fs
 
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    ## Bad pattern: a printf or log call that produces a blank line. The
    ## format string may be single- OR double-quoted ('printf "%s\n" ""').
@@ -572,7 +603,7 @@ check_R031_bare_newline() {
    local hits
    local -a fs
 
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    ## Bad pattern: a printf that emits a newline without passing the
    ## data as an explicit argument -- 'printf \n' (newline baked into
@@ -595,7 +626,7 @@ check_R051_trap_inline() {
    local hits
    local -a fs
 
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    ## Bad pattern: trap followed by a single- OR double-quoted inline
    ## command string ('trap "rm -f ${t}" EXIT' as well as the single-quoted
@@ -628,9 +659,12 @@ check_R074_flow_chaining() {
    ## keywords break/continue/return are the low-false-positive subset: a ';'
    ## that FOLLOWS a statement (a non-whitespace char earlier on the line, allowing
    ## spaces before the ';' so 'foo ; break' is caught too) and is FOLLOWED by one
-   ## of them at a word boundary is almost always the chaining R-074 forbids, never
-   ## bash's syntactic ';' (';;', a C-style for-loop, or the keyword on its own
-   ## line). filter_self keeps this script's own regex/examples from self-matching.
+   ## of them is almost always the chaining R-074 forbids, never bash's syntactic
+   ## ';' (';;', a C-style for-loop, or the keyword on its own line). The trailing
+   ## group '([[:space:];&|]|$)' enforces a real word boundary after the keyword,
+   ## so a mere prefix ('x=1; return_value=1', '; continue_calls') does NOT match;
+   ## the leading '^[^#]*' excludes '#'-comment lines. filter_self keeps this
+   ## script's own regex/examples from self-matching.
    ##
    ## 'exit' is deliberately NOT in the set. Unlike break/continue/return it
    ## is a frequent statement separator INSIDE inline awk/sed program strings
@@ -639,10 +673,10 @@ check_R074_flow_chaining() {
    ## guard idiom '|| { printf ... >&2; exit 1; }' used by self-contained
    ## bootstrap scripts. So it is not the low-false-positive subset a
    ## single-grep Tier-1 rule needs.
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    hits="$(grep --with-filename --line-number --extended-regexp \
-      '[^[:space:]][[:space:]]*;[[:space:]]*(break|continue|return)([[:space:];]*|$)' -- "${fs[@]}" 2>/dev/null || true)"
+      '^[^#]*[^#[:space:]][[:space:]]*;[[:space:]]*(break|continue|return)([[:space:];&|]|$)' -- "${fs[@]}" 2>/dev/null || true)"
    emit_hits "R-074 ';'-chained break/continue/return" "${hits}"
 }
 
@@ -650,7 +684,7 @@ check_R081_source_devnull() {
    local hits
    local -a fs
 
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    hits="$(grep --with-filename --line-number 'shellcheck source=/dev/null' -- "${fs[@]}" 2>/dev/null || true)"
    emit_hits "R-081 source=/dev/null" "${hits}"
@@ -714,7 +748,7 @@ check_R102_interpreter_prepend() {
    ##      script', 'foo.sh as a subprocess') which has no slash. The previous
    ##      regex 2 required a literal leading '.', so a bare 'bash ci/foo'
    ##      slipped; a slash-anywhere test catches it without matching prose.
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    hits="$(grep --with-filename --line-number --extended-regexp \
       '\b(bash|sh)[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bsh|bash)\b|\b(bash|sh)[[:space:]]+[^-$"[:space:]][A-Za-z0-9._-]*/[A-Za-z0-9._/-]*(\b|$)' \
@@ -784,7 +818,7 @@ check_R034_echo() {
    ## R-034: 'echo' as a command (use printf). Per-script so a script-wide
    ## '## style-ok: allow-echo' waiver can exempt a file that genuinely needs it.
    ## filter_self drops this script (its own tag/comment text contains 'echo').
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    for script in "${fs[@]}"; do
       if grep --quiet --extended-regexp \
@@ -831,7 +865,7 @@ check_R103_exec() {
    ## / '<' / '>' / '&' immediately follows 'exec'). Per-script
    ## '## style-ok: allow-exec' waiver for surfaces that must genuinely hand off the
    ## process. filter_self drops this script.
-   mapfile -t fs < <(filter_self "${@}")
+   mapfile -d '' -t fs < <(filter_self "${@}")
    if [ "${#fs[@]}" -eq 0 ]; then return 0; fi
    for script in "${fs[@]}"; do
       if grep --quiet --extended-regexp \

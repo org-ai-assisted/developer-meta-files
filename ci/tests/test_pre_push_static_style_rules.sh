@@ -87,12 +87,14 @@ expect_rule() {
    body="$2"
    want="$3"
    out="$(gate_output "${body}")"
-   ## Liveness guard: every gate run prints at least one 'pre-push-static:' line
-   ## (via note/fail). If none is present the gate did not reach a verdict (it
-   ## errored early), so an 'absent' result would be meaningless -- fail loudly
-   ## rather than pass an 'absent' assertion spuriously.
-   if ! printf '%s\n' "${out}" | grep --quiet --fixed-strings -- 'pre-push-static:'; then
-      printf 'FAIL: gate produced no verdict output for body %s\n' "'${body}'" >&2
+   ## Liveness guard: require the gate's TERMINAL verdict line, not just any
+   ## 'pre-push-static:' note. Early notes ('no changed shell files',
+   ## 'shellcheck not on PATH; skipping') would otherwise satisfy a weaker
+   ## check even if the gate crashed before reaching the rule under test, so
+   ## an 'absent' assertion could pass spuriously on a real regression.
+   if ! printf '%s\n' "${out}" \
+      | grep --quiet --extended-regexp 'all static checks passed|[0-9]+ check\(s\) failed'; then
+      printf 'FAIL: gate produced no final verdict for body %s\n' "'${body}'" >&2
       failures=$((failures + 1))
       return 0
    fi
@@ -140,6 +142,10 @@ expect_rule "R-074" "break"                  "absent"
 ## ${sc} at run time, so the literal never appears in this tracked file.
 expect_rule "R-074" "hit=1 ${sc} break"      "present"
 expect_rule "R-074" "printf y ${sc} return"  "present"
+
+## Word boundary: a keyword that is only a PREFIX of an identifier
+## ('return_value', 'continue_calls') must be SPARED, not flagged.
+expect_rule "R-074" "x=1${sc}${sp}return_value=1" "absent"
 
 ## R-070: ';;' trailing a statement must be FLAGGED; ';;' on its own line spared.
 expect_rule "R-070" "esac${dsemi}"           "present"
@@ -197,6 +203,7 @@ expect_rule "R-090" "## uses command${sp}-v not has"             "absent"
 ## comment carries no literal invocation.)
 expect_rule "R-102" "bash${sp}ci/dry-run-start"                  "present"
 expect_rule "R-102" "bash${sp}--norc script"                     "absent"
+expect_rule "R-102" "bash${sp}\${script}"                        "absent"
 
 ## R-120: a separator-glued 'rm', and a real 'rm' next to a safe-rm on one
 ## line, are both FLAGGED (the invert no longer spares the whole line).
