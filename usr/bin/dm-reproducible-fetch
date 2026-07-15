@@ -1,0 +1,83 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Download a PUBLISHED image plus its reproducibility sidecars (the signed
+## '.dm-buildinfo' and '.sha512sums' and their signatures), all siblings in the
+## same remote folder, into a local directory. The image is UNTRUSTED here --
+## it is only fetched; nothing is executed, booted, or verified. Verification +
+## rebuild + compare is the job of the separate 'dm-reproducible-verify', which
+## operates on the LOCAL file this leaves behind (or on a file copied by hand).
+##
+## Usage:
+##   dm-reproducible-fetch IMAGE_URL [--output-dir DIR]
+##
+##   --output-dir DIR   where to place the downloads (default: current dir).
+##
+## Then:
+##   dm-reproducible-verify DIR/<image>
+##
+## Exit codes: 0 all sidecars fetched; 2 usage / download error.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+
+true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
+
+## style-ok: no-has
+## Self-contained downloader (runs outside a build tree); probes for scurl/curl
+## with 'command -v' rather than sourcing the 'has' helper.
+
+error() {
+   printf '%s\n' "ERROR: $*" >&2
+   exit 2
+}
+
+url=""
+out_dir="."
+
+while [ "$#" -gt 0 ]; do
+   case "${1:-}" in
+      --output-dir) [ "$#" -ge 2 ] || error "--output-dir requires a value."; out_dir="$2"; shift 2 ;;
+      -h|--help)    grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
+      -*)           error "unknown option: '$1' (run with --help)." ;;
+      *)            [ -z "${url}" ] || error "unexpected extra argument: '$1'"; url="$1"; shift ;;
+   esac
+done
+
+[ -n "${url}" ] || error "an image URL is required: dm-reproducible-fetch IMAGE_URL"
+command -v scurl >/dev/null 2>&1 || command -v curl >/dev/null 2>&1 || error "neither scurl nor curl found."
+
+mkdir --parents -- "${out_dir}"
+
+## Resumable, https-only. scurl (hardened wrapper) preferred.
+fetch() {
+   local src="$1" dst="$2"
+   local dl=( curl --tlsv1.3 --proto '=https' --location --fail --retry 5 --retry-all-errors --retry-delay 10 --continue-at - )
+   if command -v scurl >/dev/null 2>&1; then
+      dl=( scurl --location --fail --retry 5 --retry-all-errors --retry-delay 10 --continue-at - )
+   fi
+   "${dl[@]}" --output "${dst}" -- "${src}" || error "download failed: ${src}"
+}
+
+image_name="$(basename -- "${url%%\?*}")"
+dest="${out_dir}/${image_name}"
+
+printf '%s\n' "INFO: fetching image (UNTRUSTED) + reproducibility sidecars into '${out_dir}'..." >&2
+fetch "${url}"                    "${dest}"
+fetch "${url}.dm-buildinfo"       "${dest}.dm-buildinfo"
+fetch "${url}.dm-buildinfo.asc"   "${dest}.dm-buildinfo.asc"
+fetch "${url}.dm-buildinfo.sig"   "${dest}.dm-buildinfo.sig"
+fetch "${url}.sha512sums"         "${dest}.sha512sums"
+fetch "${url}.sha512sums.asc"     "${dest}.sha512sums.asc"
+fetch "${url}.sha512sums.sig"     "${dest}.sha512sums.sig"
+
+printf '%s\n' "INFO: downloaded to '${dest}'." >&2
+printf '%s\n' "INFO: verify with: dm-reproducible-verify '${dest}'" >&2
