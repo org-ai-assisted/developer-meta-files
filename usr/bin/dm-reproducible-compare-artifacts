@@ -35,6 +35,7 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
 
 usage() {
    printf '%s\n' "Usage:
@@ -48,11 +49,30 @@ dir_b=""
 report=""
 while [ "$#" -gt 0 ]; do
    case "$1" in
-      --target) target="${2:-}" ; shift 2 ;;
-      --dir-a) dir_a="${2:-}" ; shift 2 ;;
-      --dir-b) dir_b="${2:-}" ; shift 2 ;;
-      --output) report="${2:-}" ; shift 2 ;;
-      *) printf '%s\n' "${0##*/}: unexpected argument: $1" >&2 ; usage ;;
+      --target)
+         [ "$#" -ge 2 ] || usage
+         target="$2"
+         shift 2
+         ;;
+      --dir-a)
+         [ "$#" -ge 2 ] || usage
+         dir_a="$2"
+         shift 2
+         ;;
+      --dir-b)
+         [ "$#" -ge 2 ] || usage
+         dir_b="$2"
+         shift 2
+         ;;
+      --output)
+         [ "$#" -ge 2 ] || usage
+         report="$2"
+         shift 2
+         ;;
+      *)
+         printf '%s\n' "${0##*/}: unexpected argument: $1" >&2
+         usage
+         ;;
    esac
 done
 
@@ -61,16 +81,29 @@ if [ -z "$target" ] || [ -z "$dir_a" ] || [ -z "$dir_b" ] || [ -z "$report" ]; t
 fi
 
 case "$target" in
-   iso) artifact_glob="*.iso" ;;
-   virtualbox) artifact_glob="*.ova" ;;
-   qcow2) artifact_glob="*.qcow2" ;;
-   *) printf '%s\n' "${0##*/}: unknown target: $target (want iso|virtualbox|qcow2)" >&2 ; usage ;;
+   iso)
+      artifact_glob="*.iso"
+      ;;
+   virtualbox)
+      artifact_glob="*.ova"
+      ;;
+   qcow2)
+      artifact_glob="*.qcow2"
+      ;;
+   *)
+      printf '%s\n' "${0##*/}: unknown target: $target (want iso|virtualbox|qcow2)" >&2
+      usage
+      ;;
 esac
 
 ## Locate the single artifact of the wanted type under a directory. A build emits
 ## exactly one image of a given extension; 0 or >1 is a setup error, not a diff.
 find_artifact() {
    local dir="$1" matches count
+   if [ ! -d "$dir" ]; then
+      printf '%s\n' "${0##*/}: no such directory: $dir" >&2
+      exit 2
+   fi
    matches="$(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)"
    count="$(printf '%s' "$matches" | grep --count . || true)"
    if [ "$count" -ne 1 ]; then
@@ -82,6 +115,26 @@ find_artifact() {
 
 artifact_a="$(find_artifact "$dir_a")"
 artifact_b="$(find_artifact "$dir_b")"
+
+## Reject a setup where both sides resolve to the SAME file: hashing one image
+## twice is trivially "identical" and would mask a misconfigured comparison (e.g.
+## --dir-a and --dir-b naming the same directory) as a genuine reproducibility
+## pass. This is a setup error, not a diff result.
+real_a="$(realpath -- "$artifact_a")"
+real_b="$(realpath -- "$artifact_b")"
+if [ "$real_a" = "$real_b" ]; then
+   printf '%s\n' "${0##*/}: A and B resolve to the same file ($real_a); need two independent builds" >&2
+   exit 2
+fi
+
+## The report is written by truncating $report; refuse to point it at an input
+## artifact, which would destroy that image (after its hash was read) and could
+## make the two sides falsely compare equal.
+real_report="$(realpath --canonicalize-missing -- "$report")"
+if [ "$real_report" = "$real_a" ] || [ "$real_report" = "$real_b" ]; then
+   printf '%s\n' "${0##*/}: --output would overwrite an input artifact ($real_report)" >&2
+   exit 2
+fi
 
 sha_a="$(sha256sum -- "$artifact_a" | cut --delimiter=' ' --fields=1)"
 sha_b="$(sha256sum -- "$artifact_b" | cut --delimiter=' ' --fields=1)"
