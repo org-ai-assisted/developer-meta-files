@@ -100,6 +100,9 @@ esac
 ## exactly one image of a given extension; 0 or >1 is a setup error, not a diff.
 find_artifact() {
    local dir="$1" matches count
+   ## A directory whose name starts with '-' would be read by find(1) as an option
+   ## or expression; prefix './' so it is unambiguously a path operand.
+   [ "${dir#-}" = "$dir" ] || dir="./$dir"
    if [ ! -d "$dir" ]; then
       printf '%s\n' "${0##*/}: no such directory: $dir" >&2
       exit 2
@@ -116,23 +119,23 @@ find_artifact() {
 artifact_a="$(find_artifact "$dir_a")"
 artifact_b="$(find_artifact "$dir_b")"
 
-## Reject a setup where both sides resolve to the SAME file: hashing one image
-## twice is trivially "identical" and would mask a misconfigured comparison (e.g.
-## --dir-a and --dir-b naming the same directory) as a genuine reproducibility
-## pass. This is a setup error, not a diff result.
-real_a="$(realpath -- "$artifact_a")"
-real_b="$(realpath -- "$artifact_b")"
-if [ "$real_a" = "$real_b" ]; then
-   printf '%s\n' "${0##*/}: A and B resolve to the same file ($real_a); need two independent builds" >&2
+## Reject a setup where both sides are the SAME file: hashing one image twice is
+## trivially "identical" and would mask a misconfigured comparison (e.g. --dir-a
+## and --dir-b naming the same directory) as a genuine reproducibility pass. Use
+## '-ef' (same device + inode), which also catches hard links and bind mounts that
+## a canonical-path string compare would miss. Setup error, not a diff result.
+if [ "$artifact_a" -ef "$artifact_b" ]; then
+   printf '%s\n' "${0##*/}: A and B are the same file ($artifact_a); need two independent builds" >&2
    exit 2
 fi
 
 ## The report is written by truncating $report; refuse to point it at an input
 ## artifact, which would destroy that image (after its hash was read) and could
-## make the two sides falsely compare equal.
-real_report="$(realpath --canonicalize-missing -- "$report")"
-if [ "$real_report" = "$real_a" ] || [ "$real_report" = "$real_b" ]; then
-   printf '%s\n' "${0##*/}: --output would overwrite an input artifact ($real_report)" >&2
+## make the two sides falsely compare equal. '-ef' is false when $report does not
+## exist yet (nothing to clobber) and catches a hard-linked alias that a pathname
+## compare would miss.
+if [ "$report" -ef "$artifact_a" ] || [ "$report" -ef "$artifact_b" ]; then
+   printf '%s\n' "${0##*/}: --output would overwrite an input artifact ($report)" >&2
    exit 2
 fi
 
@@ -149,14 +152,14 @@ sha_b="$(sha256sum -- "$artifact_b" | cut --delimiter=' ' --fields=1)"
 } > "$report"
 
 if [ "$sha_a" = "$sha_b" ]; then
-   printf '%s\n' "RESULT: identical (reproducible)" | tee --append "$report"
+   printf '%s\n' "RESULT: identical (reproducible)" | tee --append -- "$report"
    exit 0
 fi
 
 {
    printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
    printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
-} | tee --append "$report"
+} | tee --append -- "$report"
 
 ## Explain the mismatch. diffoscope is heavy on large images, so bound its output
 ## and never let its result change the (sha-based) verdict above. diffoscope exits
