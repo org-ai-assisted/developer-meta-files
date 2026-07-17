@@ -96,10 +96,16 @@ case "$target" in
       ;;
 esac
 
-## Locate the single artifact of the wanted type under a directory. A build emits
-## exactly one image of a given extension; 0 or >1 is a setup error, not a diff.
+## Locate the single artifact of the wanted type under a directory and store it in
+## the global 'found_artifact'. A build emits exactly one image of a given
+## extension; 0 or >1 is a setup error, not a diff. Returning through a global,
+## rather than echoing and capturing with "$(find_artifact ...)", keeps the
+## 'exit 2' below exiting the whole script instead of only a command-substitution
+## subshell (which would let the caller continue with an empty artifact).
+found_artifact=""
 find_artifact() {
-   local dir="$1" matches count
+   local dir="$1"
+   local -a matches=()
    ## A directory whose name starts with '-' would be read by find(1) as an option
    ## or expression; prefix './' so it is unambiguously a path operand.
    [ "${dir#-}" = "$dir" ] || dir="./$dir"
@@ -107,17 +113,18 @@ find_artifact() {
       printf '%s\n' "${0##*/}: no such directory: $dir" >&2
       exit 2
    fi
-   matches="$(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)"
-   count="$(printf '%s' "$matches" | grep --count . || true)"
-   if [ "$count" -ne 1 ]; then
-      printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${count}" >&2
+   mapfile -t matches < <(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)
+   if [ "${#matches[@]}" -ne 1 ]; then
+      printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#matches[@]}" >&2
       exit 2
    fi
-   printf '%s\n' "$matches"
+   found_artifact="${matches[0]}"
 }
 
-artifact_a="$(find_artifact "$dir_a")"
-artifact_b="$(find_artifact "$dir_b")"
+find_artifact "$dir_a"
+artifact_a="$found_artifact"
+find_artifact "$dir_b"
+artifact_b="$found_artifact"
 
 ## Reject a setup where both sides are the SAME file: hashing one image twice is
 ## trivially "identical" and would mask a misconfigured comparison (e.g. --dir-a
@@ -139,8 +146,10 @@ if [ "$report" -ef "$artifact_a" ] || [ "$report" -ef "$artifact_b" ]; then
    exit 2
 fi
 
-sha_a="$(sha256sum -- "$artifact_a" | cut --delimiter=' ' --fields=1)"
-sha_b="$(sha256sum -- "$artifact_b" | cut --delimiter=' ' --fields=1)"
+sha_a="$(sha256sum -- "$artifact_a")"
+sha_a="${sha_a%% *}"
+sha_b="$(sha256sum -- "$artifact_b")"
+sha_b="${sha_b%% *}"
 
 {
    printf '%s\n' "reproducibility artifact comparison"
