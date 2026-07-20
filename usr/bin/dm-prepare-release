@@ -643,21 +643,6 @@ signatures_create() {
          "${MYDIR}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
          sign_and_verify "${file_item}.dm-buildinfo"
       fi
-
-      ## Reproducibility manifest: a per-file sha256 fingerprint of the image,
-      ## published and signed (same key) next to it so a third party can localize
-      ## WHICH files differ from a rebuild without downloading the whole image.
-      ## Only where the image is loop-mountable at signing time: iso (raw/qcow2
-      ## are already xz-compressed here, vbox is a tar -- follow-up). Best-effort:
-      ## a generation failure warns but never aborts the release.
-      if [ "${dm_target_item}" = "iso" ]; then
-         if "${source_code_folder_dist}/ci/reproducible-manifest" generate \
-               --image "${file_item}" --output "${file_item}.manifest" --deep; then
-            sign_and_verify "${file_item}.manifest"
-         else
-            true "WARNING: reproducible-manifest generate failed for ${file_item}; no manifest published."
-         fi
-      fi
    done
 }
 
