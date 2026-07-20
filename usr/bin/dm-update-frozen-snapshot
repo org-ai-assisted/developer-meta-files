@@ -187,4 +187,13 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
+## This tool takes no positional operands, so anything left after '--' is a
+## mistake (e.g. '-- /some/path' where --source-root was meant); reject it rather
+## than silently ignore it and update the default checkout.
+if [ "$#" -gt 0 ]; then
+   printf 'dm-update-frozen-snapshot: unexpected argument after --: %s\n' "$1" >&2
+   usage >&2
+   exit 2
+fi
+
 update_frozen_snapshot

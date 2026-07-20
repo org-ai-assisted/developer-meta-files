@@ -75,7 +75,10 @@ while [ "$#" -gt 0 ]; do
       --arch)       [ "$#" -ge 2 ] || error "--arch requires a value.";       arch="$2"; shift 2 ;;
       --project)    [ "$#" -ge 2 ] || error "--project requires a value.";    project="$2"; shift 2 ;;
       -h|--help)    grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
-      --)           shift; break ;;
+      --)
+         shift
+         break
+         ;;
       -*)           error "unknown option: '$1' (run with --help)." ;;
       *)
          ## A single positional VERSION|URL, auto-detected: a URL contains '://'.
@@ -118,7 +121,8 @@ if [ -n "${version}" ]; then
 
    case "${arch}" in
       amd64) arch_pretty="Intel_AMD64" ;;
-      *)     arch_pretty="${arch}" ;;
+      arm64) arch_pretty="arm64" ;;
+      *)     error "unsupported --arch '${arch}' (amd64|arm64)." ;;
    esac
 
    case "${target}" in
@@ -133,9 +137,11 @@ if [ -n "${version}" ]; then
    printf '%s\n' "INFO: built download URL from --version: ${url}" >&2
 fi
 
-## URL mode: auto-detect version, project, target and arch from the link (best
-## effort -- the download uses the URL verbatim regardless, so a non-matching URL
-## simply yields no detection, never a wrong fetch).
+## URL mode: auto-detect version, project, target and arch from the link, but
+## only when the URL actually matches the published layout
+## (.../<url_part>/<version>/Kicksecure-...). Otherwise report nothing detected
+## rather than manufacture misleading values. The download always uses the URL
+## verbatim, so detection is purely informational.
 if [ -n "${url}" ] && [ -z "${version}" ]; then
    det_hostpath="${url#*://}"
    det_host="${det_hostpath%%/*}"
@@ -150,13 +156,17 @@ if [ -n "${url}" ] && [ -z "${version}" ]; then
    case "${det_url_part}" in
       iso) det_target="iso" ;; ova) det_target="virtualbox" ;;
       raw) det_target="raw" ;; libvirt) det_target="qcow2" ;;
-      *) det_target="${det_url_part}" ;;
+      *) det_target="" ;;
    esac
    case "${det_arch_pretty}" in
       Intel_AMD64) det_arch="amd64" ;;
       *)           det_arch="${det_arch_pretty}" ;;
    esac
-   printf '%s\n' "INFO: detected from URL: project=${det_project} target=${det_target} version=${det_version} arch=${det_arch}" >&2
+   if [ -n "${det_target}" ] && [ "${det_file#Kicksecure-}" != "${det_file}" ]; then
+      printf '%s\n' "INFO: detected from URL: project=${det_project} target=${det_target} version=${det_version} arch=${det_arch}" >&2
+   else
+      printf '%s\n' "INFO: URL not in the recognized download layout; fetching verbatim (no metadata detected)." >&2
+   fi
 fi
 command -v scurl >/dev/null 2>&1 || command -v curl >/dev/null 2>&1 || error "neither scurl nor curl found."
 
