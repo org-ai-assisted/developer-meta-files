@@ -14,7 +14,17 @@
 ##
 ## Usage:
 ##   dm-reproducible-fetch IMAGE_URL [--output-dir DIR]
+##   dm-reproducible-fetch --version VER --target TARGET --flavor FLAVOR [--arch ARCH] [--project DOMAIN] [--output-dir DIR]
 ##
+## Pass either the full IMAGE_URL, or a published --version and the tool builds
+## the URL for you (Kicksecure images), so you do not have to paste the whole
+## download link.
+##
+##   --version VER      published version, e.g. 18.2.1.7 (builds the URL).
+##   --target TARGET    iso | virtualbox | raw | qcow2 (with --version).
+##   --flavor FLAVOR    kicksecure-lxqt | kicksecure-cli | kicksecure-xfce (with --version).
+##   --arch ARCH        amd64 (default) | arm64 (with --version).
+##   --project DOMAIN   download domain (default: kicksecure.com).
 ##   --output-dir DIR   where to place the downloads (default: current dir).
 ##
 ## Then:
@@ -42,17 +52,60 @@ error() {
 
 url=""
 out_dir="."
+version=""
+target=""
+flavor=""
+arch="amd64"
+project="kicksecure.com"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
       --output-dir) [ "$#" -ge 2 ] || error "--output-dir requires a value."; out_dir="$2"; shift 2 ;;
+      --version)    [ "$#" -ge 2 ] || error "--version requires a value.";    version="$2"; shift 2 ;;
+      --target)     [ "$#" -ge 2 ] || error "--target requires a value.";     target="$2"; shift 2 ;;
+      --flavor)     [ "$#" -ge 2 ] || error "--flavor requires a value.";     flavor="$2"; shift 2 ;;
+      --arch)       [ "$#" -ge 2 ] || error "--arch requires a value.";       arch="$2"; shift 2 ;;
+      --project)    [ "$#" -ge 2 ] || error "--project requires a value.";    project="$2"; shift 2 ;;
       -h|--help)    grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
       -*)           error "unknown option: '$1' (run with --help)." ;;
       *)            [ -z "${url}" ] || error "unexpected extra argument: '$1'"; url="$1"; shift ;;
    esac
 done
 
-[ -n "${url}" ] || error "an image URL is required: dm-reproducible-fetch IMAGE_URL"
+## Build the published download URL from a version instead of a full link. This
+## mirrors the image naming in help-steps/variables:
+##   https://download.<domain>/<url_part>/<version>/Kicksecure-<desktop>-<version>.<arch_pretty>.<ext>
+## A naming drift here just yields a 404, never a wrong download.
+if [ -n "${version}" ]; then
+   [ -z "${url}" ] || error "pass either IMAGE_URL or --version, not both."
+
+   case "${flavor}" in
+      kicksecure-lxqt) desktop="LXQt" ;;
+      kicksecure-xfce) desktop="Xfce" ;;
+      kicksecure-cli)  desktop="CLI" ;;
+      "") error "--version requires --flavor (e.g. kicksecure-lxqt)." ;;
+      *)  error "unsupported --flavor '${flavor}' for --version (Kicksecure flavors only)." ;;
+   esac
+
+   case "${arch}" in
+      amd64) arch_pretty="Intel_AMD64" ;;
+      *)     arch_pretty="${arch}" ;;
+   esac
+
+   case "${target}" in
+      iso)        url_part="iso";     ext="iso" ;;
+      virtualbox) url_part="ova";     ext="ova" ;;
+      raw)        url_part="raw";     ext="raw.libvirt.xz" ;;
+      qcow2)      url_part="libvirt"; ext="qcow2.libvirt.xz" ;;
+      "") error "--version requires --target (iso|virtualbox|raw|qcow2)." ;;
+      *)  error "unsupported --target '${target}' for --version." ;;
+   esac
+
+   url="https://download.${project}/${url_part}/${version}/Kicksecure-${desktop}-${version}.${arch_pretty}.${ext}"
+   printf '%s\n' "INFO: built download URL from --version: ${url}" >&2
+fi
+
+[ -n "${url}" ] || error "an image URL is required: pass IMAGE_URL or --version VER --target T --flavor F"
 command -v scurl >/dev/null 2>&1 || command -v curl >/dev/null 2>&1 || error "neither scurl nor curl found."
 
 mkdir --parents -- "${out_dir}"
