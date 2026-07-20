@@ -7,7 +7,7 @@
 
 ## dm-update-frozen-snapshot: bump the pinned snapshot.debian.org timestamp in
 ## build_sources/debian_stable_frozen_clearnet.sources to the newest snapshot that still serves the
-## pinned suite (trixie + trixie-security), so a '--freshness frozen' reproducible build tracks a
+## pinned suites (trixie + trixie-updates + trixie-security), so a '--freshness frozen' reproducible build tracks a
 ## recent, valid snapshot instead of rotting on an old one. The pin is a URI path segment
 ## ('.../debian-frozen/<TIMESTAMP>'); approx stays generic.
 ##
@@ -75,6 +75,21 @@ snapshot_serves() {
    [ "${code}" = "200" ]
 }
 
+## True (exit 0) if snapshot ${1} serves EVERY suite in the space-separated list ${3}
+## from ${2}. A deb822 'Suites:' value can list more than one suite (e.g.
+## 'trixie trixie-updates'), so each must be probed separately -- passing the whole
+## string as one suite would request a nonexistent '.../dists/trixie trixie-updates/Release'.
+## $1 = timestamp, $2 = archive, $3 = space-separated suite list.
+snapshot_serves_all() {
+   local timestamp="$1" archive="$2" suite_list="$3" suite
+   local -a suites
+   read -r -a suites <<< "${suite_list}"
+   for suite in "${suites[@]}"; do
+      snapshot_serves "${timestamp}" "${archive}" "${suite}" || return 1
+   done
+   return 0
+}
+
 ## Print the newest snapshot timestamp (YYYYMMDDTHHMMSSZ) that serves BOTH the primary suite
 ## (debian) and the security suite (debian-security), scanning this month then last month.
 ## $1 = primary suite, $2 = security suite. Non-zero if none found.
@@ -93,8 +108,8 @@ latest_valid_snapshot() {
       ## Newest first.
       while read -r timestamp; do
          [ -n "${timestamp}" ] || continue
-         if snapshot_serves "${timestamp}" 'debian' "${suite}" \
-            && snapshot_serves "${timestamp}" 'debian-security' "${security_suite}"; then
+         if snapshot_serves_all "${timestamp}" 'debian' "${suite}" \
+            && snapshot_serves_all "${timestamp}" 'debian-security' "${security_suite}"; then
             printf '%s\n' "${timestamp}"
             return 0
          fi
