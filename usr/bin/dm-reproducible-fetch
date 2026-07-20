@@ -75,6 +75,7 @@ while [ "$#" -gt 0 ]; do
       --arch)       [ "$#" -ge 2 ] || error "--arch requires a value.";       arch="$2"; shift 2 ;;
       --project)    [ "$#" -ge 2 ] || error "--project requires a value.";    project="$2"; shift 2 ;;
       -h|--help)    grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
+      --)           shift; break ;;
       -*)           error "unknown option: '$1' (run with --help)." ;;
       *)
          ## A single positional VERSION|URL, auto-detected: a URL contains '://'.
@@ -85,6 +86,15 @@ while [ "$#" -gt 0 ]; do
          shift
          ;;
    esac
+done
+
+## After '--', remaining args are the positional VERSION|URL (same auto-detection).
+while [ "$#" -gt 0 ]; do
+   case "$1" in
+      *://*) [ -z "${url}" ]     || error "URL given more than once.";     url="$1" ;;
+      *)     [ -z "${version}" ] || error "version given more than once."; version="$1" ;;
+   esac
+   shift
 done
 
 [ -z "${url}" ] || [ -z "${version}" ] || error "pass EITHER a version OR a URL, not both."
