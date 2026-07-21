@@ -30,9 +30,10 @@
 ##   1  differences were found (report written)
 ##   2  usage / environment error
 ##
-## NOTE: every difference is reported -- there is no expected-to-differ
-## allowlist, so a remaining difference means "not reproducible", full stop.
-## Extra diffoscope arguments can still be appended AFTER the two artifacts, e.g.
+## NOTE: there is no built-in expected-to-differ allowlist -- every difference the
+## reviewer does not explicitly '--exclude' is reported, so a remaining difference
+## means "not reproducible". Extra diffoscope arguments can still be appended AFTER
+## the two artifacts, e.g.
 ## 'reproducible-compare A B --exclude PATTERN'; diffoscope's '--exclude' matches
 ## MEMBER NAMES (files inside the descended image), not byte regions such as the
 ## MBR disk signature or ISO volume-descriptor timestamps -- those are pinned at

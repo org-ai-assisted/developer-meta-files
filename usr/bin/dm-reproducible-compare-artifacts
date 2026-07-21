@@ -20,9 +20,12 @@
 ##                     image by EXTENSION. Required, because the ISO build leaves
 ##                     BOTH the intermediate '.raw' disk and the final '.iso' in
 ##                     the output tree, so the released image must be chosen by
-##                     extension. Exactly one match is expected. Mapping:
-##                       virtualbox -> .ova    iso   -> .iso    raw -> .raw
-##                       qcow2      -> .qcow2  utm   -> .utm
+##                     extension. Exactly one match is expected. raw and qcow2 are
+##                     released COMPRESSED, so their extension carries '.libvirt.xz'
+##                     (the bare '.raw'/'.qcow2' is the uncompressed build
+##                     intermediate). Mapping (from reproducible-target-map.bsh):
+##                       virtualbox -> .ova    iso   -> .iso    utm -> .utm
+##                       raw -> .raw.libvirt.xz    qcow2 -> .qcow2.libvirt.xz
 ##
 ## Exit codes (passed through from reproducible-compare / diffoscope):
 ##   0  the two images are identical (reproducible)
