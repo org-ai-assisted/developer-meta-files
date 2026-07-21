@@ -26,10 +26,10 @@
 ##
 ## Usage:
 ##   dm-reproducible-verify IMAGE_FILE [--signify-pubkey KEY] [--output REPORT] \
-##      [--allowlist FILE] [--skip-build]
+##      [--skip-build]
 ##
 ## Exit codes:
-##   0  reproduced bit-for-bit (after the allowlist)
+##   0  reproduced bit-for-bit
 ##   1  differences remain -- NOT reproducible (report written)
 ##   2  usage / signature / environment error
 
@@ -53,7 +53,6 @@ error() {
 }
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-dm_share_dir="$( cd -- "${MYDIR}/../share/developer-meta-files" && pwd )"
 ## The derivative-maker source root: this submodule lives under
 ## <derivative-maker>/packages/kicksecure/developer-meta-files, so five levels up
 ## from usr/bin (same walk dm-prepare-release uses). Needed to run the rebuild
@@ -71,14 +70,12 @@ image_file=""
 signify_public_key="${signify_public_key:-${HOMEVAR:-${HOME}}/.signify/keyname.pub}"
 DEBEMAIL="${DEBEMAIL:-derivative-distribution@local-signing.key}"
 output_file=""
-allowlist_file="${dm_share_dir}/reproducible-allowlist.conf"
 skip_build="false"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
       --signify-pubkey) [ "$#" -ge 2 ] || error "--signify-pubkey requires a value."; signify_public_key="$2"; shift 2 ;;
       --output)         [ "$#" -ge 2 ] || error "--output requires a value."; output_file="$2"; shift 2 ;;
-      --allowlist)      [ "$#" -ge 2 ] || error "--allowlist requires a value."; allowlist_file="$2"; shift 2 ;;
       --skip-build)     skip_build="true"; shift ;;
       -h|--help)        grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
       -*)               error "unknown option: '$1' (run with --help)." ;;
@@ -160,9 +157,9 @@ else
    "${build_cmd[@]}" || error "local rebuild failed."
 fi
 
-## Compare the local image against the rebuild (diffoscope + allowlist). dir-a is
-## the image's own directory; the comparator finds the image by target extension.
-compare_args=( --target "${bi_target}" --dir-a "${image_dir}" --dir-b "${build_out}" --allowlist "${allowlist_file}" )
+## Compare the local image against the rebuild (diffoscope). dir-a is the image's
+## own directory; the comparator finds the image by target extension.
+compare_args=( --target "${bi_target}" --dir-a "${image_dir}" --dir-b "${build_out}" )
 [ -z "${output_file}" ] || compare_args+=( --output "${output_file}" )
 
 verify_exit="0"

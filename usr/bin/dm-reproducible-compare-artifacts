@@ -7,27 +7,26 @@
 
 ## Compare the disk/ISO image produced by two independent builds for
 ## reproducibility. Given two build-output directories (each the uploaded
-## '$HOME/binary_mnt' tree of one build job), locate the single largest image
-## in each and hand the pair to 'dm-reproducible-compare', applying the
-## expected-to-differ allowlist. Kept as a lint-covered, locally runnable script
-## (repo convention) so the reproducibility CI lane's YAML stays a thin caller.
+## '$HOME/binary_mnt' tree of one build job), locate the release image (by the
+## target's extension) in each and hand the pair to 'dm-reproducible-compare'.
+## Kept as a lint-covered, locally runnable script (repo convention) so the
+## reproducibility CI lane's YAML stays a thin caller.
 ##
 ## Usage:
 ##   dm-reproducible-compare-artifacts \
-##      --target TARGET --dir-a DIR --dir-b DIR --output REPORT [--allowlist FILE]
+##      --target TARGET --dir-a DIR --dir-b DIR --output REPORT
 ##
 ##   --target TARGET   the build target whose image to compare; selects the
-##                     image by EXTENSION (not by size). Required, because the
-##                     ISO build leaves BOTH the intermediate '.raw' disk and
-##                     the final '.iso' in the output tree, and a size-based
-##                     pick would silently compare the raw image instead of the
-##                     released ISO. Mapping:
+##                     image by EXTENSION. Required, because the ISO build leaves
+##                     BOTH the intermediate '.raw' disk and the final '.iso' in
+##                     the output tree, so the released image must be chosen by
+##                     extension. Exactly one match is expected. Mapping:
 ##                       virtualbox -> .ova    iso   -> .iso    raw -> .raw
 ##                       qcow2      -> .qcow2  utm   -> .utm
 ##
 ## Exit codes (passed through from reproducible-compare / diffoscope):
 ##   0  the two images are identical (reproducible)
-##   1  differences remain after the allowlist (NOT reproducible yet)
+##   1  differences remain (NOT reproducible yet)
 ##   2  usage / environment error (e.g. no image found)
 
 set -o errexit
@@ -43,15 +42,11 @@ error() {
 }
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-## Siblings in usr/bin; allowlist in usr/share (both resolve in the source tree
-## and when installed, since usr/bin and usr/share stay siblings).
-dm_share_dir="$( cd -- "${MYDIR}/../share/developer-meta-files" && pwd )"
 
 target=""
 dir_a=""
 dir_b=""
 output_file=""
-allowlist_file="${dm_share_dir}/reproducible-allowlist.conf"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
@@ -59,7 +54,6 @@ while [ "$#" -gt 0 ]; do
       --dir-a)      [ "$#" -ge 2 ] || error "--dir-a requires a value."; dir_a="$2"; shift 2 ;;
       --dir-b)      [ "$#" -ge 2 ] || error "--dir-b requires a value."; dir_b="$2"; shift 2 ;;
       --output)     [ "$#" -ge 2 ] || error "--output requires a value."; output_file="$2"; shift 2 ;;
-      --allowlist)  [ "$#" -ge 2 ] || error "--allowlist requires a value."; allowlist_file="$2"; shift 2 ;;
       *)            error "unknown argument: '$1'." ;;
    esac
 done
@@ -136,7 +130,6 @@ printf '%s\n' "INFO: image B: ${image_b}" >&2
 ## conclusion IS the reproducibility pass/fail signal.
 compare_exit="0"
 "${MYDIR}/dm-reproducible-compare" \
-   --allowlist "${allowlist_file}" \
    --output "${output_file}" \
    "${image_a}" \
    "${image_b}" \
