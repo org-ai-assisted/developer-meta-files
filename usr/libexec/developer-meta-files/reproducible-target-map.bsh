@@ -27,12 +27,24 @@
 dm_reproducible_target_ext() {
    local -n ext_ref="$1"
    case "$2" in
-      iso)        ext_ref="iso" ;;
-      virtualbox) ext_ref="ova" ;;
-      raw)        ext_ref="raw.libvirt.xz" ;;
-      qcow2)      ext_ref="qcow2.libvirt.xz" ;;
-      utm)        ext_ref="utm" ;;
-      *)          return 1 ;;
+      iso)
+         ext_ref="iso"
+         ;;
+      virtualbox)
+         ext_ref="ova"
+         ;;
+      raw)
+         ext_ref="raw.libvirt.xz"
+         ;;
+      qcow2)
+         ext_ref="qcow2.libvirt.xz"
+         ;;
+      utm)
+         ext_ref="utm"
+         ;;
+      *)
+         return 1
+         ;;
    esac
 }
 
@@ -41,10 +53,20 @@ dm_reproducible_target_ext() {
 dm_reproducible_target_url_part() {
    local -n url_part_ref="$1"
    case "$2" in
-      iso)        url_part_ref="iso" ;;
-      virtualbox) url_part_ref="ova" ;;
-      raw)        url_part_ref="raw" ;;
-      qcow2)      url_part_ref="libvirt" ;;
-      *)          return 1 ;;
+      iso)
+         url_part_ref="iso"
+         ;;
+      virtualbox)
+         url_part_ref="ova"
+         ;;
+      raw)
+         url_part_ref="raw"
+         ;;
+      qcow2)
+         url_part_ref="libvirt"
+         ;;
+      *)
+         return 1
+         ;;
    esac
 }
