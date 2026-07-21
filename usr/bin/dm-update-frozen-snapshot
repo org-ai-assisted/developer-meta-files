@@ -32,7 +32,9 @@ shopt -s inherit_errexit
 shopt -s shift_verbose
 
 ## style-ok: no-has -- standalone operator tool; does not source derivative-maker helper-scripts.
-## style-ok: no-safe-rm -- makes no removals; it rewrites one file via a mktemp + mv.
+## style-ok: no-safe-rm -- the only removal is the mktemp'd rewrite temp on the EXIT
+## cleanup path (a fixed '.XXXXXX' path beside the sources file, never user input);
+## safe-rm is not sourced by this standalone tool.
 
 ## HTTPS, not HTTP: over plain HTTP a network attacker or untrusted proxy could forge the month
 ## listing and the per-snapshot Release checks, pinning an attacker-selected stale or nonexistent
@@ -41,6 +43,18 @@ SNAPSHOT_BASE='https://snapshot.debian.org/archive'
 
 source_root="${HOME}/derivative-maker"
 dry_run='false'
+
+## The atomic rewrite (below) creates a temp beside the sources file; track it
+## globally and remove it on EXIT so a failure mid-rewrite under errexit cannot
+## leave untracked garbage in build_sources/ (which would break git-cleanliness
+## checks in reproducible builds). A successful 'mv' clears the global first, so
+## the trap then removes nothing.
+frozen_tmp_file=''
+
+frozen_snapshot_cleanup() {
+   [ -z "${frozen_tmp_file}" ] || rm --force -- "${frozen_tmp_file}"
+}
+trap frozen_snapshot_cleanup EXIT
 
 usage() {
    cat -- <<'EOF'
@@ -72,7 +86,23 @@ snapshot_serves() {
    code="$(curl --silent --show-error --location --output /dev/null \
       --write-out '%{http_code}' --max-time 60 \
       "${SNAPSHOT_BASE}/${archive}/${timestamp}/dists/${suite}/Release" 2>/dev/null)" || return 1
-   [ "${code}" = "200" ]
+   ## 200 = served, 404 = genuinely absent. Any other status (429 rate-limit, 5xx,
+   ## or a curl '000' connect failure) is a transport/server problem, not evidence
+   ## the suite is missing -- treating it as "not served" would loop the whole
+   ## month re-probing a rate-limited snapshot.debian.org. Abort instead.
+   case "${code}" in
+      200)
+         return 0
+         ;;
+      404)
+         return 1
+         ;;
+      *)
+         printf 'dm-update-frozen-snapshot: snapshot.debian.org returned HTTP %s for %s/%s %s (rate limit / server error / unreachable); aborting rather than risk a retry storm.\n' \
+            "${code}" "${archive}" "${timestamp}" "${suite}" >&2
+         exit 2
+         ;;
+   esac
 }
 
 ## True (exit 0) if snapshot ${1} serves EVERY suite in the space-separated list ${3}
@@ -163,11 +193,12 @@ update_frozen_snapshot() {
    ## mv would silently make the sources file 0600 (unreadable to other build accounts in a shared
    ## checkout) and non-atomic. Replace the exact old timestamp token (it appears only in the two
    ## frozen URIs), leaving the rest of the file untouched.
-   local tmp
-   tmp="$(mktemp -- "${frozen_sources}.XXXXXX")"
-   chmod --reference="${frozen_sources}" -- "${tmp}"
-   sed "s|${current_ts}|${new_ts}|g" -- "${frozen_sources}" > "${tmp}"
-   mv -- "${tmp}" "${frozen_sources}"
+   frozen_tmp_file="$(mktemp -- "${frozen_sources}.XXXXXX")"
+   chmod --reference="${frozen_sources}" -- "${frozen_tmp_file}"
+   sed "s|${current_ts}|${new_ts}|g" -- "${frozen_sources}" > "${frozen_tmp_file}"
+   mv -- "${frozen_tmp_file}" "${frozen_sources}"
+   ## 'mv' consumed the temp; clear the global so the EXIT cleanup is a no-op.
+   frozen_tmp_file=''
    printf 'dm-update-frozen-snapshot: bumped frozen snapshot pin %s -> %s in %s\n' "${current_ts}" "${new_ts}" "${frozen_sources}"
    printf 'dm-update-frozen-snapshot: review and commit the diff so the new pin is reproducible.\n'
 }
