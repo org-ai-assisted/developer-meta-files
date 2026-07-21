@@ -55,11 +55,28 @@ output=""
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
-      --target)  [ "$#" -ge 2 ] || error "--target requires a value."; target="$2"; shift 2 ;;
-      --image)   [ "$#" -ge 2 ] || error "--image requires a value."; image="$2"; shift 2 ;;
-      --output)  [ "$#" -ge 2 ] || error "--output requires a value."; output="$2"; shift 2 ;;
-      -h|--help) grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
-      *)         error "unknown argument: '$1'." ;;
+      --target)
+         [ "$#" -ge 2 ] || error "--target requires a value."
+         target="$2"
+         shift 2
+         ;;
+      --image)
+         [ "$#" -ge 2 ] || error "--image requires a value."
+         image="$2"
+         shift 2
+         ;;
+      --output)
+         [ "$#" -ge 2 ] || error "--output requires a value."
+         output="$2"
+         shift 2
+         ;;
+      -h|--help)
+         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+         exit 0
+         ;;
+      *)
+         error "unknown argument: '$1'."
+         ;;
    esac
 done
 

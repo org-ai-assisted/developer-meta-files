@@ -74,24 +74,63 @@ project="kicksecure.com"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
-      --output-dir) [ "$#" -ge 2 ] || error "--output-dir requires a value."; out_dir="$2"; shift 2 ;;
-      --url)        [ "$#" -ge 2 ] || error "--url requires a value.";        url="$2"; shift 2 ;;
-      --version)    [ "$#" -ge 2 ] || error "--version requires a value.";    version="$2"; shift 2 ;;
-      --target)     [ "$#" -ge 2 ] || error "--target requires a value.";     target="$2"; shift 2 ;;
-      --flavor)     [ "$#" -ge 2 ] || error "--flavor requires a value.";     flavor="$2"; shift 2 ;;
-      --arch)       [ "$#" -ge 2 ] || error "--arch requires a value.";       arch="$2"; shift 2 ;;
-      --project)    [ "$#" -ge 2 ] || error "--project requires a value.";    project="$2"; shift 2 ;;
-      -h|--help)    grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
+      --output-dir)
+         [ "$#" -ge 2 ] || error "--output-dir requires a value."
+         out_dir="$2"
+         shift 2
+         ;;
+      --url)
+         [ "$#" -ge 2 ] || error "--url requires a value."
+         url="$2"
+         shift 2
+         ;;
+      --version)
+         [ "$#" -ge 2 ] || error "--version requires a value."
+         version="$2"
+         shift 2
+         ;;
+      --target)
+         [ "$#" -ge 2 ] || error "--target requires a value."
+         target="$2"
+         shift 2
+         ;;
+      --flavor)
+         [ "$#" -ge 2 ] || error "--flavor requires a value."
+         flavor="$2"
+         shift 2
+         ;;
+      --arch)
+         [ "$#" -ge 2 ] || error "--arch requires a value."
+         arch="$2"
+         shift 2
+         ;;
+      --project)
+         [ "$#" -ge 2 ] || error "--project requires a value."
+         project="$2"
+         shift 2
+         ;;
+      -h|--help)
+         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+         exit 0
+         ;;
       --)
          shift
          break
          ;;
-      -*)           error "unknown option: '$1' (run with --help)." ;;
+      -*)
+         error "unknown option: '$1' (run with --help)."
+         ;;
       *)
          ## A single positional VERSION|URL, auto-detected: a URL contains '://'.
          case "$1" in
-            *://*) [ -z "${url}" ]     || error "URL given more than once.";     url="$1" ;;
-            *)     [ -z "${version}" ] || error "version given more than once."; version="$1" ;;
+            *://*)
+               [ -z "${url}" ] || error "URL given more than once."
+               url="$1"
+               ;;
+            *)
+               [ -z "${version}" ] || error "version given more than once."
+               version="$1"
+               ;;
          esac
          shift
          ;;
@@ -101,8 +140,14 @@ done
 ## After '--', remaining args are the positional VERSION|URL (same auto-detection).
 while [ "$#" -gt 0 ]; do
    case "$1" in
-      *://*) [ -z "${url}" ]     || error "URL given more than once.";     url="$1" ;;
-      *)     [ -z "${version}" ] || error "version given more than once."; version="$1" ;;
+      *://*)
+         [ -z "${url}" ] || error "URL given more than once."
+         url="$1"
+         ;;
+      *)
+         [ -z "${version}" ] || error "version given more than once."
+         version="$1"
+         ;;
    esac
    shift
 done
@@ -120,16 +165,30 @@ if [ -n "${version}" ]; then
    [ -n "${flavor}" ] || error "--version requires --flavor (e.g. kicksecure-lxqt)."
 
    case "${flavor}" in
-      kicksecure-lxqt) desktop="LXQt" ;;
-      kicksecure-xfce) desktop="Xfce" ;;
-      kicksecure-cli)  desktop="CLI" ;;
-      *) error "unsupported --flavor '${flavor}' (Kicksecure flavors only)." ;;
+      kicksecure-lxqt)
+         desktop="LXQt"
+         ;;
+      kicksecure-xfce)
+         desktop="Xfce"
+         ;;
+      kicksecure-cli)
+         desktop="CLI"
+         ;;
+      *)
+         error "unsupported --flavor '${flavor}' (Kicksecure flavors only)."
+         ;;
    esac
 
    case "${arch}" in
-      amd64) arch_pretty="Intel_AMD64" ;;
-      arm64) arch_pretty="arm64" ;;
-      *)     error "unsupported --arch '${arch}' (amd64|arm64)." ;;
+      amd64)
+         arch_pretty="Intel_AMD64"
+         ;;
+      arm64)
+         arch_pretty="arm64"
+         ;;
+      *)
+         error "unsupported --arch '${arch}' (amd64|arm64)."
+         ;;
    esac
 
    url_part=""
@@ -159,13 +218,29 @@ if [ -n "${url}" ] && [ -z "${version}" ]; then
    det_after="${det_file#*-"${det_version}".}"
    det_arch_pretty="${det_after%%.*}"
    case "${det_url_part}" in
-      iso) det_target="iso" ;; ova) det_target="virtualbox" ;;
-      raw) det_target="raw" ;; libvirt) det_target="qcow2" ;;
-      *) det_target="" ;;
+      iso)
+         det_target="iso"
+         ;;
+      ova)
+         det_target="virtualbox"
+         ;;
+      raw)
+         det_target="raw"
+         ;;
+      libvirt)
+         det_target="qcow2"
+         ;;
+      *)
+         det_target=""
+         ;;
    esac
    case "${det_arch_pretty}" in
-      Intel_AMD64) det_arch="amd64" ;;
-      *)           det_arch="${det_arch_pretty}" ;;
+      Intel_AMD64)
+         det_arch="amd64"
+         ;;
+      *)
+         det_arch="${det_arch_pretty}"
+         ;;
    esac
    if [ -n "${det_target}" ] && [ "${det_file#Kicksecure-}" != "${det_file}" ]; then
       printf '%s\n' "INFO: detected from URL: project=${det_project} target=${det_target} version=${det_version} arch=${det_arch}" >&2

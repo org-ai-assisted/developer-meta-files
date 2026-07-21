@@ -74,12 +74,32 @@ skip_build="false"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
-      --signify-pubkey) [ "$#" -ge 2 ] || error "--signify-pubkey requires a value."; signify_public_key="$2"; shift 2 ;;
-      --output)         [ "$#" -ge 2 ] || error "--output requires a value."; output_file="$2"; shift 2 ;;
-      --skip-build)     skip_build="true"; shift ;;
-      -h|--help)        grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'; exit 0 ;;
-      -*)               error "unknown option: '$1' (run with --help)." ;;
-      *)                [ -z "${image_file}" ] || error "unexpected extra argument: '$1'"; image_file="$1"; shift ;;
+      --signify-pubkey)
+         [ "$#" -ge 2 ] || error "--signify-pubkey requires a value."
+         signify_public_key="$2"
+         shift 2
+         ;;
+      --output)
+         [ "$#" -ge 2 ] || error "--output requires a value."
+         output_file="$2"
+         shift 2
+         ;;
+      --skip-build)
+         skip_build="true"
+         shift
+         ;;
+      -h|--help)
+         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+         exit 0
+         ;;
+      -*)
+         error "unknown option: '$1' (run with --help)."
+         ;;
+      *)
+         [ -z "${image_file}" ] || error "unexpected extra argument: '$1'"
+         image_file="$1"
+         shift
+         ;;
    esac
 done
 
@@ -138,8 +158,11 @@ printf '%s\n' "INFO: verified buildinfo: flavor=${bi_flavor} target=${bi_target}
 if [ -n "${dm_source_root}" ] && command -v git >/dev/null 2>&1 && git -C "${dm_source_root}" rev-parse --git-dir >/dev/null 2>&1; then
    head_commit="$(git -C "${dm_source_root}" rev-parse HEAD 2>/dev/null || printf '%s' unknown)"
    case "${bi_commit}" in
-      "${head_commit}"|unknown|'') : ;;
-      *) printf '%s\n' "WARNING: local HEAD (${head_commit}) != buildinfo Source-Commit (${bi_commit}); check out the matching commit for a valid comparison." >&2 ;;
+      "${head_commit}"|unknown|'')
+         ;;
+      *)
+         printf '%s\n' "WARNING: local HEAD (${head_commit}) != buildinfo Source-Commit (${bi_commit}); check out the matching commit for a valid comparison." >&2
+         ;;
    esac
 fi
 
@@ -166,8 +189,14 @@ verify_exit="0"
 "${MYDIR}/dm-reproducible-compare-artifacts" "${compare_args[@]}" || verify_exit="$?"
 
 case "${verify_exit}" in
-   0) printf '%s\n' "INFO: REPRODUCIBLE -- the published image matches the local rebuild." >&2 ;;
-   1) printf '%s\n' "INFO: NOT reproducible -- differences remain${output_file:+ (report: ${output_file})}." >&2 ;;
-   *) printf '%s\n' "ERROR: verification could not complete (exit ${verify_exit})." >&2 ;;
+   0)
+      printf '%s\n' "INFO: REPRODUCIBLE -- the published image matches the local rebuild." >&2
+      ;;
+   1)
+      printf '%s\n' "INFO: NOT reproducible -- differences remain${output_file:+ (report: ${output_file})}." >&2
+      ;;
+   *)
+      printf '%s\n' "ERROR: verification could not complete (exit ${verify_exit})." >&2
+      ;;
 esac
 exit "${verify_exit}"

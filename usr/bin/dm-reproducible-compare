@@ -120,10 +120,18 @@ fi
 diffoscope_output_args=()
 if [ -n "${output_file}" ]; then
    case "${output_file}" in
-      *.html|*.htm) diffoscope_output_args=( "--html" "${output_file}" ) ;;
-      *.md)         diffoscope_output_args=( "--markdown" "${output_file}" ) ;;
-      *.json)       diffoscope_output_args=( "--json" "${output_file}" ) ;;
-      *)            diffoscope_output_args=( "--text" "${output_file}" ) ;;
+      *.html|*.htm)
+         diffoscope_output_args=( "--html" "${output_file}" )
+         ;;
+      *.md)
+         diffoscope_output_args=( "--markdown" "${output_file}" )
+         ;;
+      *.json)
+         diffoscope_output_args=( "--json" "${output_file}" )
+         ;;
+      *)
+         diffoscope_output_args=( "--text" "${output_file}" )
+         ;;
    esac
 else
    diffoscope_output_args=( "--text" "-" )
