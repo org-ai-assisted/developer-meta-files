@@ -84,42 +84,50 @@ case "${target}" in
    *)          error "unsupported --target '${target}' (expected virtualbox|iso|raw|qcow2|utm)." ;;
 esac
 
-## Locate the release image for the requested target: the file with the target's
-## extension. If more than one matches (it should not), pick the largest so
-## trailing intermediates never win. 'nullglob' so a missing extension yields
-## nothing; 'globstar' to descend the version subfolder. No subshell / no find.
+## Locate the release image for the requested target: the single file with the
+## target's extension. 'nullglob' so a missing extension yields an empty array;
+## 'globstar' to descend the version subfolder. The extension already excludes
+## the build's intermediates (they carry other extensions, e.g. the ISO build's
+## '.raw' beside its '.iso'), so exactly one match is expected -- zero or several
+## is an error, not a silent size-based pick. Genuinely no subshell, no find, no
+## stat: the result is returned through a nameref, not command substitution.
+##
+## $1 names the caller's output variable (a literal, trusted internal name, so
+## no check_variable_name guard is needed); $2 is the dir, $3 the extension.
 find_image() {
-   local search_dir wanted_ext image_candidate best_image best_size candidate_size
-   search_dir="$1"
-   wanted_ext="$2"
-   best_image=""
-   best_size="-1"
-
+   local -n image_result
+   local search_dir wanted_ext had_nullglob had_globstar
    local -a image_candidates=()
-   local saved_nullglob saved_globstar
-   saved_nullglob="$( shopt -p nullglob )" || true
-   saved_globstar="$( shopt -p globstar )" || true
+
+   image_result="$1"
+   search_dir="$2"
+   wanted_ext="$3"
+
+   ## Enable the globs, remembering the caller's state so it can be restored
+   ## without a '$( shopt -p )' subshell + eval.
+   had_nullglob="false"
+   had_globstar="false"
+   shopt -q nullglob && had_nullglob="true"
+   shopt -q globstar && had_globstar="true"
    shopt -s nullglob globstar
    image_candidates=( "${search_dir}"/**/*."${wanted_ext}" )
-   ## Restore the caller's glob options.
-   eval "${saved_nullglob}"
-   eval "${saved_globstar}"
+   [ "${had_nullglob}" = "true" ] || shopt -u nullglob
+   [ "${had_globstar}" = "true" ] || shopt -u globstar
 
-   for image_candidate in "${image_candidates[@]}"; do
-      [ -f "${image_candidate}" ] || continue
-      candidate_size="$( stat --format='%s' -- "${image_candidate}" )"
-      if [ "${candidate_size}" -gt "${best_size}" ]; then
-         best_size="${candidate_size}"
-         best_image="${image_candidate}"
-      fi
-   done
+   if [ "${#image_candidates[@]}" -eq 0 ]; then
+      error "no '.${wanted_ext}' image (target '${target}') found under '${search_dir}'."
+   fi
+   if [ "${#image_candidates[@]}" -gt 1 ]; then
+      error "multiple '.${wanted_ext}' images (target '${target}') found under '${search_dir}'; ambiguous: ${image_candidates[*]}"
+   fi
 
-   [ -n "${best_image}" ] || error "no '.${wanted_ext}' image (target '${target}') found under '${search_dir}'."
-   printf '%s\n' "${best_image}"
+   image_result="${image_candidates[0]}"
 }
 
-image_a="$( find_image "${dir_a}" "${image_ext}" )"
-image_b="$( find_image "${dir_b}" "${image_ext}" )"
+image_a=""
+image_b=""
+find_image image_a "${dir_a}" "${image_ext}"
+find_image image_b "${dir_b}" "${image_ext}"
 
 printf '%s\n' "INFO: image A: ${image_a}" >&2
 printf '%s\n' "INFO: image B: ${image_b}" >&2
