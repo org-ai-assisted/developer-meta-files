@@ -48,6 +48,13 @@ shopt -s shift_verbose
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
+MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
+## Shared target->released-{url_part,extension} map (also used by
+## dm-reproducible-compare-artifacts) so the download URL and the comparison
+## never disagree on the artifact name.
+# shellcheck source=../libexec/developer-meta-files/reproducible-target-map.bsh
+source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
+
 ## style-ok: no-has
 ## Self-contained downloader (runs outside a build tree); probes for scurl/curl
 ## with 'command -v' rather than sourcing the 'has' helper.
@@ -125,13 +132,11 @@ if [ -n "${version}" ]; then
       *)     error "unsupported --arch '${arch}' (amd64|arm64)." ;;
    esac
 
-   case "${target}" in
-      iso)        url_part="iso";     ext="iso" ;;
-      virtualbox) url_part="ova";     ext="ova" ;;
-      raw)        url_part="raw";     ext="raw.libvirt.xz" ;;
-      qcow2)      url_part="libvirt"; ext="qcow2.libvirt.xz" ;;
-      *) error "unsupported --target '${target}' (iso|virtualbox|raw|qcow2)." ;;
-   esac
+   url_part=""
+   ext=""
+   dm_reproducible_target_url_part url_part "${target}" \
+      || error "unsupported --target '${target}' (iso|virtualbox|raw|qcow2)."
+   dm_reproducible_target_ext ext "${target}"
 
    url="https://download.${project}/${url_part}/${version}/Kicksecure-${desktop}-${version}.${arch_pretty}.${ext}"
    printf '%s\n' "INFO: built download URL from --version: ${url}" >&2

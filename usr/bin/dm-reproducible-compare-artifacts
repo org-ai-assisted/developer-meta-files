@@ -43,6 +43,10 @@ error() {
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
+## Shared target->released-extension map (also used by dm-reproducible-fetch).
+# shellcheck source=../libexec/developer-meta-files/reproducible-target-map.bsh
+source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
+
 target=""
 dir_a=""
 dir_b=""
@@ -65,18 +69,14 @@ done
 [ -d "${dir_a}" ]       || error "--dir-a is not a directory: '${dir_a}'"
 [ -d "${dir_b}" ]       || error "--dir-b is not a directory: '${dir_b}'"
 
-## Map the build target to the extension of the image it releases. The ISO
-## build in particular leaves both the intermediate '.raw' disk and the final
-## '.iso' in the output tree, so the image MUST be chosen by target/extension,
-## never by size (the raw can be larger than the ISO).
-case "${target}" in
-   virtualbox) image_ext="ova" ;;
-   iso)        image_ext="iso" ;;
-   raw)        image_ext="raw" ;;
-   qcow2)      image_ext="qcow2" ;;
-   utm)        image_ext="utm" ;;
-   *)          error "unsupported --target '${target}' (expected virtualbox|iso|raw|qcow2|utm)." ;;
-esac
+## Map the build target to the extension of the RELEASED image (from the shared
+## map, so it matches what dm-reproducible-fetch downloads). raw and qcow2 are
+## released compressed, so their extension is '.raw.libvirt.xz' /
+## '.qcow2.libvirt.xz' -- picking '*.raw' / '*.qcow2' would compare the
+## uncompressed build intermediate, not the artifact users download.
+image_ext=""
+dm_reproducible_target_ext image_ext "${target}" \
+   || error "unsupported --target '${target}' (expected virtualbox|iso|raw|qcow2|utm)."
 
 ## Locate the release image for the requested target: the single file with the
 ## target's extension. 'nullglob' so a missing extension yields an empty array;
