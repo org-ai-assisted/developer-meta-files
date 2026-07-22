@@ -4,7 +4,7 @@ Skim before every push.
 
 * Scope: any change to bash script, or `agents/`.
 * Bash style: [agents/bash-style-guide.md](bash-style-guide.md).
-* Mechanical gate: [agents/pre-push-static.sh](pre-push-static.sh).
+* Mechanical gate: `pre-push-static` (ships in dist-ai; on PATH once installed).
 
 The list is grouped by phase. Skip items that don't apply to your
 diff; don't skip a phase. Each item cites the relevant rule.
