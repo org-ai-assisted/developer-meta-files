@@ -5,28 +5,30 @@
 
 ## AI-Assisted
 
-## Compare the disk/ISO image produced by two independent builds for
-## reproducibility. Given two build-output directories (each the uploaded
-## '$HOME/binary_mnt' tree of one build job), locate the release image (by the
-## target's extension) in each and hand the pair to 'dm-reproducible-compare'.
-## Kept as a lint-covered, locally runnable script (repo convention) so the
-## reproducibility CI lane's YAML stays a thin caller.
+## Compare two independent builds of the SAME target for bit-for-bit
+## reproducibility. This is the entry point the local-reproducible CI workflow
+## invokes; its exit code IS the reproducibility pass/fail signal.
 ##
 ## Usage:
-##   dm-reproducible-compare-artifacts \
-##      --target TARGET --dir-a DIR --dir-b DIR --output REPORT
+##   dm-reproducible-compare-artifacts --target <iso|virtualbox|qcow2> \
+##       --dir-a DIR --dir-b DIR --output REPORT
 ##
-##   --target TARGET   the build target whose image to compare; selects the
-##                     released image by EXTENSION (from reproducible-target-map.bsh),
-##                     so the ISO build's intermediate '.raw' never wins over its
-##                     '.iso'. Exactly one match is expected. Extensions:
-##                       virtualbox -> .ova    iso   -> .iso    utm -> .utm
-##                       raw -> .raw.libvirt.xz    qcow2 -> .qcow2.libvirt.xz
+## --target  which image type to locate in each directory:
+##             iso        -> *.iso   virtualbox -> *.ova   qcow2 -> *.qcow2
+## --dir-a   directory holding the first build's artifact (searched recursively).
+## --dir-b   directory holding the second build's artifact.
+## --output  report file written with the sha256 of each artifact and, when they
+##           differ, a diffoscope explanation of WHAT differs.
 ##
-## Exit codes (passed through from reproducible-compare / diffoscope):
-##   0  the two images are identical (reproducible)
-##   1  differences remain (NOT reproducible yet)
-##   2  usage / environment error (e.g. no image found)
+## The definitive verdict is a whole-file sha256 comparison of the two artifacts
+## (a released image is a single file; equal sha256 == bit-for-bit identical, for
+## every target, with no mounting or format knowledge needed). diffoscope is run
+## ONLY when they differ, purely to EXPLAIN the mismatch in the report -- its own
+## success is never the pass/fail signal (it can OOM on multi-gigabyte images), so
+## it is best-effort. To LOCALIZE a difference to a specific in-image file, run
+## 'ci/reproducible-manifest generate --deep' on each artifact and compare.
+##
+## Exit: 0 identical (reproducible), 1 artifacts differ, 2 usage / not-found error.
 
 set -o errexit
 set -o nounset
@@ -35,118 +37,148 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-error() {
-   printf '%s\n' "ERROR: $*" >&2
+usage() {
+   printf '%s\n' "Usage:
+  ${0##*/} --target <iso|virtualbox|qcow2> --dir-a DIR --dir-b DIR --output REPORT" >&2
    exit 2
 }
-
-MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-
-## Shared target->released-extension map (also used by dm-reproducible-fetch).
-# shellcheck source=../libexec/developer-meta-files/reproducible-target-map.bsh
-source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
 
 target=""
 dir_a=""
 dir_b=""
-output_file=""
-
+report=""
 while [ "$#" -gt 0 ]; do
-   case "${1:-}" in
+   case "$1" in
       --target)
-         [ "$#" -ge 2 ] || error "--target requires a value."
+         [ "$#" -ge 2 ] || usage
          target="$2"
          shift 2
          ;;
       --dir-a)
-         [ "$#" -ge 2 ] || error "--dir-a requires a value."
+         [ "$#" -ge 2 ] || usage
          dir_a="$2"
          shift 2
          ;;
       --dir-b)
-         [ "$#" -ge 2 ] || error "--dir-b requires a value."
+         [ "$#" -ge 2 ] || usage
          dir_b="$2"
          shift 2
          ;;
       --output)
-         [ "$#" -ge 2 ] || error "--output requires a value."
-         output_file="$2"
+         [ "$#" -ge 2 ] || usage
+         report="$2"
          shift 2
          ;;
       *)
-         error "unknown argument: '$1'."
+         printf '%s\n' "${0##*/}: unexpected argument: $1" >&2
+         usage
          ;;
    esac
 done
 
-[ -n "${target}" ]      || error "--target is required."
-[ -n "${dir_a}" ]       || error "--dir-a is required."
-[ -n "${dir_b}" ]       || error "--dir-b is required."
-[ -n "${output_file}" ] || error "--output is required."
-[ -d "${dir_a}" ]       || error "--dir-a is not a directory: '${dir_a}'"
-[ -d "${dir_b}" ]       || error "--dir-b is not a directory: '${dir_b}'"
+if [ -z "$target" ] || [ -z "$dir_a" ] || [ -z "$dir_b" ] || [ -z "$report" ]; then
+   usage
+fi
 
-## Released-image extension from the shared map (matches dm-reproducible-fetch;
-## see reproducible-target-map.bsh for why raw/qcow2 carry '.libvirt.xz').
-image_ext=""
-dm_reproducible_target_ext image_ext "${target}" \
-   || error "unsupported --target '${target}' (expected virtualbox|iso|raw|qcow2|utm)."
+case "$target" in
+   iso)
+      artifact_glob="*.iso"
+      ;;
+   virtualbox)
+      artifact_glob="*.ova"
+      ;;
+   qcow2)
+      artifact_glob="*.qcow2"
+      ;;
+   *)
+      printf '%s\n' "${0##*/}: unknown target: $target (want iso|virtualbox|qcow2)" >&2
+      usage
+      ;;
+esac
 
-## Locate the release image for the requested target: the single file with the
-## target's extension. 'nullglob' so a missing extension yields an empty array;
-## 'globstar' to descend the version subfolder. The extension already excludes
-## the build's intermediates (they carry other extensions, e.g. the ISO build's
-## '.raw' beside its '.iso'), so exactly one match is expected -- zero or several
-## is an error, not a silent size-based pick. Genuinely no subshell, no find, no
-## stat: the result is returned through a nameref, not command substitution.
-##
-## $1 names the caller's output variable (a literal, trusted internal name, so
-## no check_variable_name guard is needed); $2 is the dir, $3 the extension.
-find_image() {
-   local -n image_result
-   local search_dir wanted_ext had_nullglob had_globstar
-   local -a image_candidates=()
-
-   image_result="$1"
-   search_dir="$2"
-   wanted_ext="$3"
-
-   ## Enable the globs, remembering the caller's state so it can be restored
-   ## without a '$( shopt -p )' subshell + eval.
-   had_nullglob="false"
-   had_globstar="false"
-   shopt -q nullglob && had_nullglob="true"
-   shopt -q globstar && had_globstar="true"
-   shopt -s nullglob globstar
-   image_candidates=( "${search_dir}"/**/*."${wanted_ext}" )
-   [ "${had_nullglob}" = "true" ] || shopt -u nullglob
-   [ "${had_globstar}" = "true" ] || shopt -u globstar
-
-   if [ "${#image_candidates[@]}" -eq 0 ]; then
-      error "no '.${wanted_ext}' image (target '${target}') found under '${search_dir}'."
+## Locate the single artifact of the wanted type under a directory and store it in
+## the global 'found_artifact'. A build emits exactly one image of a given
+## extension; 0 or >1 is a setup error, not a diff. Returning through a global,
+## rather than echoing and capturing with "$(find_artifact ...)", keeps the
+## 'exit 2' below exiting the whole script instead of only a command-substitution
+## subshell (which would let the caller continue with an empty artifact).
+found_artifact=""
+find_artifact() {
+   local dir="$1"
+   local -a matches=()
+   ## A directory whose name starts with '-' would be read by find(1) as an option
+   ## or expression; prefix './' so it is unambiguously a path operand.
+   [ "${dir#-}" = "$dir" ] || dir="./$dir"
+   if [ ! -d "$dir" ]; then
+      printf '%s\n' "${0##*/}: no such directory: $dir" >&2
+      exit 2
    fi
-   if [ "${#image_candidates[@]}" -gt 1 ]; then
-      error "multiple '.${wanted_ext}' images (target '${target}') found under '${search_dir}'; ambiguous: ${image_candidates[*]}"
+   mapfile -t matches < <(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)
+   if [ "${#matches[@]}" -ne 1 ]; then
+      printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#matches[@]}" >&2
+      exit 2
    fi
-
-   image_result="${image_candidates[0]}"
+   found_artifact="${matches[0]}"
 }
 
-image_a=""
-image_b=""
-find_image image_a "${dir_a}" "${image_ext}"
-find_image image_b "${dir_b}" "${image_ext}"
+find_artifact "$dir_a"
+artifact_a="$found_artifact"
+find_artifact "$dir_b"
+artifact_b="$found_artifact"
 
-printf '%s\n' "INFO: image A: ${image_a}" >&2
-printf '%s\n' "INFO: image B: ${image_b}" >&2
+## Reject a setup where both sides are the SAME file: hashing one image twice is
+## trivially "identical" and would mask a misconfigured comparison (e.g. --dir-a
+## and --dir-b naming the same directory) as a genuine reproducibility pass. Use
+## '-ef' (same device + inode), which also catches hard links and bind mounts that
+## a canonical-path string compare would miss. Setup error, not a diff result.
+if [ "$artifact_a" -ef "$artifact_b" ]; then
+   printf '%s\n' "${0##*/}: A and B are the same file ($artifact_a); need two independent builds" >&2
+   exit 2
+fi
 
-## Pass through reproducible-compare's exit code unchanged so the CI lane's job
-## conclusion IS the reproducibility pass/fail signal.
-compare_exit="0"
-"${MYDIR}/dm-reproducible-compare" \
-   --output "${output_file}" \
-   "${image_a}" \
-   "${image_b}" \
-   || compare_exit="$?"
+## The report is written by truncating $report; refuse to point it at an input
+## artifact, which would destroy that image (after its hash was read) and could
+## make the two sides falsely compare equal. '-ef' is false when $report does not
+## exist yet (nothing to clobber) and catches a hard-linked alias that a pathname
+## compare would miss.
+if [ "$report" -ef "$artifact_a" ] || [ "$report" -ef "$artifact_b" ]; then
+   printf '%s\n' "${0##*/}: --output would overwrite an input artifact ($report)" >&2
+   exit 2
+fi
 
-exit "${compare_exit}"
+sha_a="$(sha256sum -- "$artifact_a")"
+sha_a="${sha_a%% *}"
+sha_b="$(sha256sum -- "$artifact_b")"
+sha_b="${sha_b%% *}"
+
+{
+   printf '%s\n' "reproducibility artifact comparison"
+   printf '  target: %s\n' "$target"
+   printf '  A: %s\n' "$artifact_a"
+   printf '     sha256 %s\n' "$sha_a"
+   printf '  B: %s\n' "$artifact_b"
+   printf '     sha256 %s\n' "$sha_b"
+} > "$report"
+
+if [ "$sha_a" = "$sha_b" ]; then
+   printf '%s\n' "RESULT: identical (reproducible)" | tee --append -- "$report"
+   exit 0
+fi
+
+{
+   printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
+   printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
+} | tee --append -- "$report"
+
+## Explain the mismatch. diffoscope is heavy on large images, so bound its output
+## and never let its result change the (sha-based) verdict above. diffoscope exits
+## 1 when it FINDS differences -- expected here, not a failure -- so only exit >= 2
+## (a real crash / OOM kill) warrants the "could not explain" note.
+diffoscope_rc=0
+diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
+   -- "$artifact_a" "$artifact_b" >> "$report" 2>&1 || diffoscope_rc="$?"
+if [ "$diffoscope_rc" -gt 1 ]; then
+   printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "$report"
+fi
+
+exit 1
