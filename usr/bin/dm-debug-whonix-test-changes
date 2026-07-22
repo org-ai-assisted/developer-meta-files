@@ -28,11 +28,8 @@ trap "build_all_error_handler" ERR
 ## XXX: hardcoded path
 [ -v derivative_maker_main_source_code ] || derivative_maker_main_source_code="$HOME/derivative-maker"
 
-## derivative-maker requires an explicit --freshness (no default; see
-## buildconfig.d/25_apt_sources.conf). Every invocation below re-sources the build
-## config, so export a default once here instead of threading --freshness through
-## each line. This is a debug/test wrapper -- 'current' (live mirror) is the sensible
-## default; override with 'dist_build_apt_freshness=frozen dm-debug-whonix-test-changes'.
+## derivative-maker requires an explicit --freshness. Debug wrapper: default all
+## invocations below to 'current'; override with dist_build_apt_freshness=frozen.
 [ -v dist_build_apt_freshness ] || export dist_build_apt_freshness="current"
 
 pushd -- "$derivative_maker_main_source_code"
