@@ -763,6 +763,12 @@ reviewers learn to skim past them and miss the rare comment
 documenting a real gotcha. Be concise: if removing the comment
 wouldn't confuse a future reader, don't write it.
 
+Tooling: the `comments-audit` heuristic (ships in dist-ai on PATH; run
+`comments-audit <repo_root>` or `comments-audit --files FILE...`) flags
+likely R-151 candidates. The `pre-push-static` gate runs it over the
+changed files as an ADVISORY -- it prints candidates but never fails the
+gate, because the heuristic has false positives and a human decides.
+
 
 **R-152: Match the file's existing comment style.** Before
 adding comments to an existing file, read the comments already
