@@ -19,6 +19,11 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
+## help-steps/variables (sourced below) overwrites MYDIR with its OWN directory,
+## so capture this script's libexec directory now -- before that clobber -- for
+## the signing-lib source further down.
+signing_lib_dir="${MYDIR}/../libexec/developer-meta-files"
+
 if [ "$MYDIR" = "/usr/bin" ]; then
    true "INFO: Run from: /usr/bin"
    ## XXX: hardcoded path
@@ -32,10 +37,10 @@ source "$derivative_maker_source_code_dir/help-steps/pre"
 source "$derivative_maker_source_code_dir/help-steps/variables"
 
 ## Release signing + verification helpers, shared with dm-reproducible-verify
-## (formerly inline here). MYDIR/../libexec resolves both installed (/usr/bin ->
-## /usr/libexec) and in the source tree.
+## (formerly inline here). signing_lib_dir (captured above, pre-clobber) resolves
+## both installed (/usr/bin -> /usr/libexec) and in the source tree.
 # shellcheck source=../libexec/developer-meta-files/signing-lib.bsh
-source "${MYDIR}/../libexec/developer-meta-files/signing-lib.bsh"
+source "${signing_lib_dir}/signing-lib.bsh"
 
 cd -- "${dist_binary_build_folder}"
 
