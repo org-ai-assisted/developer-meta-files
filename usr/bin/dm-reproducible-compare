@@ -10,10 +10,7 @@
 ## diffoscope dissects and recursively descends raw / qcow2 / vmdk / OVA /
 ## ISO 9660 / squashfs / ext / initrd / .deb / tar / ... natively, so this is a
 ## thin, format-agnostic wrapper -- no per-format extraction (loop-mount,
-## unsquashfs, xorriso, manifest hashing) is re-implemented here. It replaces
-## the older "each builder emits a stat+sha512 manifest, then diff the
-## manifests" scheme (help-steps/analyze_image) for the two-artifact
-## comparison case, and it works for ISOs, which that scheme never supported.
+## unsquashfs, xorriso, manifest hashing) is re-implemented here.
 ##
 ## Two independent builders (or a build and a reference build) each keep their
 ## artifact; run this on both to get a rich, format-aware difference report.
