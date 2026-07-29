@@ -61,16 +61,19 @@ from jinja2 import ChainableUndefined, Environment, FileSystemLoader
 ## Debian Policy 5.6.1/5.6.7 package name grammar. Enforced because a
 ## package name reaches both an output path and an href; an index file
 ## is untrusted input, not a validated database.
-NAME_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]+$")
+## fullmatch() is used at every call site: '$' also matches immediately
+## before a trailing newline, so "evil\n" passed a '$'-anchored test and
+## reached an output path and an href.
+NAME_RE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 
 ## Suite, component and architecture names land in output paths too.
-PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._-]*$")
+PATH_COMPONENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+._-]*")
 
 
 ## Only absolute http(s) URLs may reach an href. A strict pattern is
 ## preferred over urlsplit(), which strips embedded tabs/newlines and
 ## accepts scheme-relative forms.
-SAFE_URL_RE = re.compile(r"^https?://[^\s<>\"']+$", re.IGNORECASE)
+SAFE_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
 ## Bound decompression and per-field size so one crafted upload cannot
 ## exhaust build host memory.
@@ -140,7 +143,7 @@ def safe_url(value) -> str:
     text = str(value or "").strip()
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in text):
         return ""
-    return text if SAFE_URL_RE.match(text) else ""
+    return text if SAFE_URL_RE.fullmatch(text) else ""
 
 
 def safe_base_url(value: str) -> bool:
@@ -153,7 +156,7 @@ def safe_base_url(value: str) -> bool:
         return False
     if text.startswith("/"):
         return True
-    return bool(SAFE_URL_RE.match(text))
+    return bool(SAFE_URL_RE.fullmatch(text))
 
 
 def clamp_field(value) -> str:
@@ -323,8 +326,8 @@ def collect_binaries(
                 index_path = arch_dir / "Packages"
                 if not index_path.is_file():
                     continue
-            if (not PATH_COMPONENT_RE.match(component)
-                    or not PATH_COMPONENT_RE.match(arch)):
+            if (not PATH_COMPONENT_RE.fullmatch(component)
+                    or not PATH_COMPONENT_RE.fullmatch(arch)):
                 warn("skipping unsafe component/arch path: {0}".format(arch_dir))
                 continue
             try:
@@ -335,7 +338,7 @@ def collect_binaries(
             with index_fh as fh:
                 for stanza in iter_stanzas(Packages, fh, index_path):
                     name = stanza.get("Package")
-                    if (not name or not NAME_RE.match(name)
+                    if (not name or not NAME_RE.fullmatch(name)
                             or name in RESERVED_PACKAGE_NAMES):
                         warn("skipping invalid package name {0!r} in {1}".format(
                             name, index_path))
@@ -388,7 +391,7 @@ def collect_sources(
             index_path = component_dir / "source" / "Sources"
             if not index_path.is_file():
                 continue
-        if not PATH_COMPONENT_RE.match(component):
+        if not PATH_COMPONENT_RE.fullmatch(component):
             warn("skipping unsafe component path: {0}".format(component_dir))
             continue
         try:
@@ -399,8 +402,10 @@ def collect_sources(
         with index_fh as fh:
             for stanza in iter_stanzas(Sources, fh, index_path):
                 name = stanza.get("Package")
-                if (not name or not NAME_RE.match(name)
-                        or name in RESERVED_PACKAGE_NAMES):
+                ## No RESERVED_* check here: a source page lives at
+                ## <output>/source/<suite>/<name>/ and collides with no
+                ## site-owned file, and a rejection blocks publishing.
+                if not name or not NAME_RE.fullmatch(name):
                     warn("skipping invalid source name {0!r} in {1}".format(
                         name, index_path))
                     continue
@@ -416,18 +421,36 @@ def collect_sources(
     return out
 
 
+def version_is_valid(value: str) -> bool:
+    """True when python-debian can order `value` against itself."""
+
+    try:
+        version_compare(value, value)
+    except ValueError:
+        return False
+    return True
+
+
 def version_greater(a: str, b: str) -> bool:
     """True when Debian version `a` sorts above `b`. Uses python-debian's
     dpkg-compatible comparator so epochs, tildes and non-numeric revisions
-    order correctly; a malformed version sorts last rather than raising."""
+    order correctly.
+
+    Validity is compared separately, because version_compare() raises in
+    BOTH argument orders when either side is malformed. Returning False
+    both ways would make the caller treat the two as EQUAL, which merges
+    architectures across different versions and can retain the malformed
+    stanza; a malformed version must simply sort last."""
 
     if a == b:
         return False
-    try:
-        return version_compare(a, b) > 0
-    except ValueError:
-        ## An unparsable version must never displace a parsable one.
+    a_valid = version_is_valid(a)
+    b_valid = version_is_valid(b)
+    if a_valid != b_valid:
+        return a_valid
+    if not a_valid:
         return False
+    return version_compare(a, b) > 0
 
 
 def debian_suite_for(suite: str) -> str:
@@ -717,7 +740,7 @@ def render_site(
     suite_summaries: list[dict] = []
 
     for suite in suites:
-        if not PATH_COMPONENT_RE.match(suite) or suite in RESERVED_SUITE_NAMES:
+        if not PATH_COMPONENT_RE.fullmatch(suite) or suite in RESERVED_SUITE_NAMES:
             warn("skipping unsafe suite name: {0!r}".format(suite))
             continue
         ## One malformed suite must not cost the whole site.
