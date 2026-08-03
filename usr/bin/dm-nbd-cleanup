@@ -59,13 +59,24 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
-if [ ! -e /dev/nbd0 ]; then
+## Probe the whole range, not just nbd0. Keying on /dev/nbd0 alone missed a
+## leaked /dev/nbd1 on a host where node 0 was absent, and exited 0 reporting
+## nothing to do.
+nbd_present=false
+for nbd_probe in /dev/nbd[0-9] /dev/nbd[0-9][0-9]; do
+   if [ -e "${nbd_probe}" ]; then
+      nbd_present=true
+      break
+   fi
+done
+if [ "${nbd_present}" = "false" ]; then
    printf '%s\n' "${0##*/}: no /dev/nbd* devices; nothing to release."
    exit 0
 fi
 
 ## Unmount FIRST, then disconnect. A disconnect while a mount still holds the
 ## device is what leaves the unreadable half-state this exists to clear.
+release_failures=0
 released_mounts=0
 while IFS= read -r mount_point; do
    [ -n "${mount_point}" ] || continue
@@ -81,8 +92,22 @@ while IFS= read -r mount_point; do
       released_mounts=$(( released_mounts + 1 ))
    else
       printf '%s\n' "  FAILED to umount ${mount_point}" >&2
+      release_failures=$(( release_failures + 1 ))
    fi
-done < <( mount | sed -n 's|^\(/dev/nbd[0-9p]*\) on \([^ ]*\) .*|\2|p' )
+## /proc/mounts, NOT mount(8): mount(8) prints a mount point containing a space
+## verbatim, so field-splitting yields a TRUNCATED path -- '/mnt/my nbd' became
+## '/mnt/my', which names a different filesystem and would have been unmounted
+## instead. /proc/mounts octal-escapes the space (\040), which printf '%b'
+## restores unambiguously.
+done < <(
+   while read -r mounts_device mounts_point _; do
+      case "${mounts_device}" in
+         /dev/nbd*)
+            printf '%b\n' "${mounts_point}"
+            ;;
+      esac
+   done < /proc/mounts
+)
 
 released_devices=0
 for nbd_device in /dev/nbd[0-9] /dev/nbd[0-9][0-9]; do
@@ -103,6 +128,7 @@ for nbd_device in /dev/nbd[0-9] /dev/nbd[0-9][0-9]; do
       released_devices=$(( released_devices + 1 ))
    else
       printf '%s\n' "  FAILED to disconnect ${nbd_device}" >&2
+      release_failures=$(( release_failures + 1 ))
    fi
 done
 
@@ -112,3 +138,11 @@ if [ "${dry_run}" = "true" ]; then
    summary_suffix=" -- REPORT ONLY, pass --release to act"
 fi
 printf '%s\n' "${0##*/}: ${released_mounts} mount(s), ${released_devices} device(s)${summary_suffix}"
+
+## A caller that runs this to make nbd usable must be able to tell that it did
+## NOT succeed. Printing an error and exiting 0 lets a build proceed straight
+## into the unreadable state this exists to clear.
+if [ "${release_failures}" -gt 0 ]; then
+   printf '%s\n' "${0##*/}: ${release_failures} operation(s) FAILED; nbd is not clean." >&2
+   exit 1
+fi
