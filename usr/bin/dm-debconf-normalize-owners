@@ -51,18 +51,25 @@ if [ ! -f "${config_dat}" ]; then
    exit 2
 fi
 
-## Per 'Owners:' line: strip ':arch' from each comma-separated owner, then keep
-## first occurrence only (preserving debconf's existing sorted order). Written to
-## a temp file and moved into place so an interrupted run cannot leave a
-## half-written database. Perl (debconf's own language) is always present where a
-## debconf database exists.
+## Write the transformed content to a temp file in the SAME directory, then
+## rename it over the original -- a rename within one filesystem is atomic, so an
+## interruption (signal, ENOSPC) leaves the original database wholly intact
+## rather than half-written. The temp inherits the original's mode and owner
+## first, so the rename does not drop debconf's root:root 0600 to the mktemp
+## default.
 tmp_out="$( mktemp -- "${config_dat}.normalize.XXXXXX" )"
 # shellcheck disable=SC2317  # reached only via the EXIT trap
 cleanup() {
-   safe-rm --force -- "${tmp_out}"
+   ## Only lingers if the rename below did not happen (error path).
+   safe-rm --force -- "${tmp_out}" 2>/dev/null
 }
 trap cleanup EXIT
 
+## Read via STDIN redirection, NOT as a perl filename argument: perl's '<>'
+## opens an @ARGV filename with the 2-argument open, which treats a name ending
+## in '|' as a command to run and a leading '<'/'>' as a redirection. The path is
+## fixed and root-owned in this tool's callers, but feeding it on stdin removes
+## the hazard entirely rather than relying on the caller.
 perl -pe '
    if (/^Owners: /) {
       chomp;
@@ -73,9 +80,9 @@ perl -pe '
                    split /, /, $_;
       $_ = "Owners: " . join(", ", @owners) . "\n";
    }
-' -- "${config_dat}" > "${tmp_out}"
+' < "${config_dat}" > "${tmp_out}"
 
-## Preserve the original mode/owner: cp the content in, do not rename across it
-## (a rename would drop debconf root:root 0600 onto the mktemp default).
-cat -- "${tmp_out}" > "${config_dat}"
+chmod --reference="${config_dat}" -- "${tmp_out}"
+chown --reference="${config_dat}" -- "${tmp_out}"
+mv -- "${tmp_out}" "${config_dat}"
 exit 0
