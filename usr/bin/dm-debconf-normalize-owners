@@ -85,14 +85,16 @@ perl -pe '
                    split /, /, $_;
       $_ = "Owners: " . join(", ", @owners) . "\n";
    }
-   ## Transient mktemp path in a substitution variable, e.g. ucf records
-   ## "NEW = /tmp/grub.JI3HRI56IT" (the temp copy it diffed /etc/default/grub
-   ## against). The random mktemp suffix differs every build -- it was the last
-   ## ISO local-vs-CI difference -- and the installed system never acts on the
-   ## stored value. Collapse the >=6-char mktemp suffix to a constant. Idempotent:
-   ## the normalized ".XXXXXX" re-matches to itself. Only /tmp paths with such a
-   ## suffix are touched, so a real value (FILE = /etc/default/grub) is left alone.
-   s{(=[ \t]*/tmp/\S+?)\.[A-Za-z0-9]{6,}(\s*)$}{$1.XXXXXX$2};
+   ## ucf records the temp copy it diffed a conffile against under the "NEW"
+   ## substitution variable -- config.dat serializes each variable on its own
+   ## continuation line, e.g. " NEW = /tmp/grub.JI3HRI56IT". The mktemp suffix
+   ## differs every build (it was the last ISO local-vs-CI difference) and the
+   ## installed system never acts on the stored value. Collapse the >=6-char
+   ## mktemp suffix to a constant. Anchored to the NEW key specifically -- NOT any
+   ## "/tmp/*" value -- so an unrelated /tmp path under a different key, or any
+   ## non-/tmp value, is left intact. Idempotent: the normalized ".XXXXXX"
+   ## re-matches to itself.
+   s{^(\s+NEW = /tmp/\S+?)\.[A-Za-z0-9]{6,}(\s*)$}{$1.XXXXXX$2}g;
 ' < "${config_dat}" > "${tmp_out}"
 
 chmod --reference="${config_dat}" -- "${tmp_out}"
