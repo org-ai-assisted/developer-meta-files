@@ -1,0 +1,158 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Rebuild a FAT (EFI System) partition so its bytes are reproducible regardless
+## of the build environment.
+##
+## THE REPRODUCIBILITY BUG THIS FIXES: derivative-maker reimages the ext4 ROOT
+## partition deterministically (4350_reimage-raw-reproducible: mke2fs -d from a
+## staged tree), but never touches the FAT EFI System Partition. grml-debootstrap
+## / grub-install populate the ESP during the build, and FAT cluster allocation
+## depends on the ORDER files are written -- which follows the build host's
+## directory readdir order, so it differs between a local build and CI even when
+## every ESP FILE is byte-identical. Measured on a Kicksecure qcow2: the ESP
+## differed by 3.44 MB (of a 100 MB partition) between a sandbox build and CI,
+## the SAME 10 boot files at different clusters -- the entire remaining
+## local-vs-CI image difference bar one symlink mtime.
+##
+## THE FIX: extract the files, then rebuild the FAT from scratch in a fresh
+## ZERO-FILLED image (so free space is deterministic, not stale block content),
+## with mkfs.fat PRESERVING the existing geometry, volume serial and label (a new
+## serial would break an fstab 'UUID=' mount of the ESP and stop the image
+## booting), and mcopy the files back in LC_ALL=C sorted order with every mtime
+## pinned to SOURCE_DATE_EPOCH. Same files + same order + same geometry ->
+## byte-identical FAT on every host. Verified to bring two independently-built
+## ESPs to 0 differing bytes, fsck clean, all boot files intact.
+##
+## Cluster allocation does not affect boot: UEFI and GRUB read ESP files by PATH,
+## so a reallocated FAT with the same files boots identically.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+
+## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (exported by help-steps/pre
+## for a from-source build); empty falls back to the installed system path.
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
+
+if [ "$#" -ne 1 ]; then
+   printf '%s\n' "usage: dm-normalize-fat-partition <fat-partition-device-or-image>" >&2
+   exit 2
+fi
+
+fat_device="$1"
+if [ ! -e "${fat_device}" ]; then
+   printf '%s\n' "dm-normalize-fat-partition: not found: ${fat_device}" >&2
+   exit 2
+fi
+
+if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+   printf '%s\n' "dm-normalize-fat-partition: SOURCE_DATE_EPOCH is unset; refusing a non-reproducible run." >&2
+   exit 2
+fi
+
+for tool in mkfs.fat mcopy mmd mdir; do
+   if ! has "${tool}"; then
+      printf '%s\n' "dm-normalize-fat-partition: required tool not found: ${tool} (need dosfstools + mtools)" >&2
+      exit 2
+   fi
+done
+
+## mtools must not consult ~/.mtoolsrc or probe the device geometry: MTOOLS_SKIP_CHECK
+## makes it accept a plain image, and an empty config keeps behaviour host-independent.
+export MTOOLS_SKIP_CHECK=1
+export MTOOLSRC=/dev/null
+export TZ=UTC
+
+## Read a little-endian field from the FAT boot sector as hex bytes, high byte first,
+## so it can be used directly in an arithmetic base-16 expansion.
+boot_bytes_le() {
+   local offset="$1" count="$2" i out=""
+   for (( i = count - 1; i >= 0; i-- )); do
+      out+="$( dd if="${fat_device}" bs=1 skip=$(( offset + i )) count=1 2>/dev/null | xxd -p )"
+   done
+   printf '%s' "${out}"
+}
+
+bytes_per_sector=$(( 16#$( boot_bytes_le 11 2 ) ))
+sectors_per_cluster=$(( 16#$( boot_bytes_le 13 1 ) ))
+reserved_sectors=$(( 16#$( boot_bytes_le 14 2 ) ))
+fat_count=$(( 16#$( boot_bytes_le 16 1 ) ))
+## Volume serial (FAT32 offset 0x43): mkfs.fat -i wants it big-endian.
+volume_serial="$( boot_bytes_le 67 4 )"
+## Volume label (FAT32 offset 0x47, 11 bytes, space-padded).
+volume_label="$( dd if="${fat_device}" bs=1 skip=71 count=11 2>/dev/null | tr -d '\000' | sed 's/ *$//' )"
+if has blockdev && [ -b "${fat_device}" ]; then
+   partition_size="$( blockdev --getsize64 "${fat_device}" )"
+else
+   partition_size="$( stat -c%s "${fat_device}" )"
+fi
+
+if [ "${bytes_per_sector}" -eq 0 ] || [ "${partition_size}" -eq 0 ]; then
+   printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is not a readable FAT partition." >&2
+   exit 1
+fi
+
+staging="$( mktemp --directory )"
+fresh_image="$( mktemp )"
+# shellcheck disable=SC2317  # reached only via the EXIT trap
+cleanup() {
+   safe-rm --recursive --force -- "${staging}" "${fresh_image}"
+}
+trap cleanup EXIT
+
+## Extract the existing contents with mtools, NOT a mount -- mtools reads a device
+## or a plain image file identically, needs no loop device and no root, and keeps
+## the tool testable off a FAT image. Each immediate child of the root is copied
+## recursively (mcopy -s) into the staging tree.
+while IFS= read -r root_child; do
+   root_child="${root_child#::/}"
+   root_child="${root_child%/}"
+   if [ -z "${root_child}" ]; then
+      continue
+   fi
+   ## stderr suppressed: on a block-device target mtools prints a harmless
+   ## "Could not get geometry of device" (it falls back to the boot sector, which
+   ## is what MTOOLS_SKIP_CHECK is for) -- a warning, not an error.
+   mcopy -s -m -i "${fat_device}" "::/${root_child}" "${staging}/" 2>/dev/null
+done < <( mdir -b -i "${fat_device}" "::/" 2>/dev/null )
+
+## Build the replacement FAT in a fresh zero-filled image of the SAME size, so
+## free space is deterministic rather than whatever stale bytes the partition
+## held. Geometry, serial and label are carried over verbatim.
+truncate --size="${partition_size}" -- "${fresh_image}"
+label_args=()
+if [ -n "${volume_label}" ]; then
+   label_args=( -n "${volume_label}" )
+fi
+mkfs.fat -F 32 \
+   -S "${bytes_per_sector}" -s "${sectors_per_cluster}" \
+   -R "${reserved_sectors}" -f "${fat_count}" \
+   -i "${volume_serial}" "${label_args[@]}" \
+   "${fresh_image}" >/dev/null
+
+## Recreate directories first, then files, each set in LC_ALL=C sorted order, so
+## cluster allocation is a pure function of the (identical) content. Every mtime
+## is pinned to SOURCE_DATE_EPOCH; mcopy -m preserves it into the FAT directory
+## entry.
+while IFS= read -r directory; do
+   mmd -i "${fresh_image}" "::${directory#./}"
+done < <( cd "${staging}" && find . -mindepth 1 -type d | LC_ALL=C sort )
+
+while IFS= read -r file; do
+   touch --date="@${SOURCE_DATE_EPOCH}" -- "${staging}/${file#./}"
+   mcopy -m -i "${fresh_image}" "${staging}/${file#./}" "::${file#./}"
+done < <( cd "${staging}" && find . -mindepth 1 -type f | LC_ALL=C sort )
+
+## Overwrite the partition with the deterministic image. conv=notrunc so a device
+## target keeps its size; the image is exactly the partition size regardless.
+dd if="${fresh_image}" of="${fat_device}" bs=1M conv=notrunc status=none
+exit 0
