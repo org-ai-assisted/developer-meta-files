@@ -207,11 +207,11 @@ sha_b="${sha_b#\\}"
 
 {
    printf '%s\n' "reproducibility artifact comparison"
-   printf '  target: %s\n' "${target}"
-   printf '  A: %s\n' "${artifact_a}"
-   printf '     sha256 %s\n' "${sha_a}"
-   printf '  B: %s\n' "${artifact_b}"
-   printf '     sha256 %s\n' "${sha_b}"
+   printf '%s\n' "  target: ${target}"
+   printf '%s\n' "  A: ${artifact_a}"
+   printf '%s\n' "     sha256 ${sha_a}"
+   printf '%s\n' "  B: ${artifact_b}"
+   printf '%s\n' "     sha256 ${sha_b}"
 } > "${report}"
 
 if [ "${sha_a}" = "${sha_b}" ]; then
