@@ -141,14 +141,28 @@ state_unrecorded() {
 ## source_code_folder_dist returns non-zero and the caller falls through to
 ## 'unrecorded' rather than reaching for whatever repo happens to surround us.
 state_from_head() {
-   local repo head submodules
+   local repo toplevel head submodules
    repo="${source_code_folder_dist:-}"
    [ -n "${repo}" ] || return 1
+   ## 'git -C DIR' walks UP to the nearest enclosing .git, so a non-git build
+   ## directory nested under an UNRELATED repo would otherwise borrow that repo's
+   ## HEAD -- the exact "whatever repo happens to surround us" hazard. Require
+   ## repo to BE the work-tree root git resolves ('-ef': same directory inode,
+   ## symlink/relative-path safe), not merely a descendant of one.
+   toplevel="$(git -C "${repo}" rev-parse --show-toplevel 2>/dev/null)" || return 1
+   [ -n "${toplevel}" ] || return 1
+   [ "${repo}" -ef "${toplevel}" ] || return 1
    head="$(git -C "${repo}" rev-parse HEAD 2>/dev/null)" || return 1
    [ -n "${head}" ] || return 1
-   ## Leading space per line keeps each gitlink a Deb822 continuation of
-   ## Submodule-State, exactly as sign-and-tag formats dm-source-state.
-   submodules="$(git -C "${repo}" submodule status --recursive 2>/dev/null | sed -e 's/^[[:space:]]*/ /')" || return 1
+   ## Capture git's output on its OWN line so a git failure aborts here; a sed
+   ## pipe would mask it (sed succeeds on empty input) and record empty submodule
+   ## state as if it were valid provenance.
+   submodules="$(git -C "${repo}" submodule status --recursive 2>/dev/null)" || return 1
+   if [ -n "${submodules}" ]; then
+      ## Leading space per line keeps each gitlink a Deb822 continuation of
+      ## Submodule-State, exactly as sign-and-tag formats dm-source-state.
+      submodules="$(printf '%s\n' "${submodules}" | sed -e 's/^[[:space:]]*/ /')"
+   fi
    printf '%s\n' "Source-Commit: ${head}"
    printf '%s\n' "Submodule-State:"
    [ -z "${submodules}" ] || printf '%s\n' "${submodules}"
