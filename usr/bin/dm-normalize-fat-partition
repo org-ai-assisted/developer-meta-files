@@ -72,15 +72,50 @@ export MTOOLS_SKIP_CHECK=1
 export MTOOLSRC=/dev/null
 export TZ=UTC
 
-## Read a little-endian field from the FAT boot sector as hex bytes, high byte first,
-## so it can be used directly in an arithmetic base-16 expansion.
+## Read COUNT bytes at OFFSET as a hex string, HIGH byte first, so it drops
+## straight into an arithmetic base-16 expansion (a FAT boot-sector field is
+## little-endian on disk). 'od' is coreutils -- no dependency on xxd/vim-common.
 boot_bytes_le() {
    local offset="$1" count="$2" i out=""
    for (( i = count - 1; i >= 0; i-- )); do
-      out+="$( dd if="${fat_device}" bs=1 skip=$(( offset + i )) count=1 2>/dev/null | xxd -p )"
+      out+="$( dd if="${fat_device}" bs=1 skip=$(( offset + i )) count=1 2>/dev/null \
+         | od --address-radix=n --format=x1 | tr -d ' \n' )"
    done
    printf '%s' "${out}"
 }
+
+## Size first: a device needs blockdev (stat returns 0 for a block device); a
+## plain image file uses its byte size.
+if [ -b "${fat_device}" ]; then
+   if ! has blockdev; then
+      printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is a block device but 'blockdev' (util-linux) is missing." >&2
+      exit 2
+   fi
+   partition_size="$( blockdev --getsize64 "${fat_device}" )"
+else
+   partition_size="$( stat -c%s "${fat_device}" )"
+fi
+
+## Refuse anything that is not a FAT32 filesystem. This tool hardcodes the FAT32
+## boot-sector layout (serial at 0x43, label at 0x47, BPB fields), which differs
+## from FAT12/16 (serial 0x27, label 0x2B) -- running it on a FAT16 ESP would
+## read boot code as the serial and force it to FAT32, corrupting the partition.
+## An EFI System Partition of any real size is FAT32; a short/empty/non-FAT input
+## fails this check cleanly instead of crashing the arithmetic below.
+if [ "${partition_size}" -lt 512 ]; then
+   printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is too small to be a FAT partition." >&2
+   exit 1
+fi
+fs_type_signature="$( dd if="${fat_device}" bs=1 skip=82 count=8 2>/dev/null | tr -d '\000' )"
+case "${fs_type_signature}" in
+   FAT32*)
+      true
+      ;;
+   *)
+      printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is not FAT32 (signature: '${fs_type_signature}'); refusing." >&2
+      exit 1
+      ;;
+esac
 
 bytes_per_sector=$(( 16#$( boot_bytes_le 11 2 ) ))
 sectors_per_cluster=$(( 16#$( boot_bytes_le 13 1 ) ))
@@ -90,14 +125,9 @@ fat_count=$(( 16#$( boot_bytes_le 16 1 ) ))
 volume_serial="$( boot_bytes_le 67 4 )"
 ## Volume label (FAT32 offset 0x47, 11 bytes, space-padded).
 volume_label="$( dd if="${fat_device}" bs=1 skip=71 count=11 2>/dev/null | tr -d '\000' | sed 's/ *$//' )"
-if has blockdev && [ -b "${fat_device}" ]; then
-   partition_size="$( blockdev --getsize64 "${fat_device}" )"
-else
-   partition_size="$( stat -c%s "${fat_device}" )"
-fi
 
-if [ "${bytes_per_sector}" -eq 0 ] || [ "${partition_size}" -eq 0 ]; then
-   printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is not a readable FAT partition." >&2
+if [ "${bytes_per_sector}" -eq 0 ]; then
+   printf '%s\n' "dm-normalize-fat-partition: ${fat_device} has an unreadable FAT boot sector." >&2
    exit 1
 fi
 
