@@ -5,8 +5,13 @@
 
 ## AI-Assisted
 
-## Canonicalize the 'Owners:' package lists in a debconf config.dat so the file
-## is byte-identical regardless of the build environment.
+## style-ok: no-tmp-hardcode -- the '/tmp/' below is ucf's OWN recorded path being
+## matched in config.dat, not a temp file this script creates.
+
+## Canonicalize a debconf config.dat so the file is byte-identical regardless of
+## the build environment. Two build-environment-noise sources are normalized:
+## question 'Owners:' package lists (below) and transient mktemp paths recorded
+## as substitution variables (see NEW = /tmp/... normalization further down).
 ##
 ## THE REPRODUCIBILITY BUG THIS FIXES: debconf records, per question, the set of
 ## packages that own it, in config.dat 'Owners:' lines. The owner is recorded
@@ -80,6 +85,14 @@ perl -pe '
                    split /, /, $_;
       $_ = "Owners: " . join(", ", @owners) . "\n";
    }
+   ## Transient mktemp path in a substitution variable, e.g. ucf records
+   ## "NEW = /tmp/grub.JI3HRI56IT" (the temp copy it diffed /etc/default/grub
+   ## against). The random mktemp suffix differs every build -- it was the last
+   ## ISO local-vs-CI difference -- and the installed system never acts on the
+   ## stored value. Collapse the >=6-char mktemp suffix to a constant. Idempotent:
+   ## the normalized ".XXXXXX" re-matches to itself. Only /tmp paths with such a
+   ## suffix are touched, so a real value (FILE = /etc/default/grub) is left alone.
+   s{(=[ \t]*/tmp/\S+?)\.[A-Za-z0-9]{6,}(\s*)$}{$1.XXXXXX$2};
 ' < "${config_dat}" > "${tmp_out}"
 
 chmod --reference="${config_dat}" -- "${tmp_out}"
