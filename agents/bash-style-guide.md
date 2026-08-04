@@ -176,6 +176,20 @@ conditional-substitution forms are legitimate and spared.
 all data goes in the data string. No `%d`, no `%q` (except where
 shell-escaping is genuinely required), no extra `\n` in the format.
 
+Numeric-probe carve-out (GATE-ENFORCED as an exemption): a `printf`
+with a SINGLE-quoted literal format whose own command discards BOTH
+stdout and stderr is a validator, not output, and keeps its format
+verb. `is_integer` in helper-scripts' `strings.bsh` is the case:
+
+    printf '%d' "$1" >/dev/null 2>&1 || return 1
+
+Nothing is emitted, so neither of this rule's failure modes is
+reachable, and the printf's FAILURE on a non-number is the check
+R-141 relies on -- rewriting the format to `%s` would silently turn
+that guard into one that always succeeds. Discarding stdout alone,
+or `2>&1 >/dev/null` (which sends stderr to the original stdout),
+does not qualify: those still emit.
+
 **R-031: Multi-line block: ONE quoted string with embedded
 newlines.** Multiple separate lines: one `printf '%s\n'` per line.
 Blank line: `printf '%s\n' ""`, NOT `printf '\n'` by itself.
@@ -307,13 +321,25 @@ short-flag meanings.
 **R-062: Use `--` end-of-options separator wherever the tool
 supports one and positional args follow.** Verified working in:
 `git`, `grep`, `sed`, `tr`, `jq`, `head`, `tail`, `stat`,
-`mktemp`, `wc`, `sort`, `cat`, `rm`, `safe-rm`, `mkdir`, `find`.
-Verify before extending the list.
+`mktemp`, `wc`, `sort`, `cat`, `rm`, `safe-rm`, `mkdir`, `find`,
+`sudo` (`sudo -- cmd args` ends sudo's OWN options, before the
+command word). Verify before extending the list.
 
 Why: a positional that begins with `-` (legitimate or hostile)
-gets treated as a flag without `--`. NB: `git check-ref-format`
-does NOT support `--`; verify against the actual binary before
-adding `--` to a new tool invocation.
+gets treated as a flag without `--`.
+
+The positive half ("use `--`") is convention, not gate-enforced:
+whether a positional follows and could begin with `-` is
+undecidable by a single grep, so a positive gate would be noisy.
+
+The NEGATIVE half IS gate-enforced. A `--` handed to a tool that
+does NOT accept it is a bug -- the tool takes `--` as a literal
+argument or errors out. The gate FAILS on a `--` passed to any
+tool on a verified denylist. Verified rejecters:
+`git check-ref-format` (`git check-ref-format -- <ref>` exits
+129). Extend the denylist only after confirming against the
+actual binary. NB: `echo` also mishandles `--` (prints it
+literally) but is already banned outright by R-034.
 
 
 ## Case statements
