@@ -85,13 +85,28 @@ jobs:
     permissions:
       contents: read
     env:
-      ## Resolution order: explicit input > PR base ref > master
-      ## fallback. Single GitHub expression keeps this thin per
-      ## R-100 (no bash control flow in run: blocks).
+      ## Resolution order: explicit input > PR base ref > the push's own
+      ## before-sha > master fallback. Single GitHub expression keeps this thin
+      ## per R-100 (no bash control flow in run: blocks).
+      ##
+      ## The before-sha branch is what makes a push run mean anything. On
+      ## 'push' github.base_ref is empty, so this resolved to 'origin/master'
+      ## -- which after the push IS the pushed head. The range
+      ## origin/master...HEAD was therefore empty and the gate reported
+      ## "no changed shell files" and passed, having examined nothing. Only the
+      ## commit-time hook actually gated those commits.
+      ##
+      ## An all-zero before-sha (a branch's first push, so there is no prior
+      ## head) falls through to origin/master rather than naming a commit that
+      ## does not exist.
       BASE_REF: >-
         ${{
           inputs.base-ref != '' && inputs.base-ref
-          || (github.base_ref != '' && format('origin/{0}', github.base_ref) || 'origin/master')
+          || (github.base_ref != '' && format('origin/{0}', github.base_ref)
+          || (github.event_name == 'push'
+              && github.event.before != '0000000000000000000000000000000000000000'
+              && github.event.before
+          || 'origin/master'))
         }}
       ## Dogfood ref: the caller's commit when dist-ai is its own caller,
       ## so a PR that modifies pre-push-static or step-summary-emit is
