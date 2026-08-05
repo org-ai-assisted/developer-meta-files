@@ -29,10 +29,19 @@ derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
 cd -- "${MYDIR}"
 
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre for a
-## from-source build); this source runs BEFORE 'pre' below, so fall back to the
-## resolved tree when the variable is not in the environment.
+## from-source build); this source runs BEFORE 'pre' below. Set and EXPORT it here
+## when 'pre' has not yet run, falling back to the resolved tree -- exported so
+## strings.bsh resolves its own sibling libraries (wc-test.sh) through the same
+## variable rather than a hardcoded /usr path that a source-tree build lacks.
+export HELPER_SCRIPTS_PATH="${HELPER_SCRIPTS_PATH:-${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}"
+## Preflight: fail with a clear message if HELPER_SCRIPTS_PATH is misconfigured,
+## rather than bash's bare "No such file or directory" from the source below.
+if ! test -r "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/strings.bsh"; then
+   printf '%s\n' "dm-upload-images: ERROR: helper-scripts not found under HELPER_SCRIPTS_PATH='${HELPER_SCRIPTS_PATH}'; point HELPER_SCRIPTS_PATH at the tree containing usr/libexec/helper-scripts/." >&2
+   exit 1
+fi
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source "${HELPER_SCRIPTS_PATH:-${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
+source "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/strings.bsh"
 source "${derivative_maker_source_code_dir}/help-steps/pre"
 source "${derivative_maker_source_code_dir}/help-steps/variables"
 
