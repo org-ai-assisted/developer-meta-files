@@ -336,8 +336,16 @@ The NEGATIVE half IS gate-enforced. A `--` handed to a tool that
 does NOT accept it is a bug -- the tool takes `--` as a literal
 argument or errors out. The gate FAILS on a `--` passed to any
 tool on a verified denylist. Verified rejecters:
-`git check-ref-format` (`git check-ref-format -- <ref>` exits
-129). Extend the denylist only after confirming against the
+
+- `git check-ref-format` -- `git check-ref-format -- <ref>` exits 129.
+- `stcat` -- it takes EVERY argument as a path, so `stcat -- <file>`
+  tries to read a file literally named `--` and dies with
+  `FileNotFoundError`. Adding the separator here broke
+  helper-scripts' `read_integer_file`, which then reported
+  "Cannot stcat target file" for a file that was present and
+  readable, and took four of tb-updater's e2e scenarios with it.
+
+Extend the denylist only after confirming against the
 actual binary. NB: `echo` also mishandles `--` (prints it
 literally) but is already banned outright by R-034.
 
