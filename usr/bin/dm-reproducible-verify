@@ -55,12 +55,10 @@ error() {
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 ## The derivative-maker source root: this submodule lives under
 ## <derivative-maker>/packages/kicksecure/developer-meta-files, so five levels up
-## from usr/bin (same walk dm-prepare-release uses). Needed to run the rebuild
-## and read the source git state.
-##
-## FIXME: An earlier comment says that this script runs outside of a build
-## tree, but then this comment and the line of code benath it assume that it
-## runs within a build tree.
+## from usr/bin (same walk dm-prepare-release uses). Needed ONLY by the default
+## rebuild path -- to rebuild the image and read the source git state. It is the
+## derivative-maker SOURCE tree, not the "build tree" the verifier itself runs
+## outside of; with --skip-build it is unused (see the guard below).
 dm_source_root="$( cd -- "${MYDIR}/../../../../.." 2>/dev/null && pwd || true )"
 
 ## Reuse dm-prepare-release's exact sign/verify code -- no hand-rolled sq/signify.
@@ -140,10 +138,9 @@ done
 ## via the shared signing lib -- not a hand-rolled invocation.
 [ -f "${signify_public_key}" ] || error "signify public key not found: '${signify_public_key}' (pass --signify-pubkey)."
 printf '%s\n' "INFO: verifying buildinfo + sha512sums signatures (sq + signify)..." >&2
-## FIXME: "verify_and_check" is a bad function name, "verify" and "check" are near synonyms.
-verify_and_check "${buildinfo_file}" \
+verify_signature "${buildinfo_file}" \
    || error "buildinfo signature verification FAILED -- refusing to trust it."
-verify_and_check "${sha_file}" \
+verify_signature "${sha_file}" \
    || error "sha512sums signature verification FAILED."
 
 ## The buildinfo carries no checksum by design; the signed sha512sums covers the

@@ -19,7 +19,7 @@
 ## The signify functions intentionally SKIP files >= 1000 MB (signify cannot
 ## handle big files); such an image is covered by its OpenPGP '.asc' plus the
 ## signed (small) '.sha512sums'. 'file_size_mb' is set by sign_and_verify /
-## verify_and_check before the per-scheme helpers run.
+## verify_signature before the per-scheme helpers run.
 
 ## TODO: This is a library, should it really have the strict header?
 set -o errexit
@@ -39,7 +39,7 @@ sign_cmd_openpgp() {
    ## the name of the file as a OpenPGP notation so at least users that look
    ## at OpenPGP notations have a chance to detect if file names have been
    ## tampered with.
-   sq sign --signature-notation "file@name" "$base_name" --signer-email "$DEBEMAIL" --signature-file="$2" -- "$1"
+   sq sign --signature-notation "file@name" "${base_name}" --signer-email "${DEBEMAIL}" --signature-file="$2" -- "$1"
    test -f "$2"
 }
 
@@ -48,7 +48,7 @@ sign_cmd_signify() {
    ## derivative-maker help-steps/signing-key-create
 
    ## Big file are unfortunately unsupported by signify.
-   if [ "$file_size_mb" -ge "1000" ]; then
+   if [ "${file_size_mb}" -ge "1000" ]; then
       return 0
    fi
    ## https://forums.whonix.org/t/signify-openbsd/7842
@@ -61,23 +61,23 @@ verify_cmd_openpgp() {
    test -f "$1"
    test -f "$2"
    test -n "${DEBEMAIL:-}"
-   sq verify --signer-email "$DEBEMAIL" --signature-file="$2" -- "$1"
+   sq verify --signer-email "${DEBEMAIL}" --signature-file="$2" -- "$1"
 }
 
 ## FIXME: "signinfy" is misspelled, should be "signify"
 verify_cmd_signinfy() {
-   if [ "$file_size_mb" -ge "1000" ]; then
+   if [ "${file_size_mb}" -ge "1000" ]; then
       return 0
    fi
    signify-openbsd -V -p "${signify_public_key}" -m "$1" -x "$2"
 }
 
-## Set file_size_mb from a file (shared by sign_and_verify / verify_and_check).
+## Set file_size_mb from a file (shared by sign_and_verify / verify_signature).
 signing_lib_set_file_size_mb() {
    local file_size_bytes
    file_size_bytes=$(stat -c%s "$1")
    # Convert bytes to megabytes
-   file_size_mb=$(printf '%s\n' "scale=0; $file_size_bytes / 1024 / 1024" | bc)
+   file_size_mb=$(printf '%s\n' "scale=0; ${file_size_bytes} / 1024 / 1024" | bc)
 }
 
 sign_and_verify() {
@@ -92,7 +92,7 @@ sign_and_verify() {
 ## Verify-only counterpart for a downstream verifier: check an already-published
 ## file against its sibling '.asc' (+ '.sig' when the file is small enough to
 ## have been signify-signed). Mirrors the verification half of sign_and_verify.
-verify_and_check() {
+verify_signature() {
    signing_lib_set_file_size_mb "$1"
 
    verify_cmd_openpgp "${1}" "${1}.asc"
