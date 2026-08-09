@@ -242,9 +242,6 @@ apply_org_policy() {
 
    policy_apply_org "${org}" WORKFLOW_PERMS
 
-   ## FIXME: The comment below includes "output-lies" in a partial list of
-   ## MIRROR repos, when it is a PROJECT.
-   ##
    ## Actions / CI scope pivots on org kind:
    ##   SOURCE (Kicksecure / Whonix): disable Actions entirely,
    ##     org-wide (enabled_repositories=none). The canonical SOURCE
@@ -253,7 +250,7 @@ apply_org_policy() {
    ##     also removes the fork-PR workflow-abuse surface and saves
    ##     Actions minutes. No allowlist follow-up: allowed_actions is
    ##     moot when Actions are off.
-   ##   MIRROR (org-ai-assisted / output-lies): Actions on, restricted
+   ##   MIRROR (org-ai-assisted): Actions on, restricted
    ##     to the github-owned + verified-creators allowlist - it is
    ##     where AI-assisted dev + CI run.
    ## See agents/github-policy-org-kinds.md.
