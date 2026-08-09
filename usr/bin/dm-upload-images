@@ -33,6 +33,8 @@ cd -- "${MYDIR}"
 ## when 'pre' has not yet run, falling back to the resolved tree -- exported so
 ## strings.bsh resolves its own sibling libraries (wc-test.sh) through the same
 ## variable rather than a hardcoded /usr path that a source-tree build lacks.
+##
+## TODO: Can't we just import strings.bsh after importing help-steps/pre?
 export HELPER_SCRIPTS_PATH="${HELPER_SCRIPTS_PATH:-${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}"
 ## Preflight: fail with a clear message if HELPER_SCRIPTS_PATH is misconfigured,
 ## rather than bash's bare "No such file or directory" from the source below.
