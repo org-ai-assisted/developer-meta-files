@@ -64,8 +64,7 @@ verify_cmd_openpgp() {
    sq verify --signer-email "${DEBEMAIL}" --signature-file="$2" -- "$1"
 }
 
-## FIXME: "signinfy" is misspelled, should be "signify"
-verify_cmd_signinfy() {
+verify_cmd_signify() {
    if [ "${file_size_mb}" -ge "1000" ]; then
       return 0
    fi
@@ -86,7 +85,7 @@ sign_and_verify() {
    sign_cmd_openpgp "${1}" "${1}.asc"
    verify_cmd_openpgp "${1}" "${1}.asc"
    sign_cmd_signify "${1}" "${1}.sig"
-   verify_cmd_signinfy "${1}" "${1}.sig"
+   verify_cmd_signify "${1}" "${1}.sig"
 }
 
 ## Verify-only counterpart for a downstream verifier: check an already-published
@@ -96,5 +95,5 @@ verify_signature() {
    signing_lib_set_file_size_mb "$1"
 
    verify_cmd_openpgp "${1}" "${1}.asc"
-   verify_cmd_signinfy "${1}" "${1}.sig"
+   verify_cmd_signify "${1}" "${1}.sig"
 }
