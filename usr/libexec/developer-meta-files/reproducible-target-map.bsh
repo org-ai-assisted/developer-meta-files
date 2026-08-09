@@ -47,8 +47,7 @@ dm_reproducible_target_ext() {
          ext_ref="qcow2.libvirt.xz"
          ;;
       utm)
-         ## FIXME: The extension we use is .utm.tar.gz, not just .utm.
-         ext_ref="utm"
+         ext_ref="utm.tar.gz"
          ;;
       *)
          return 1
