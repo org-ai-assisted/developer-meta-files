@@ -32,8 +32,14 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 
 ## Symmetry with dm-github-org-policy's ORGS_OVERRIDE convention so
 ## the same wrapper runs in tests.
+##
+## Only the mirror org is scanned: the SOURCE orgs (Kicksecure / Whonix) and the
+## PROJECT orgs (secure-terminal / output-lies) are all mirrored into
+## org-ai-assisted, where the AI-assisted CI runs CodeQL / Coverity, so their
+## alerts surface there. The bot is also a read-only member on the SOURCE orgs
+## and could not read their code-scanning alerts directly regardless.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
-readonly MIRROR_ORGS=( 'org-ai-assisted' 'output-lies' )
+readonly MIRROR_ORGS=( 'org-ai-assisted' )
 if [ -n "${ORGS_OVERRIDE:-}" ]; then
    IFS=',' read -ra ORGS <<< "${ORGS_OVERRIDE}"
 else
