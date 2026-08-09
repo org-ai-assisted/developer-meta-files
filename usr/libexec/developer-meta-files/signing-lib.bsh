@@ -21,13 +21,9 @@
 ## signed (small) '.sha512sums'. 'file_size_mb' is set by sign_and_verify /
 ## verify_signature before the per-scheme helpers run.
 
-## TODO: This is a library, should it really have the strict header?
-set -o errexit
-set -o nounset
-set -o pipefail
-set -o errtrace
-shopt -s inherit_errexit
-shopt -s shift_verbose
+## style-ok: no-strict -- a sourced library; a strict-mode preamble would leak
+## 'set -o errexit' and friends into the caller. Its callers
+## (dm-reproducible-verify, dm-prepare-release) already run strict mode.
 
 sign_cmd_openpgp() {
    local base_name
