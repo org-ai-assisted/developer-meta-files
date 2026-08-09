@@ -830,11 +830,30 @@ trust in the prose. Match locally; impose org-wide style only
 when it would otherwise conflict.
 
 **R-153: Never extract a comment from the running script to display
-it to the user.** "Help modes" should be implemented as dedicated
-functions that print a string.
+it to the user.** A "help mode" is a dedicated function that PRINTS
+the help; it must not scrape the source. In particular, never turn the
+header comment into `--help` output with `grep '^##' -- "$0" | sed ...`.
 
-Why: Code that expects comments to provide user interface components
-is liable to break if a comment-only change is made.
+Why: code that treats comments as user-interface text breaks the moment
+a comment-only edit is made, and it couples the help wording to comment
+syntax.
+
+Canonical pattern -- a short usage (`-h`) and a long help (`--help`),
+so the two are separate strings you own:
+
+    me="${0##*/}"
+    print_usage() {
+       printf '%s\n' \
+          "Usage:" \
+          "  ${me} ARG [--opt VALUE]"
+    }
+    print_help() {
+       print_usage
+       printf '%s\n' "" "Longer description ..." "" "  --opt VALUE   ..."
+    }
+    # in the arg loop:
+    #   -h)     print_usage; exit 0 ;;
+    #   --help) print_help;  exit 0 ;;
 
 **R-154: No history in comments.** Comment the CURRENT state and why,
 never how the code got there. Ban change-narrative: "formerly X",

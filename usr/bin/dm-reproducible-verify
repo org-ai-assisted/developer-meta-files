@@ -7,31 +7,8 @@
 
 ## Verify a LOCAL published image against a LOCAL rebuild -- image-level
 ## reproducible build verification (the analogue of a Debian package rebuilder,
-## applied to the derivative's disk/ISO images).
-##
-## Operates on a LOCAL file so it does not care how the image arrived: fetched by
-## 'dm-reproducible-fetch', or copied by hand. Its reproducibility sidecars must
-## sit NEXT TO it in the same directory (as published, and as dm-reproducible-fetch
-## leaves them): '<image>.dm-buildinfo' (+ '.asc'/'.sig') and '<image>.sha512sums'
-## (+ '.asc'/'.sig'). Everything needed to reproduce is read from the signed
-## '.dm-buildinfo', so no build flags are required. This:
-##   1. verifies the '.dm-buildinfo' + '.sha512sums' signatures (sq + signify),
-##   2. checks the image against the signed sha512sum,
-##   3. rebuilds the recorded target locally and compares the two with
-##      'dm-reproducible-compare-artifacts'.
-##
-## The image is only ever READ here -- never executed, booted, or rw-mounted.
-## How the comparison itself is performed is that tool's concern, not this
-## one's.
-##
-## Usage:
-##   dm-reproducible-verify IMAGE_FILE [--signify-pubkey KEY] [--output REPORT] \
-##      [--skip-build]
-##
-## Exit codes:
-##   0  reproduced bit-for-bit
-##   1  differences remain -- NOT reproducible (report written)
-##   2  usage / signature / environment error
+## applied to the derivative's disk/ISO images). The image is only ever READ --
+## never executed, booted, or rw-mounted. Run with --help for details.
 
 set -o errexit
 set -o nounset
@@ -50,6 +27,40 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 error() {
    printf '%s\n' "ERROR: $*" >&2
    exit 2
+}
+
+me="${0##*/}"
+
+print_usage() {
+   printf '%s\n' \
+      "Usage:" \
+      "  ${me} IMAGE_FILE [--signify-pubkey KEY] [--output REPORT] [--skip-build]"
+}
+
+print_help() {
+   print_usage
+   printf '%s\n' \
+      "" \
+      "Verify a local published image against a local rebuild. Operates on a local" \
+      "file (fetched by dm-reproducible-fetch or copied by hand); its reproducibility" \
+      "sidecars must sit next to it: '<image>.dm-buildinfo' (+ .asc/.sig) and" \
+      "'<image>.sha512sums' (+ .asc/.sig). Everything needed is read from the signed" \
+      ".dm-buildinfo, so no build flags are required. It:" \
+      "  1. verifies the .dm-buildinfo + .sha512sums signatures (sq + signify)," \
+      "  2. checks the image against the signed sha512sum," \
+      "  3. rebuilds the recorded target locally and compares the two via" \
+      "     dm-reproducible-compare-artifacts." \
+      "" \
+      "  --signify-pubkey KEY   signify public key to verify with (default: the" \
+      "                         keyname.pub under ~/.signify)." \
+      "  --output REPORT        write the comparison report to REPORT." \
+      "  --skip-build           compare against an existing local build instead of" \
+      "                         rebuilding." \
+      "" \
+      "Exit codes:" \
+      "  0  reproduced bit-for-bit" \
+      "  1  differences remain -- NOT reproducible (report written)" \
+      "  2  usage / signature / environment error"
 }
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
@@ -92,10 +103,12 @@ while [ "$#" -gt 0 ]; do
          skip_build="true"
          shift
          ;;
-      -h|--help)
-         ## FIXME: Violation of Bash Style Guide R-153 (do not extract help
-         ## from comments
-         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+      -h)
+         print_usage
+         exit 0
+         ;;
+      --help)
+         print_help
          exit 0
          ;;
       -*)
