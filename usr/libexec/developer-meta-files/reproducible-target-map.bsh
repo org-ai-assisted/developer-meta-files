@@ -68,7 +68,8 @@ dm_reproducible_target_url_part() {
       virtualbox)
          url_part_ref="ova"
          ;;
-      ## TODO: raw isn't published for download, should this be here?
+      ## raw is not a published download, but the case is kept for manual /
+      ## future / debugging use (e.g. comparing a locally-built raw image).
       raw)
          url_part_ref="raw"
          ;;

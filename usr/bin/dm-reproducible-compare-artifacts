@@ -668,10 +668,11 @@ if [ "${explained}" = "no" ]; then
    ## diffoscope exits 0 when it finds nothing. Reaching here means the artifacts differ, so
    ## say why that is not a contradiction rather than leaving a diff-less report unexplained.
    ##
-   ## FIXME: An exit code of 0 is a contradiction here though. Diffoscope believes the
-   ## artifacts are identical, yet a sha256 hash earlier found them to be different. Excluded
-   ## paths don't matter here since we're comparing the higher-level images and diffoscope
-   ## should show *something* about the differences there. This would be a diffoscope bug.
+   ## NOTE: rc 0 here -- diffoscope finding no difference while the sha256 mismatch above
+   ## proves the artifacts differ -- is a diffoscope shortcoming, not a verdict change.
+   ## diffoscope's exit is IGNORED by design: the sha256 comparison is definitive, so this
+   ## path exits 1 unconditionally (below). A diff-less explanation can never soften the
+   ## verdict to 0 (reproducible).
    if [ "${diffoscope_rc}" = "0" ]; then
       printf '%s\n' "(diffoscope reported no differences; the mismatch is in bytes it does not descend into, or in a path excluded above)" >> "${report}"
    fi

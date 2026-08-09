@@ -187,8 +187,6 @@ else
          state_reject="${source_state_file} is empty"
          ;;
       *$'\n\n'*)
-         ## TODO: Should we reject a single newline at the start of the file
-         ## too?
          state_reject="${source_state_file} contains a blank line, which would terminate this Deb822 record"
          ;;
    esac
