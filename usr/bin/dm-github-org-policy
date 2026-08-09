@@ -111,18 +111,11 @@ mode_set=0
 positional=()
 
 show_help() {
-   ## FIXME: Agent docs suggest private vulnerability reporting is actively
-   ## disabled everywhere, but the help string here disagrees
-   ##
-   ## FIXME: Remove details about policy contents from help, they don't belong
-   ## here.
    cat <<'EOF'
 Apply project-wide GitHub security/policy settings to the source
 organizations (Kicksecure, Whonix) and the mirror org
 (org-ai-assisted). Idempotent and reconciling: every run also turns
-OFF the settings the policy wants off (Dependabot everywhere except
-the mirror org, private vulnerability reporting everywhere except the
-project orgs).
+OFF the settings the policy wants off.
 
 Usage (one mode flag is required - no implicit default):
   dm-github-org-policy --apply         apply policy
