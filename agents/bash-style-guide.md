@@ -838,22 +838,25 @@ Why: code that treats comments as user-interface text breaks the moment
 a comment-only edit is made, and it couples the help wording to comment
 syntax.
 
-Canonical pattern -- a short usage (`-h`) and a long help (`--help`),
-so the two are separate strings you own:
+Canonical pattern -- a full help (both `-h` and `--help` print it) and
+a short usage shown only when a REQUIRED argument is missing, kept as
+two separate strings you own:
 
     me="${0##*/}"
-    print_usage() {
+    print_usage() {                 # short: the usage line(s) only
        printf '%s\n' \
           "Usage:" \
           "  ${me} ARG [--opt VALUE]"
     }
-    print_help() {
+    print_help() {                  # full: usage + description + options
        print_usage
        printf '%s\n' "" "Longer description ..." "" "  --opt VALUE   ..."
     }
-    # in the arg loop:
-    #   -h)     print_usage; exit 0 ;;
-    #   --help) print_help;  exit 0 ;;
+    # -h and --help are the SAME: both print the full help.
+    #   -h|--help) print_help; exit 0 ;;
+    # A tool that REQUIRES arguments prints the short usage when they are
+    # missing (like 'mv'); one that runs argless (like 'nano') does not.
+    #   [ -n "${arg}" ] || { print_usage >&2; error "ARG is required"; }
 
 **R-154: No history in comments.** Comment the CURRENT state and why,
 never how the code got there. Ban change-narrative: "formerly X",

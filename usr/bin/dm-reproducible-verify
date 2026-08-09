@@ -103,11 +103,7 @@ while [ "$#" -gt 0 ]; do
          skip_build="true"
          shift
          ;;
-      -h)
-         print_usage
-         exit 0
-         ;;
-      --help)
+      -h|--help)
          print_help
          exit 0
          ;;
@@ -125,7 +121,7 @@ done
 [ -n "${HOMEVAR}" ] || error "HOMEVAR is set but empty; unset it to default to \$HOME."
 [ -n "${signify_public_key}" ] || error "signify_public_key is set but empty; unset it to default to '${default_signify_public_key}'."
 [ -n "${DEBEMAIL}" ] || error "DEBEMAIL is set but empty; unset it for the default signing identity."
-[ -n "${image_file}" ] || error "a local image file is required: dm-reproducible-verify IMAGE_FILE"
+[ -n "${image_file}" ] || { print_usage >&2; error "a local image file is required"; }
 [ -f "${image_file}" ] || error "image file does not exist: '${image_file}'"
 
 ## Command-availability preflight: probe every external tool once here (R-091),
