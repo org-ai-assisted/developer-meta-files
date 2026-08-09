@@ -204,9 +204,10 @@ else
    fi
    if [ -z "${state_reject}" ]; then
       case "${source_state_candidate}" in
-         *"Submodule-State:"*)
-            ## FIXME: This can be fooled if 'Submodule-State:' occurs anywhere
-            ## in a key's value.
+         *$'\n'"Submodule-State:"*)
+            ## Anchored to line start (the record begins with Source-Commit:), so
+            ## a field value that merely contains 'Submodule-State:' cannot be
+            ## mistaken for the real field.
             true
             ;;
          *)

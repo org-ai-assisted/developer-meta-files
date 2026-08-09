@@ -392,17 +392,9 @@ nbd_device_settle() {
    return 0
 }
 
-## Mount both images read-only so the filesystems can be diffed. Non-zero means the caller
-## should fall back to comparing the artifacts directly.
-##
-## FIXME: Rename this so that it's clear this is needed only when comparing
-## qcow2 files. (Also think through other file comparison cases; ISO files we
-## can probably just diffoscope, but OVA files might not work with diffoscope
-## so well since they will expand to 100GB sparse images as well. Perhaps we
-## need to adapt this to work with OVAs also, by creating something that
-## unpacks each OVA, converts the contained vmdk2 images to qcow2s, and then
-## passes them to this?
-filesystem_mounts_setup() {
+## Mount both qcow2 images read-only so the filesystems can be diffed. Non-zero
+## means the caller should fall back to comparing the artifacts directly.
+qcow2_filesystem_mounts_setup() {
    local image_a="$1" image_b="$2" partition partition_b modprobe_failed
    ## Loading the module is a MEANS; a usable '/dev/nbd*' is the requirement. This
    ## tool runs inside the derivative-maker container, which ships no kmod, so
@@ -425,15 +417,14 @@ filesystem_mounts_setup() {
    ## the device, not the module.
    ##
    ## It asks nbd_device_claim rather than testing '/dev/nbd0' directly, so the
-   ## preflight cannot disagree with the claim made below: a host whose nbd0 is
-   ## busy but whose nbd1 is free is usable, and testing '-b /dev/nbd0' both
-   ## rejected that host and accepted a stale-but-busy nbd0. The function is a
-   ## pure lookup -- it prints a name and reserves nothing -- so calling it here
-   ## costs nothing and changes no state. The real claim still happens below and
-   ## is still checked, because a device can go busy in between.
-   ##
-   ## FIXME: A device being busy should not make `[ -b ... ]` fail. Correct the
-   ## explanation above.
+   ## preflight cannot disagree with the claim made below: nbd_device_claim finds
+   ## a FREE device (a host whose nbd0 is busy but whose nbd1 is free is still
+   ## usable), whereas '[ -b /dev/nbd0 ]' only tests block-device-ness -- which a
+   ## busy nbd0 still satisfies -- so it would accept an unusable busy nbd0 and
+   ## never consider a free nbd1. The function is a pure lookup -- it prints a
+   ## name and reserves nothing -- so calling it here costs nothing and changes no
+   ## state. The real claim still happens below and is still checked, because a
+   ## device can go busy in between.
    if ! nbd_device_claim >/dev/null; then
       if [ "${modprobe_failed}" = "true" ]; then
          printf '%s\n' "${0##*/}: nbd unavailable: 'modprobe nbd' failed and no usable /dev/nbd* block device exists. Load 'nbd' on the HOST (the container has no kmod); note 'max_part' only takes effect at load time." >&2
@@ -478,8 +469,6 @@ filesystem_mounts_setup() {
    done
    return 1
 }
-
-## TODO ARRAYBOLT3: PICK UP HERE
 
 ## Unmount, retrying briefly. Even with 'timeout' now on the privileged side, the SIGKILL
 ## that frees the mount goes to diffoscope's process GROUP while 'timeout' waits only for its
@@ -621,10 +610,7 @@ if [ "${target}" = "qcow2" ]; then
          inner_a="${qcow2_members_a[0]}"
          inner_b="${qcow2_members_b[0]}"
       else
-         ## TODO: What happens if qcow2_members_a and qcow2_members_b contain different
-         ## numbers of qcow2 files? If a contains one archive and b contains two, this
-         ## error message is confusing.
-         printf '%s\n' "(archive holds ${#qcow2_members_a[@]} qcow2 member(s); the filesystem route handles exactly one, comparing the artifacts directly instead)" >> "${report}"
+         printf '%s\n' "(archives hold ${#qcow2_members_a[@]} and ${#qcow2_members_b[@]} qcow2 member(s); the filesystem route handles exactly one, comparing the artifacts directly instead)" >> "${report}"
       fi
    fi
 fi
@@ -634,7 +620,7 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
    ## this an aborted run leaves an attached nbd device and a mounted image behind. Chained
    ## with the unpack cleanup so registering this does not discard that one.
    trap filesystem_and_unpack_cleanup EXIT
-   if filesystem_mounts_setup "${inner_a}" "${inner_b}"; then
+   if qcow2_filesystem_mounts_setup "${inner_a}" "${inner_b}"; then
       {
          printf '%s\n' "(comparing the mounted filesystems; the disk images themselves exceed diffoscope's memory)"
          ## The two trees are mounted from two different nbd devices, so every path diffoscope
@@ -645,19 +631,13 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
       } >> "${report}"
       diffoscope_bounded "${mount_a}" "${mount_b}" "sudo --non-interactive" >> "${report}" 2>&1 \
          || diffoscope_rc="$?"
-      ## diffoscope exits 0 when it finds NOTHING. The artifacts demonstrably differ, so an
-      ## identical pair of root filesystems means the difference lives OUTSIDE them -- tar
-      ## metadata, the qcow2 header, the partition table, the bootloader sectors, the ESP.
-      ## That is not an explanation; fall through to the direct comparison instead of
-      ## announcing one and printing nothing.
-      ##
-      ## Only rc 1 -- diffoscope FOUND differences -- is an explanation. rc 0 means the root
-      ## filesystems are identical, so the difference lives outside them. Anything higher is a
-      ## crash, an OOM or a timeout. In both non-1 cases the direct comparison must still run:
-      ## treating a crash as "explained" would suppress the documented fallback and leave the
-      ## report saying only that it could not explain.
-      ##
-      ## FIXME: Deduplicate the above two comments.
+      ## Only rc 1 -- diffoscope FOUND differences -- is an explanation. rc 0 means it found
+      ## NOTHING: the root filesystems are identical, so the demonstrable difference lives
+      ## OUTSIDE them (tar metadata, the qcow2 header, the partition table, the bootloader
+      ## sectors, the ESP) -- announcing an explanation while printing nothing. Anything higher
+      ## is a crash, an OOM or a timeout. In every non-1 case the direct comparison must still
+      ## run: treating rc 0 or a crash as "explained" would suppress the documented fallback and
+      ## leave the report saying only that it could not explain.
       if [ "${diffoscope_rc}" = "1" ]; then
          explained="yes"
       elif [ "${diffoscope_rc}" = "0" ]; then
