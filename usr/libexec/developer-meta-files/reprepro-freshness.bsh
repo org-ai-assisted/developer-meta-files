@@ -124,11 +124,9 @@ dm_source_hash_lookup() {
    while IFS= read -r line || [ -n "${line}" ]; do
       manifest_pkg="${line%% *}"
       if [ "${manifest_pkg}" = "${source_pkg}" ]; then
-         manifest_hash="${line#* }"
-         ## FIXME: The comment above explained the strict formatting above,
-         ## but this line is trying to cope with malformed formatting (content
-         ## after a hash). Fix either the comment or the following line.
-         printf '%s\n' "${manifest_hash%% *}"
+         ## The strict '<pkg> <hash>' format (see above) guarantees no trailing
+         ## content, so the hash is exactly the remainder after the first space.
+         printf '%s\n' "${line#* }"
          return 0
       fi
    done < "${manifest}"
@@ -151,7 +149,7 @@ dm_source_hash_record() {
          printf '%s\n' "${line}"
       done < "${manifest}" > "${tmp}"
    fi
-   printf '%s %s\n' "${source_pkg}" "${hash}" >> "${tmp}"
+   printf '%s\n' "${source_pkg} ${hash}" >> "${tmp}"
    mv -- "${tmp}" "${manifest}"
 }
 
