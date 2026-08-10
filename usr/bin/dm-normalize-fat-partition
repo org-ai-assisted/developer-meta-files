@@ -181,14 +181,26 @@ mkfs.fat -F 32 \
 ## cluster allocation is a pure function of the (identical) content. Every mtime
 ## is pinned to SOURCE_DATE_EPOCH; mcopy -m preserves it into the FAT directory
 ## entry.
-while IFS= read -r directory; do
-   mmd -i "${fresh_image}" "::${directory#./}"
-done < <( cd "${staging}" && find . -mindepth 1 -type d | LC_ALL=C sort )
+##
+## Listings captured, NOT fed via '< <( find ... )': a process substitution hides
+## a cd/find failure from errexit, and the loop would then rebuild an EMPTY image
+## that dd overwrites the ESP with -- the same silent-strip failure mode as the
+## extraction listing above. The '[ -n ]' guard keeps an empty set to zero
+## iterations (a flat FAT legitimately has no subdirectories).
+dir_listing="$( cd -- "${staging}" && find . -mindepth 1 -type d | LC_ALL=C sort )"
+if [ -n "${dir_listing}" ]; then
+   while IFS= read -r directory; do
+      mmd -i "${fresh_image}" "::${directory#./}"
+   done <<< "${dir_listing}"
+fi
 
-while IFS= read -r file; do
-   touch --date="@${SOURCE_DATE_EPOCH}" -- "${staging}/${file#./}"
-   mcopy -m -i "${fresh_image}" "${staging}/${file#./}" "::${file#./}"
-done < <( cd "${staging}" && find . -mindepth 1 -type f | LC_ALL=C sort )
+file_listing="$( cd -- "${staging}" && find . -mindepth 1 -type f | LC_ALL=C sort )"
+if [ -n "${file_listing}" ]; then
+   while IFS= read -r file; do
+      touch --date="@${SOURCE_DATE_EPOCH}" -- "${staging}/${file#./}"
+      mcopy -m -i "${fresh_image}" "${staging}/${file#./}" "::${file#./}"
+   done <<< "${file_listing}"
+fi
 
 ## Overwrite the partition with the deterministic image. conv=notrunc so a device
 ## target keeps its size; the image is exactly the partition size regardless.
