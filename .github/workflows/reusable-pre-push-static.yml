@@ -142,6 +142,32 @@ jobs:
           path: .github/dist-ai
           persist-credentials: false
 
+      - name: Checkout helper-scripts (shellcheck cross-repo source resolution)
+        ## Consumers source helper-scripts via '# shellcheck source=
+        ## ../../../../helper-scripts/...' -- a path RELATIVE to the script that
+        ## reaches a SIBLING of the repo root. In the isolated CI checkout that
+        ## sibling is absent, so 'shellcheck -x' emits SC1091 and consumers carry
+        ## an inline '# shellcheck disable=SC1091' just to silence it. Provide the
+        ## sibling so shellcheck FOLLOWS the source instead (and the disables can
+        ## be dropped). Same org-ai-assisted/helper-scripts@master the dist-ai
+        ## tests use; master-tracking is sanctioned for our own repos.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/helper-scripts
+          ref: master
+          path: .ci-helper-scripts
+          persist-credentials: false
+
+      - name: Link helper-scripts as the repo sibling
+        ## The caller repo is checked out at the workspace root, so the sibling
+        ## the source= paths reach is one level ABOVE it, which actions/checkout
+        ## cannot target (its 'path' must stay under the workspace). Symlink it
+        ## from the in-workspace checkout above. Untracked, so the gate's
+        ## git-diff file scan never sees it. R-100: one command, no control flow.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: ln -sfn "${GITHUB_WORKSPACE}/.ci-helper-scripts" "${GITHUB_WORKSPACE}/../helper-scripts"
+
       - name: Run pre-push-static
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: ./.github/dist-ai/usr/bin/pre-push-static "${BASE_REF}"
