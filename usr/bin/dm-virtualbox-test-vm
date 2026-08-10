@@ -42,8 +42,10 @@ benchmark_time_end() {
 variables() {
    vmname="Whonix-Gateway-LXQt"
    user_name="user"
-   ## TODO: empty by default nowadays
-   password="changeme"
+   ## The guest account is passwordless (helper-scripts user_create.bsh does
+   ## 'passwd --delete'); guest LOGIN auth is therefore an EMPTY password. sudo
+   ## inside the guest is a separate concern handled by sudo-askpass-wrapper.
+   password=""
 
    vboxmanage_cmd="VBoxManage --nologo"
    vboxheadless_cmd="vboxheadless"
@@ -51,7 +53,20 @@ variables() {
    vm_wait_for_vm_start_timeout=60
    vm_wait_for_vm_shutdown_timeout=20
 
-   vboxmanage_sudo_wrapper="${vboxmanage_cmd} guestcontrol ${vmname} run --username ${user_name} --password ${password} --wait-stdout --wait-stderr --exe /usr/libexec/helper-scripts/sudo-askpass-wrapper -- apt/sudo-askpass-wrapper"
+   ## An ARRAY, not a word-split string: the empty '--password ""' must survive
+   ## as a distinct argument. In a string, an empty '${password}' would collapse
+   ## and the next flag ('--wait-stdout') would be read as the password value.
+   # shellcheck disable=SC2206 # ${vboxmanage_cmd} is meant to word-split into 'VBoxManage --nologo'
+   vboxmanage_sudo_wrapper=(
+      ${vboxmanage_cmd}
+      guestcontrol "${vmname}" run
+      --username "${user_name}"
+      --password "${password}"
+      --wait-stdout --wait-stderr
+      --exe /usr/libexec/helper-scripts/sudo-askpass-wrapper
+      --
+      apt/sudo-askpass-wrapper
+   )
 }
 
 vm_is_running_test() {
@@ -135,7 +150,7 @@ wait_for_vm() {
 }
 
 whonix_developer_repository_enable() {
-   ${vboxmanage_sudo_wrapper} repository-dist --verbose --enable --repository developers
+   "${vboxmanage_sudo_wrapper[@]}" repository-dist --verbose --enable --repository developers
 }
 
 # kill_apt() {
@@ -145,15 +160,15 @@ whonix_developer_repository_enable() {
 # }
 
 apt_update() {
-   ${vboxmanage_sudo_wrapper} dpkg --configure -a
+   "${vboxmanage_sudo_wrapper[@]}" dpkg --configure -a
 
-   ${vboxmanage_sudo_wrapper} apt-get update
+   "${vboxmanage_sudo_wrapper[@]}" apt-get update
 }
 
 install_packages() {
-   ${vboxmanage_sudo_wrapper} apt-get --yes install lkrg tirdad
+   "${vboxmanage_sudo_wrapper[@]}" apt-get --yes install lkrg tirdad
 
-   ${vboxmanage_sudo_wrapper} apt-get --yes autoremove
+   "${vboxmanage_sudo_wrapper[@]}" apt-get --yes autoremove
 }
 
 snapshot_vm_create() {
