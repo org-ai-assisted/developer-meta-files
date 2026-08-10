@@ -54,8 +54,7 @@ print_help() {
       "  --url IMAGE_URL    full download URL." \
       "  --arch ARCH        amd64 | arm64 (mandatory with --version; never defaulted)." \
       "  --target TARGET    iso | virtualbox | raw | qcow2 (with --version)." \
-      "  --flavor FLAVOR    kicksecure-{lxqt,cli,debug} | whonix-{gateway,workstation}-{cli,lxqt}" \
-      "                     (with --version)." \
+      "  --flavor FLAVOR    kicksecure-{lxqt,cli,debug} | whonix-{cli,lxqt} (with --version)." \
       "  --project DOMAIN   download domain (default: kicksecure.com for kicksecure-*," \
       "                     whonix.org for whonix-*)." \
       "  --output-dir DIR   where to place the downloads (default: current dir)." \
@@ -166,10 +165,12 @@ if [ -n "${version}" ]; then
    [ -n "${target}" ] || error "--version requires --target (see --help)."
    [ -n "${flavor}" ] || error "--version requires --flavor (see --help)."
 
-   ## The published image name mirrors the build's own naming in
-   ## help-steps/variables: Kicksecure is 'Kicksecure-<desktop>', Whonix is
-   ## 'Whonix-<Gateway|Workstation>-<desktop>' (Whonix ships gateway and
-   ## workstation as separate images, so its flavor carries the role too).
+   ## Published image name = <project>-<desktop>-<version>. The DOWNLOADS on
+   ## download.whonix.org are a COMBINED image (gateway + workstation in one), so
+   ## the Whonix name carries the desktop only, NO gateway/workstation role --
+   ## verified against download.whonix.org: 'Whonix-CLI-<v>...' is 200,
+   ## 'Whonix-Gateway-CLI-<v>...' is 404. (The per-role split lives in the
+   ## meta-packages / dm-install-from-local-repository, not in the image name.)
    case "${flavor}" in
       kicksecure-lxqt)
          image_name_base="Kicksecure-LXQt"
@@ -180,20 +181,14 @@ if [ -n "${version}" ]; then
       kicksecure-debug)
          image_name_base="Kicksecure-Debug"
          ;;
-      whonix-gateway-cli)
-         image_name_base="Whonix-Gateway-CLI"
+      whonix-cli)
+         image_name_base="Whonix-CLI"
          ;;
-      whonix-gateway-lxqt)
-         image_name_base="Whonix-Gateway-LXQt"
-         ;;
-      whonix-workstation-cli)
-         image_name_base="Whonix-Workstation-CLI"
-         ;;
-      whonix-workstation-lxqt)
-         image_name_base="Whonix-Workstation-LXQt"
+      whonix-lxqt)
+         image_name_base="Whonix-LXQt"
          ;;
       *)
-         error "unsupported --flavor '${flavor}' (kicksecure-{lxqt,cli,debug} | whonix-{gateway,workstation}-{cli,lxqt})."
+         error "unsupported --flavor '${flavor}' (kicksecure-{lxqt,cli,debug} | whonix-{cli,lxqt})."
          ;;
    esac
 
