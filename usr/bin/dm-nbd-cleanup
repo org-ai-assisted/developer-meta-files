@@ -37,6 +37,24 @@ shopt -s shift_verbose
 ## Inverted on purpose: see the header. Acting is the opt-in.
 dry_run=true
 
+print_usage() {
+   printf '%s\n' \
+      "Usage:" \
+      "  ${0##*/} [--release]"
+}
+
+print_help() {
+   print_usage
+   printf '%s\n' \
+      "" \
+      "Release leaked nbd devices and the mounts sitting on them; reports by" \
+      "default, so --release is required to act." \
+      "" \
+      "  --release   unmount nbd mounts and disconnect the in-use devices" \
+      "  --dry-run   report only, take no action (the default)" \
+      "  -h, --help  show this help"
+}
+
 while [ "$#" -gt 0 ]; do
    case "$1" in
       --release)
@@ -49,7 +67,7 @@ while [ "$#" -gt 0 ]; do
          shift
          ;;
       -h|--help)
-         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+         print_help
          exit 0
          ;;
       *)
