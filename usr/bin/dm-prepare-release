@@ -353,15 +353,10 @@ libvirt_compress() {
       test "${test_operator}" "${file_name_item_base_name}"
    done
 
-   ## Progress meter via pv when available. pv -- or cat, when pv is absent -- is
-   ## a byte-exact pass-through on stdout, so the archive and its reproducibility
-   ## are unchanged; the meter is written to stderr. tar writes to stdout
-   ## ('--file -') and the redirect below places the archive where '--file
-   ## basename' did (the current directory).
-   local -a meter=(cat)
-   if command -v pv >/dev/null 2>&1; then
-      meter=(pv)
-   fi
+   ## Progress meter via pv. pv is a byte-exact pass-through on stdout, so the
+   ## archive and its reproducibility are unchanged; the meter is written to
+   ## stderr. tar writes to stdout ('--file -') and the redirect below places the
+   ## archive where '--file basename' did (the current directory).
    tar \
       --create \
       --owner=0 --group=0 --numeric-owner \
@@ -373,7 +368,7 @@ libvirt_compress() {
       --directory="${dist_binary_build_folder}" \
       --file - \
       "${filelist_base_name[@]}" \
-      | "${meter[@]}" > "$(basename -- "${xz_archive}")"
+      | pv > "$(basename -- "${xz_archive}")"
 
    strip-nondeterminism "${xz_archive}"
 
