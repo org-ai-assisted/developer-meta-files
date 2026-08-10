@@ -12,9 +12,9 @@
 
 ## TODO: Support for Whonix images?
 
-## TODO: Should we enforce a minimum version to check reproducibility of? That
-## way no one accidentally attempts to reproducibly rebuild an image that
-## predated reproducible build support.
+## No minimum-version check: images predating reproducible-build support are
+## non-reproducible, but there is no hard block -- someone can still investigate a
+## historical image if they want to.
 
 set -o errexit
 set -o nounset
