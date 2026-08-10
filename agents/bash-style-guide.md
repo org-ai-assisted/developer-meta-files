@@ -102,10 +102,25 @@ into the sourcing shell).
 
 Why: the gate (R-010) already recognises the guarded form - zero
 column-0 strict directives plus a `was_executed`/`was_sourced` call in
-command position skips the top-level strict-mode requirement, because
-enabling strict-mode at top level would leak into any sourcing script.
+command position exempts the script from the top-level all-six
+requirement, because enabling strict-mode at top level would leak into
+any sourcing script.
+
+The `shopt` half of the guarded block is the one part the gate DOES
+enforce, and GATE-ENFORCED it is: authors reflexively copy the
+`set -o errexit`/`nounset`/`pipefail`/`errtrace` lines but drop
+`shopt -s inherit_errexit` and `shopt -s shift_verbose`, and nothing
+used to check the indented block. So when a guarded block enables
+`errexit`, the gate requires both `shopt` lines inside the guard (an
+`errexit` guard without `inherit_errexit` leaves `$()` subshells not
+respecting errexit - the very leak the strict block exists to close).
+The `set -o` choice itself stays the script's own: a script may
+deliberately defer `pipefail` (`live-mode.sh`, `get_writable_fs_lists.sh`)
+or omit `nounset` (`onion-time-pre-script`, which carries a
+`## style-ok: no-strict` waiver), and the gate does not second-guess it.
+
 "Is it dist-ai tested" is not gate-knowable, so the gate cannot enforce
-R-010a directly; it is a manual pre-push item (see
+the rest of R-010a directly; that remains a manual pre-push item (see
 [`pre-push-checklist.md`](pre-push-checklist.md)).
 
 
