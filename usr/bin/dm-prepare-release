@@ -353,10 +353,22 @@ libvirt_compress() {
       test "${test_operator}" "${file_name_item_base_name}"
    done
 
-   ## Progress meter via pv. pv is a byte-exact pass-through on stdout, so the
-   ## archive and its reproducibility are unchanged; the meter is written to
-   ## stderr. tar writes to stdout ('--file -') and the redirect below places the
-   ## archive where '--file basename' did (the current directory).
+   ## Progress meter via pv, with a real percentage + ETA. pv can only show those
+   ## if it knows the total size, so it runs on the UNCOMPRESSED tar stream (before
+   ## xz) with the members' size as '-s'; tar's internal '--xz' is therefore split
+   ## into an explicit '| xz'. 'tar -c | xz' is byte-identical to 'tar --create
+   ## --xz', so the archive and its reproducibility are unchanged. The size is disk
+   ## usage (du -B1), which tracks the tar stream for sparse raw images far better
+   ## than apparent size; a rough total only affects the meter, never the archive.
+   ## The meter goes to stderr; the redirect places the archive where '--file
+   ## basename' did (the current directory).
+   local -a member_paths=()
+   local member_item
+   for member_item in "${filelist_base_name[@]}"; do
+      member_paths+=( "${dist_binary_build_folder}/${member_item}" )
+   done
+   local input_size
+   input_size="$(du -scB1 -- "${member_paths[@]}" | tail -1 | cut -f1)"
    tar \
       --create \
       --owner=0 --group=0 --numeric-owner \
@@ -364,11 +376,12 @@ libvirt_compress() {
       --sort=name \
       --sparse \
       --mtime='2015-10-21 00:00Z' \
-      --xz \
       --directory="${dist_binary_build_folder}" \
       --file - \
       "${filelist_base_name[@]}" \
-      | pv > "$(basename -- "${xz_archive}")"
+      | pv -s "${input_size}" \
+      | xz \
+      > "$(basename -- "${xz_archive}")"
 
    strip-nondeterminism "${xz_archive}"
 
