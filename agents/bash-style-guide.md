@@ -62,6 +62,53 @@ is not masked by a later command's success.
 `inherit_errexit` makes `$()` subshells respect errexit (bash >= 4.4).
 `shift_verbose` logs when `shift` runs past argv end.
 
+**R-010a: A script a dist-ai test sources shall be source-able:
+`main()` holds the logic, and both the strict-mode block and the
+`main` call are guarded by `was_executed`.**
+
+A test that drives a script's functions must be able to `source` it
+without running it or leaking strict-mode into the test shell. Such a
+script sources `check_runtime.bsh`, keeps its strict-mode block and its
+`main "$@"` call each behind `if was_executed "${BASH_SOURCE[0]}"`, and
+moves its former top-level logic into `main()`:
+
+    source /usr/libexec/helper-scripts/check_runtime.bsh
+
+    if was_executed "${BASH_SOURCE[0]}"; then
+       set -o errexit
+       set -o nounset
+       set -o pipefail
+       set -o errtrace
+       shopt -s inherit_errexit
+       shopt -s shift_verbose
+    fi
+
+    main() {
+       ## former top-level logic; globals may stay global,
+       ## function definitions stay at top level
+    }
+
+    if was_executed "${BASH_SOURCE[0]}"; then
+       main "$@"
+    fi
+
+Scope: a NEW script shall use this form when it has, or is about to
+receive, a dist-ai test that sources it. Existing untested scripts are
+future work - do not churn them into this form without a test reason. A
+pure sourced LIBRARY (only ever sourced, never executed - e.g.
+tb-updater `version-validator`) does NOT use the guard: it defines
+functions only and keeps zero top-level strict-mode (which would leak
+into the sourcing shell).
+
+Why: the gate (R-010) already recognises the guarded form - zero
+column-0 strict directives plus a `was_executed`/`was_sourced` call in
+command position skips the top-level strict-mode requirement, because
+enabling strict-mode at top level would leak into any sourcing script.
+"Is it dist-ai tested" is not gate-knowable, so the gate cannot enforce
+R-010a directly; it is a manual pre-push item (see
+[`pre-push-checklist.md`](pre-push-checklist.md)).
+
+
 **R-011: Don't toggle errexit around a command to capture its rc.**
 Use `||`-suffixed assignment.
 
