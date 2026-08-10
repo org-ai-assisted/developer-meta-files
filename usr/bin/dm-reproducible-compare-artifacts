@@ -28,7 +28,12 @@
 ## it is best-effort. To LOCALIZE a difference to a specific in-image file, run
 ## 'ci/reproducible-manifest generate --deep' on each artifact and compare.
 ##
-## Exit: 0 identical (reproducible), 1 artifacts differ, 2 usage / not-found error.
+## Exit: 0 identical (reproducible); 4 artifacts differ (the reproducibility
+## verdict); 2 usage / setup / not-found error; 1 unexpected internal error.
+## 'differ' is a DEDICATED code, not 1: under errexit any unhandled command
+## failure exits 1, so reusing 1 for the verdict would report a script bug as a
+## reproducibility difference. 1 therefore means "something went wrong", never
+## "the artifacts differ".
 
 set -o errexit
 set -o nounset
@@ -217,12 +222,9 @@ if [ "${sha_a}" = "${sha_b}" ]; then
    ## "artifacts differ" for a bit-identical pair. Append and echo separately, and let
    ## neither failure change the verdict -- the hashes already decided it.
    ##
-   ## FIXME: We can still use tee here, just use || true at the end of the
-   ## pipeline. Also, if anything exiting 1 under errexit results in a faulty
-   ## artifact differing message, perhaps we should use a different exit
-   ## status for "artifacts differ", and we should write the code such that
-   ## errexit never does anything meaningful other than catching bad error
-   ## handling.
+   ## 'artifacts differ' is exit 4, NOT 1 (see the Exit contract at the top), so
+   ## an errexit-caught internal failure (exit 1) can never be mistaken for the
+   ## reproducibility verdict.
    printf '%s\n' "RESULT: identical (reproducible)" >> "${report}" || true
    printf '%s\n' "RESULT: identical (reproducible)" || true
    exit 0
@@ -703,4 +705,6 @@ if [ "${diffoscope_rc}" -gt 1 ]; then
    printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "${report}"
 fi
 
-exit 1
+## Dedicated 'artifacts differ' verdict (see the Exit contract at the top): 4,
+## not 1, so an errexit-caught internal error is never read as a difference.
+exit 4
