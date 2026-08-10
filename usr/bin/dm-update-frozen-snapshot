@@ -305,11 +305,30 @@ snapshot_serves_all() {
    return 0
 }
 
-## The current UTC instant in snapshot.debian.org's timestamp shape,
-## 'YYYYMMDDTHHMMSSZ'. Local system time is trusted (the rollback guard below
-## still refuses a pin that moves backwards, catching a mis-set / stepped clock).
+## The current instant in snapshot.debian.org's timestamp shape 'YYYYMMDDTHHMMSSZ',
+## taken from the SERVER's own clock (its HTTP Date header), NOT the local one.
+## A fast local clock would pin a FUTURE timestamp: it resolves to the current
+## newest snapshot now, but once a snapshot with a timestamp between the two is
+## published it becomes the nearer predecessor, so the SAME committed pin later
+## resolves to DIFFERENT content -- silently non-reproducible, and the rollback
+## guard (backwards only) cannot catch it. The server's own now is <= real now, so
+## no future snapshot can fall at or before it. Local time is used for nothing.
 current_utc_timestamp() {
-   date --utc '+%Y%m%dT%H%M%SZ'
+   local headers http_date status
+   status=0
+   headers="$(scurl --silent --show-error --head --max-time 60 -- "${SNAPSHOT_BASE}/")" || status="$?"
+   if [ "${status}" -ne 0 ]; then
+      printf '%s\n' "dm-update-frozen-snapshot: could not reach snapshot.debian.org for its server time (curl exit ${status})." >&2
+      return 1
+   fi
+   ## HTTP Date header, e.g. 'Date: Wed, 15 Mar 2028 12:00:00 GMT'. 'date -d' parses
+   ## that RFC form directly. --max-count so only the first Date line is taken.
+   http_date="$(printf '%s\n' "${headers}" | grep --ignore-case --max-count=1 '^date:' | cut -d' ' -f2- | tr -d '\r')"
+   if [ -z "${http_date}" ]; then
+      printf '%s\n' "dm-update-frozen-snapshot: snapshot.debian.org returned no Date header; refusing to pin from the local clock." >&2
+      return 1
+   fi
+   date --utc --date="${http_date}" '+%Y%m%dT%H%M%SZ'
 }
 
 update_frozen_snapshot() {
