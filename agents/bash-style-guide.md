@@ -165,6 +165,27 @@ genuine evaluation error (division by zero, a malformed expression)
 still fails and, under `errexit`, still aborts - the fix is about the
 value-zero case, not a claim that arithmetic can never fail.
 
+**R-013: Set shell options by long `-o` name, one per line -- even in
+POSIX `sh`.** `set -eu` -> `set -o errexit` / `set -o nounset`.
+
+    Bad:  set -eu
+          set -euo pipefail
+          set -o errexit -o nounset
+
+    Good: set -o errexit
+          set -o nounset
+          set -o pipefail
+
+Why: `dash` and `busybox sh` both VALIDATE and IMPLEMENT `set -o errexit`
+/ `set -o nounset` / `set -o pipefail` (verified behaviourally, not just
+accepted syntax), so the long form is portable to `#!/bin/sh`, not
+bash-only. Long names self-document, and one option per line makes a
+diff that adds or drops a single option reviewable. GATE-ENFORCED: a
+short-flag enable (`set -e`, `set -eu`, `set -euo pipefail`) OR more than
+one option on a single `set` line fails the gate. `set --` / `set --
+"$@"` (positional parameters) and a lone `set -o <name>` are fine; the
+`set +o <name>` toggle is R-011's concern.
+
 
 ## Variables
 
