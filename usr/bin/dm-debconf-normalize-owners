@@ -45,15 +45,18 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
+## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (exported by help-steps/pre
+## for a from-source build); empty falls back to the installed system path.
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
+
 if [ "$#" -ne 1 ]; then
-   printf '%s\n' "usage: dm-debconf-normalize-owners <config.dat>" >&2
-   exit 2
+   die 2 "usage: ${0##*/} <config.dat>"
 fi
 
 config_dat="$1"
 if [ ! -f "${config_dat}" ]; then
-   printf '%s\n' "dm-debconf-normalize-owners: not a file: ${config_dat}" >&2
-   exit 2
+   die 2 "not a file: ${config_dat}"
 fi
 
 ## Write the transformed content to a temp file in the SAME directory, then

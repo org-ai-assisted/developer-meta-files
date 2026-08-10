@@ -42,27 +42,25 @@ shopt -s shift_verbose
 ## for a from-source build); empty falls back to the installed system path.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 
 if [ "$#" -ne 1 ]; then
-   printf '%s\n' "usage: dm-normalize-fat-partition <fat-partition-device-or-image>" >&2
-   exit 2
+   die 2 "usage: ${0##*/} <fat-partition-device-or-image>"
 fi
 
 fat_device="$1"
 if [ ! -e "${fat_device}" ]; then
-   printf '%s\n' "dm-normalize-fat-partition: not found: ${fat_device}" >&2
-   exit 2
+   die 2 "not found: ${fat_device}"
 fi
 
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
-   printf '%s\n' "dm-normalize-fat-partition: SOURCE_DATE_EPOCH is unset; refusing a non-reproducible run." >&2
-   exit 2
+   die 2 "SOURCE_DATE_EPOCH is unset; refusing a non-reproducible run."
 fi
 
 for tool in mkfs.fat mcopy mmd mdir; do
    if ! has "${tool}"; then
-      printf '%s\n' "dm-normalize-fat-partition: required tool not found: ${tool} (need dosfstools + mtools)" >&2
-      exit 2
+      die 2 "required tool not found: ${tool} (need dosfstools + mtools)"
    fi
 done
 
@@ -88,8 +86,7 @@ boot_bytes_le() {
 ## plain image file uses its byte size.
 if [ -b "${fat_device}" ]; then
    if ! has blockdev; then
-      printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is a block device but 'blockdev' (util-linux) is missing." >&2
-      exit 2
+      die 2 "${fat_device} is a block device but 'blockdev' (util-linux) is missing."
    fi
    partition_size="$( blockdev --getsize64 "${fat_device}" )"
 else
@@ -103,8 +100,7 @@ fi
 ## An EFI System Partition of any real size is FAT32; a short/empty/non-FAT input
 ## fails this check cleanly instead of crashing the arithmetic below.
 if [ "${partition_size}" -lt 512 ]; then
-   printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is too small to be a FAT partition." >&2
-   exit 1
+   die 1 "${fat_device} is too small to be a FAT partition."
 fi
 fs_type_signature="$( dd if="${fat_device}" bs=1 skip=82 count=8 2>/dev/null | tr -d '\000' )"
 case "${fs_type_signature}" in
@@ -112,8 +108,7 @@ case "${fs_type_signature}" in
       true
       ;;
    *)
-      printf '%s\n' "dm-normalize-fat-partition: ${fat_device} is not FAT32 (signature: '${fs_type_signature}'); refusing." >&2
-      exit 1
+      die 1 "${fat_device} is not FAT32 (signature: '${fs_type_signature}'); refusing."
       ;;
 esac
 
@@ -127,8 +122,7 @@ volume_serial="$( boot_bytes_le 67 4 )"
 volume_label="$( dd if="${fat_device}" bs=1 skip=71 count=11 2>/dev/null | tr -d '\000' | sed 's/ *$//' )"
 
 if [ "${bytes_per_sector}" -eq 0 ]; then
-   printf '%s\n' "dm-normalize-fat-partition: ${fat_device} has an unreadable FAT boot sector." >&2
-   exit 1
+   die 1 "${fat_device} has an unreadable FAT boot sector."
 fi
 
 staging="$( mktemp --directory )"
