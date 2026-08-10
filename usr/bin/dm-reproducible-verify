@@ -59,8 +59,9 @@ print_help() {
       "" \
       "Exit codes:" \
       "  0  reproduced bit-for-bit" \
-      "  1  differences remain -- NOT reproducible (report written)" \
-      "  2  usage / signature / environment error"
+      "  4  differences remain -- NOT reproducible (report written)" \
+      "  2  usage / signature / environment error" \
+      "  1  unexpected internal error"
 }
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
@@ -224,12 +225,17 @@ compare_args=( --target "${bi_target}" --dir-a "${image_dir}" --dir-b "${build_o
 verify_exit="0"
 "${MYDIR}/dm-reproducible-compare-artifacts" "${compare_args[@]}" || verify_exit="$?"
 
+## dm-reproducible-compare-artifacts' verdict: 0 identical, 4 artifacts differ,
+## 2 setup/environment error, 1 unexpected internal error. Propagated verbatim.
 case "${verify_exit}" in
    0)
       printf '%s\n' "INFO: REPRODUCIBLE -- the published image matches the local rebuild." >&2
       ;;
-   1)
+   4)
       printf '%s\n' "INFO: NOT reproducible -- differences remain${output_file:+ (report: ${output_file})}." >&2
+      ;;
+   2)
+      printf '%s\n' "ERROR: could not compare (setup / artifact-not-found; exit 2)." >&2
       ;;
    *)
       printf '%s\n' "ERROR: verification could not complete (exit ${verify_exit})." >&2
