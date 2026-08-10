@@ -19,17 +19,17 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
-if [ "$MYDIR" = "/usr/bin" ]; then
+if [ "${MYDIR}" = "/usr/bin" ]; then
    true "INFO: Run from: /usr/bin"
    ## XXX: hardcoded path
-   derivative_maker_source_code_dir="$HOME/derivative-maker"
+   derivative_maker_source_code_dir="${HOME}/derivative-maker"
 else
    true "INFO: Run from: source code folder"
-   derivative_maker_source_code_dir="$(cd -- "$MYDIR" && cd -- "../../../../../" && pwd)"
+   derivative_maker_source_code_dir="$(cd -- "${MYDIR}" && cd -- "../../../../../" && pwd)"
 fi
 
 ## required by: make-helper-one.bsh
-cd -- "$derivative_maker_source_code_dir"
+cd -- "${derivative_maker_source_code_dir}"
 
 source "${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts/usr/libexec/helper-scripts/get_colors.sh"
 source "${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts/usr/libexec/helper-scripts/has.sh"
@@ -105,8 +105,8 @@ check_prerequisites() {
       exit 1
    fi
 
-   [ "${derivative_maker_source_code_dir}" = "$HOME/derivative-maker" ] || {
-      printf '%s\n' "WARNING: derivative_maker_source_code_dir '${derivative_maker_source_code_dir}' is not located at '$HOME/derivative-maker'. The script may break."
+   [ "${derivative_maker_source_code_dir}" = "${HOME}/derivative-maker" ] || {
+      printf '%s\n' "WARNING: derivative_maker_source_code_dir '${derivative_maker_source_code_dir}' is not located at '${HOME}/derivative-maker'. The script may break."
    }
 
    [ -d "${derivative_binary_dir}" ] || {
@@ -126,7 +126,7 @@ prepare_system() {
 }
 
 ## Shows debugging information for all non-volatile global variables.
-## TODO Make sure this is up-to-date!
+## REMINDER: keep this list in sync with the non-volatile globals as they change.
 show_debug_variable_info() {
    local library_item
 
@@ -1388,9 +1388,6 @@ pkg_git_remotes_add() {
    dry_run_or_run git remote set-url "${DM_GITHUB_MIRROR}" \
       "git@github.com:${DM_GITHUB_MIRROR}/${batch_current_package_reponame}.git" || true
 
-   ## TODO: remove
-   dry_run_or_run git remote rm     adrelanos || true
-
    dry_run_or_run git remote add     github-adrelanos         "git@github.com:adrelanos/${batch_current_package_reponame}.git" || true
    dry_run_or_run git remote set-url github-adrelanos         "git@github.com:adrelanos/${batch_current_package_reponame}.git" || true
 
@@ -1429,11 +1426,11 @@ pkg_git_check_current_branch() {
    local current_branch
    current_branch="$(git branch --show-current)"
 
-   if [ "$current_branch" = "master" ]; then
+   if [ "${current_branch}" = "master" ]; then
       return 0
    fi
 
-   printf '%s\n' "unexpected branch! batch_current_package_reponame: '$batch_current_package_reponame' | current_branch: '$current_branch' | expected: 'master'"
+   printf '%s\n' "unexpected branch! batch_current_package_reponame: '${batch_current_package_reponame}' | current_branch: '${current_branch}' | expected: 'master'"
    return 1
 }
 
@@ -1645,7 +1642,7 @@ pkg_profile_d_zsh_creator() {
       basename_symlink_without_file_extension="${basename_symlink_with_file_extension%.*}"
       package_links_file="debian/${batch_current_package_reponame}.links"
       z_profile_d_symlink="/etc/zprofile.d/${basename_symlink_without_file_extension}.zsh"
-      symlink_config_entry="$profile_d_symlink $z_profile_d_symlink"
+      symlink_config_entry="${profile_d_symlink} ${z_profile_d_symlink}"
       if [ -f "${package_links_file}" ]; then
          if grep --quiet "${symlink_config_entry}" "${package_links_file}" ; then
             true 'already exists.'
@@ -2165,7 +2162,7 @@ pkg_git_debinstfile() {
    dry_run_or_run genmkfile debinstfile
 
    msg='add debian install file (generated using "genmkfile debinstfile")'
-   printf '%s\n' "PWD: '$PWD'"
+   printf '%s\n' "PWD: '${PWD}'"
    dry_run_or_run git add -- "debian/${batch_current_package_reponame}.install" || true
    dry_run_or_run git commit -m "${msg}" || true
    dry_run_or_run git status
@@ -2356,7 +2353,7 @@ pkg_git_submodule_file_writer() {
    dry_run_or_run append "${derivative_maker_source_code_dir}/.gitmodules" "\
 [submodule \"${batch_current_package_reponame}\"]
         path = packages/${batch_current_project_name,,}/${batch_current_package_reponame}
-$url" >/dev/null
+${url}" >/dev/null
 
    dry_run_or_run append "${derivative_maker_source_code_dir}/.gitmodules" "" >/dev/null
 }
@@ -2409,7 +2406,7 @@ pkg_git_packages_git_log_writer() {
       commit_msg_short_list="$(git --no-pager log --pretty='%H %s')"
    fi
 
-   if [ "$commit_msg_short_list" = "" ]; then
+   if [ "${commit_msg_short_list}" = "" ]; then
       true "${batch_current_package_reponame}: commit_msg_short_list empty?"
       exit 1
    fi
@@ -2417,8 +2414,8 @@ pkg_git_packages_git_log_writer() {
    package_header_written='n'
 
    while read -r commit_hash commit_msg_short ; do
-      if [ "$commit_msg_short" = "" ]; then
-         true "${batch_current_package_reponame}: commit_hash: $commit_hash | commit_msg_short empty"
+      if [ "${commit_msg_short}" = "" ]; then
+         true "${batch_current_package_reponame}: commit_hash: ${commit_hash} | commit_msg_short empty"
          continue
       fi
       if ! commit_filter "${commit_msg_short}" ; then
@@ -2639,7 +2636,7 @@ pkg_need_version_bump_show() {
       ## local|main|source: sdwdate 1.2.3-1
 
       if [ -z "${repo_query_output}" ]; then
-         true "${red}${bold}ERROR:${reset} changelog ${changelog_version} vs repo_query_output $repo_query_output is empty"
+         true "${red}${bold}ERROR:${reset} changelog ${changelog_version} vs repo_query_output ${repo_query_output} is empty"
          return 1
       fi
 
@@ -2949,7 +2946,7 @@ generate_announcement() {
       temp="$(str_replace "-testers-only" "" <<< "${temp}")"
       temp="$(str_replace "-stable-only" "" <<< "${temp}")"
 
-      derivative_version_new_main_short="$temp"
+      derivative_version_new_main_short="${temp}"
 
       if [ "${derivative_release_type}" = 'testers' ]; then
          release_type_long='Testers Wanted'
@@ -3220,7 +3217,7 @@ main() {
 ## . END Main logic }
 
 ## Global tunables, adjust these as necessary
-derivative_binary_dir="$HOME/derivative-binary"
+derivative_binary_dir="${HOME}/derivative-binary"
 export make_git_tag_push_cache_dir="${derivative_binary_dir}/git-tag-push-cache"
 
 derivative_name_list=( 'kicksecure' 'whonix' )
