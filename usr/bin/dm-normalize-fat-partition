@@ -143,6 +143,14 @@ trap cleanup EXIT
 ## or a plain image file identically, needs no loop device and no root, and keeps
 ## the tool testable off a FAT image. Each immediate child of the root is copied
 ## recursively (mcopy -s) into the staging tree.
+##
+## Listing captured with command substitution, NOT '< <( mdir ... )': a process
+## substitution runs mdir in a subshell whose non-zero exit errexit cannot see,
+## so an unreadable device would silently list nothing and normalize to an EMPTY
+## root -- dropping every file. mdir -b exits 0 for an empty root (no output) and
+## non-zero only on a real error, so capturing it makes a failed listing ABORT
+## rather than produce a stripped image.
+root_listing="$( mdir -b -i "${fat_device}" "::/" 2>/dev/null )"
 while IFS= read -r root_child; do
    root_child="${root_child#::/}"
    root_child="${root_child%/}"
@@ -153,7 +161,7 @@ while IFS= read -r root_child; do
    ## "Could not get geometry of device" (it falls back to the boot sector, which
    ## is what MTOOLS_SKIP_CHECK is for) -- a warning, not an error.
    mcopy -s -m -i "${fat_device}" "::/${root_child}" "${staging}/" 2>/dev/null
-done < <( mdir -b -i "${fat_device}" "::/" 2>/dev/null )
+done <<< "${root_listing}"
 
 ## Build the replacement FAT in a fresh zero-filled image of the SAME size, so
 ## free space is deterministic rather than whatever stale bytes the partition
