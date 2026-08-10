@@ -7,72 +7,15 @@
 
 # shellcheck shell=bash
 
-## Named for what it does: decide whether a package needs a rebuild, via both the
-## reprepro published-version check and a manifest of custom-built package hashes.
-
-## TODO: Consider removing all reprepro functionality from this script and
-## just operate based on repo content hashes. The latter is guaranteed to be
-## accurate while the former is not, and it seems wasteful to implement both
-## alongside each other.
+## Named for what it does: decide whether a package needs a rebuild, from a
+## manifest of source-content hashes. Accurate by construction -- a change to any
+## source byte (including a debian/changelog version bump) moves the hash -- so it
+## needs no query to the local reprepro repo. The reprepro published-version path
+## was removed: it was a second, less reliable mechanism for the same decision
+## (reprepro can report a version that no longer matches what is on disk).
 
 ## style-ok: no-strict -- sourced library; a strict-mode preamble would leak
 ## errexit/nounset into the caller's shell.
-
-## Reusable per-package rebuild detection: is a package already published in the
-## local reprepro repository at its current 'debian/changelog' version? Uses the
-## same changelog-version-vs-published-version mechanism as
-## 'dm-packaging-helper-script' (dpkg --compare-versions against the source
-## version reprepro reports), so a build can skip packages that have not been
-## version-bumped since the last build.
-
-## Echo the source version currently published for a package in the local
-## reprepro repository, or nothing if the package is absent.
-##   dm_reprepro_published_source_version <apt_codename> <source_pkg> <repository_name>
-## 'derivative_repository_name' selects the reprepro folder; it is exported only
-## inside the command substitution's subshell so it does not leak to the caller.
-dm_reprepro_published_source_version() {
-   local apt_codename source_pkg repository_name query_output source_line
-   local source_match_list_str source_grep_rc
-   local -a fields
-   apt_codename="$1"
-   source_pkg="$2"
-   repository_name="$3"
-
-   query_output="$(
-      export derivative_repository_name="${repository_name}"
-      "${dist_developer_meta_files_folder}/usr/bin/dm-reprepro-wrapper" \
-         --architecture source list "${apt_codename}" "${source_pkg}" 2>/dev/null || true
-   )"
-
-   ## reprepro reports e.g.: local|main|source: sdwdate 1.2.3-1
-   ## Match the literal '|source: ' FIELD rather than a bare 'source:' anywhere in the line,
-   ## and take the FIRST match explicitly -- reprepro prints one line per component, so a
-   ## package published in more than one yields several and the 'read' below would silently
-   ## consume only one of them regardless.
-   ## Split into steps: one pipeline plus a substitution plus a blanket
-   ## '|| true' made every failure look identical, and 'head' closing the pipe
-   ## early can kill grep with SIGPIPE (rc 141 under pipefail), which the
-   ## '|| true' then hid as well. Separating them also distinguishes grep's
-   ## "no match" (rc 1) from a real error (rc >1), which must not be silently
-   ## treated as "not published".
-   source_grep_rc=0
-   source_match_list_str="$(printf '%s\n' "${query_output}" | grep --fixed-strings -- "|source: ")" \
-      || source_grep_rc="$?"
-   if [ "${source_grep_rc}" -gt 1 ]; then
-      printf '%s\n' "${FUNCNAME[0]}: ERROR: reprepro output could not be searched (grep exit ${source_grep_rc})." >&2
-      return 1
-   fi
-   [ -n "${source_match_list_str}" ] || return 0
-   source_line="$(printf '%s\n' "${source_match_list_str}" | head --lines=1)"
-   [ -n "${source_line}" ] || return 0
-   read -r -a fields <<< "${source_line}"
-   ## Expect exactly '<codename>|<component>|source:' '<pkg>' '<version>'. Taking the LAST
-   ## token blindly meant an added field in a future reprepro output format would be returned
-   ## as if it were the version, and dpkg --compare-versions would then act on garbage.
-   ## Report "not published" instead, which errs toward rebuilding.
-   [ "${#fields[@]}" -eq 3 ] || return 0
-   printf '%s\n' "${fields[2]}"
-}
 
 ## Deterministic content hash of a package source tree: every non-VCS file's path
 ## AND content. Detects an edit that did NOT bump debian/changelog, so local debug
@@ -153,42 +96,29 @@ dm_source_hash_record() {
 }
 
 ## Decide whether a package source tree needs (re)building.
-##   dm_package_needs_rebuild <package_source_dir> <apt_codename> <repository_name>
-## Return 0 (needs rebuild) when the package is absent, its changelog version
-## differs from the published one, OR -- for an already-published same version --
-## its source CONTENT changed since it was last built (edit without a changelog
-## bump, detected by a content-hash manifest). Return 1 (skip) only when the
-## published version matches AND the source hash is unchanged.
+##   dm_package_needs_rebuild <package_source_dir> <apt_codename>
+## Return 0 (needs rebuild) when the source CONTENT differs from what was last
+## built -- which includes a debian/changelog version bump, since the changelog
+## is part of the hashed tree -- OR when nothing was ever recorded for it (no
+## manifest entry, treated as changed, so a first build after adopting this
+## repopulates the manifest safely). Return 1 (skip) only when the recorded hash
+## matches the current source hash.
 dm_package_needs_rebuild() {
-   local package_source_dir apt_codename repository_name
-   local changelog_version source_pkg published_version
-   local manifest current_hash stored_hash
+   local package_source_dir apt_codename
+   local source_pkg manifest current_hash stored_hash
    package_source_dir="$1"
    apt_codename="$2"
-   repository_name="$3"
 
-   changelog_version="$(dpkg-parsechangelog --show-field Version --file "${package_source_dir}/debian/changelog")"
    source_pkg="$(dpkg-parsechangelog --show-field Source --file "${package_source_dir}/debian/changelog")"
 
-   published_version="$(dm_reprepro_published_source_version "${apt_codename}" "${source_pkg}" "${repository_name}")"
-
-   ## Absent or a different changelog version -> rebuild.
-   if [ -z "${published_version}" ] || ! dpkg --compare-versions "${changelog_version}" eq "${published_version}"; then
-      true "INFO: rebuild ${source_pkg}: changelog ${changelog_version}, published ${published_version:-none}."
-      return 0
-   fi
-
-   ## Same version already published: rebuild only if the source content changed
-   ## since it was last built. Unknown (no manifest entry) is treated as changed,
-   ## so a first build after adopting this repopulates the manifest safely.
    manifest="$(dm_source_hash_manifest_path "${apt_codename}")"
    current_hash="$(dm_package_source_hash "${package_source_dir}")"
    stored_hash="$(dm_source_hash_lookup "${manifest}" "${source_pkg}")"
    if [ -z "${stored_hash}" ] || [ "${stored_hash}" != "${current_hash}" ]; then
-      true "INFO: rebuild ${source_pkg}: source content changed since last build (hash mismatch)."
+      true "INFO: rebuild ${source_pkg}: source content changed since last build (or first build)."
       return 0
    fi
 
-   true "INFO: skip ${source_pkg}: version ${changelog_version} published and source unchanged."
+   true "INFO: skip ${source_pkg}: source unchanged since last build."
    return 1
 }
