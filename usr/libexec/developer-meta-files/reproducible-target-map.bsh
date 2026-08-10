@@ -81,3 +81,29 @@ dm_reproducible_target_url_part() {
          ;;
    esac
 }
+
+## Set $1 to the build target for the download-URL path segment <url_part> $2 --
+## the inverse of dm_reproducible_target_url_part, kept here next to it so the
+## forward and reverse mappings can never drift.
+dm_reproducible_url_part_to_target() {
+   check_variable_name "${1:-}" || return 1
+
+   local -n target_ref="$1"
+   case "${2:-}" in
+      iso)
+         target_ref="iso"
+         ;;
+      ova)
+         target_ref="virtualbox"
+         ;;
+      raw)
+         target_ref="raw"
+         ;;
+      libvirt)
+         target_ref="qcow2"
+         ;;
+      *)
+         return 1
+         ;;
+   esac
+}

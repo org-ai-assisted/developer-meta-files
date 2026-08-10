@@ -141,6 +141,17 @@ done
 [ -z "${url}" ] || [ -z "${version}" ] || error "pass EITHER --version OR --url, not both."
 [ -n "${url}" ] || [ -n "${version}" ] || { print_usage >&2; error "pass a published version (--version) or a URL"; }
 
+## Shared map of build target <-> released url_part + extension (also used by
+## dm-reproducible-compare-artifacts), so the download URL, the comparison, and
+## the URL-mode detection all use the same forward and reverse mappings and can
+## never drift. Sourced here -- after -h/--help and the usage errors above have
+## exited -- so those need no helper-scripts. The map sources helper-scripts'
+## strings.bsh via HELPER_SCRIPTS_PATH; default it to the installed location so
+## an installed run resolves it without the build env.
+HELPER_SCRIPTS_PATH="${HELPER_SCRIPTS_PATH:-}"
+# shellcheck source=../libexec/developer-meta-files/reproducible-target-map.bsh
+source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
+
 ## VERSION mode: build the download URL. Mirrors the image naming in
 ## help-steps/variables:
 ##   https://download.<domain>/<url_part>/<version>/Kicksecure-<desktop>-<version>.<arch_pretty>.<ext>
@@ -179,15 +190,6 @@ if [ -n "${version}" ]; then
 
    url_part=""
    ext=""
-   ## Shared target->released-{url_part,extension} map (also used by
-   ## dm-reproducible-compare-artifacts) so the download URL and the comparison
-   ## never disagree on the artifact name. Sourced lazily -- only VERSION mode
-   ## needs it -- so -h/--help and URL mode require no helper-scripts. The map
-   ## sources helper-scripts' strings.bsh via HELPER_SCRIPTS_PATH; default it to
-   ## the installed location so an installed run resolves it without the build env.
-   HELPER_SCRIPTS_PATH="${HELPER_SCRIPTS_PATH:-}"
-   # shellcheck source=../libexec/developer-meta-files/reproducible-target-map.bsh
-   source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
    dm_reproducible_target_url_part url_part "${target}" \
       || error "unsupported --target '${target}' (iso|virtualbox|raw|qcow2)."
    dm_reproducible_target_ext ext "${target}"
@@ -212,27 +214,7 @@ if [ -n "${url}" ] && [ -z "${version}" ]; then
    det_file="$(basename -- "${url%%\?*}")"
    det_after="${det_file#*-"${det_version}".}"
    det_arch_pretty="${det_after%%.*}"
-   ## FIXME: This is just the inverse of the lookup logic in
-   ## dm_reproducible_target_url_part. Any way to deduplicate this, or can the
-   ## logic at least be moved closer to its counterpart in
-   ## reproducible-target-map.bsh?
-   case "${det_url_part}" in
-      iso)
-         det_target="iso"
-         ;;
-      ova)
-         det_target="virtualbox"
-         ;;
-      raw)
-         det_target="raw"
-         ;;
-      libvirt)
-         det_target="qcow2"
-         ;;
-      *)
-         det_target=""
-         ;;
-   esac
+   dm_reproducible_url_part_to_target det_target "${det_url_part}" || det_target=""
    case "${det_arch_pretty}" in
       Intel_AMD64)
          det_arch="amd64"
