@@ -124,7 +124,7 @@ jobs:
         run: |
           apt-get update --quiet
           apt-get install --yes --no-install-recommends \
-            ca-certificates file git pre-commit-hooks shellcheck
+            ca-certificates file git pre-commit-hooks shellcheck yq
           git config --global --add safe.directory '*'
 
       - name: Checkout caller repo (full history for git diff)
@@ -142,16 +142,30 @@ jobs:
           path: .github/dist-ai
           persist-credentials: false
 
-      - name: Checkout helper-scripts (shellcheck cross-repo source resolution)
-        ## Consumers source helper-scripts via '# shellcheck source=
-        ## ../../../../helper-scripts/...' -- a path RELATIVE to the script that
-        ## reaches a SIBLING of the repo root. In the isolated CI checkout that
-        ## sibling is absent, so 'shellcheck -x' emits SC1091 and consumers carry
-        ## an inline '# shellcheck disable=SC1091' just to silence it. Provide the
-        ## sibling so shellcheck FOLLOWS the source instead (and the disables can
-        ## be dropped). Same org-ai-assisted/helper-scripts@master the dist-ai
-        ## tests use; master-tracking is sanctioned for our own repos.
+      - name: Load per-repo config (.github/dm-consumer.yml)
+        id: cfg
+        ## Runtime read of the caller's per-repo config (reusable-dist-ai-tests
+        ## pattern). All logic lives in the committed dist-ai/ci script, not
+        ## inline here (no embedded shell scripts in CI files). Emits
+        ## helper_scripts=true when the repo opts in below.
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: ./.github/dist-ai/ci/pre-push-static-ci-config.sh .github/dm-consumer.yml
+
+      - name: Checkout helper-scripts (shellcheck cross-repo source resolution)
+        ## OPT-IN, via the SAME 'dist-ai-tests: helper-scripts: true' flag a
+        ## consumer already sets in .github/dm-consumer.yml -- so a repo that
+        ## sources helper-scripts opts in once. Consumers source it via a
+        ## '# shellcheck source=../../../../helper-scripts/...' directive, a path
+        ## RELATIVE to the script that reaches a SIBLING of the repo root. In the
+        ## isolated CI checkout that sibling is absent, so 'shellcheck -x' emits
+        ## SC1091 and the consumer silences it with an inline
+        ## '# shellcheck disable=SC1091'. Provide the sibling so shellcheck
+        ## FOLLOWS the source instead (and the disable can be dropped). Same
+        ## org-ai-assisted/helper-scripts@master the dist-ai tests use;
+        ## master-tracking is sanctioned for our own repos.
+        if: >-
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+          && steps.cfg.outputs.helper_scripts == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           repository: org-ai-assisted/helper-scripts
@@ -165,7 +179,9 @@ jobs:
         ## cannot target (its 'path' must stay under the workspace). Symlink it
         ## from the in-workspace checkout above. Untracked, so the gate's
         ## git-diff file scan never sees it. R-100: one command, no control flow.
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: >-
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+          && steps.cfg.outputs.helper_scripts == 'true'
         run: ln -sfn "${GITHUB_WORKSPACE}/.ci-helper-scripts" "${GITHUB_WORKSPACE}/../helper-scripts"
 
       - name: Run pre-push-static
