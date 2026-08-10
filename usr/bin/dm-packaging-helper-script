@@ -2710,19 +2710,18 @@ pkg_upstream_and_debian_changelog_bump() {
       return 0
    fi
 
-   ## version_numbers_by_upstream is set by make-helper-overrides.bsh by
-   ## individual packages.
-   printf '%s\n' "version_numbers_by_upstream: '${version_numbers_by_upstream:-}'"
-
-   ## TODO:
-   ## Not the cleanest way. Other variables might be unwanted.
+   ## version_numbers_by_upstream is set by a package's make-helper-overrides.bsh.
+   ## Read it in a SUBSHELL so the OTHER variables that override file may set do
+   ## not leak into this function or the global scope. make_source_overrides_* only
+   ## source the override files; the genmkfile calls below re-source the overrides
+   ## in their own processes, so nothing here needs those variables to survive.
    local version_numbers_by_upstream
-
-   ## Complex, slow.
-   #make_init ## includes make_get_variables
-   ## sets maybe: version_numbers_by_upstream
-   make_source_overrides_file
-   make_source_overrides_folder
+   version_numbers_by_upstream="$(
+      make_source_overrides_file 1>&2
+      make_source_overrides_folder 1>&2
+      printf '%s' "${version_numbers_by_upstream:-}"
+   )"
+   printf '%s\n' "version_numbers_by_upstream: '${version_numbers_by_upstream:-}'"
 
    ## If version_numbers_by_upstream=true then 'genmkfile deb-uachl-bumpup-major'
    ## would be bumping only the package revision number. Not the version number.
