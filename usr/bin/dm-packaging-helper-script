@@ -2242,7 +2242,9 @@ pkg_git_diff_and_commit() {
    #read -r temp
 
    dry_run_or_run git add -A
-   ## TODO
+   ## REMINDER: the commit message is hardcoded 'typo' -- this interactive flow
+   ## commits the maintainer's own reviewed changes (typo fixes); adjust the
+   ## message when committing something other than a typo.
    dry_run_or_run git commit -m "typo"
 
    if nothing_to_commit; then
