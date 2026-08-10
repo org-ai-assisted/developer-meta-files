@@ -114,8 +114,11 @@ dm_package_needs_rebuild() {
    manifest="$(dm_source_hash_manifest_path "${apt_codename}")"
    current_hash="$(dm_package_source_hash "${package_source_dir}")"
    stored_hash="$(dm_source_hash_lookup "${manifest}" "${source_pkg}")"
-   if [ -z "${stored_hash}" ] || [ "${stored_hash}" != "${current_hash}" ]; then
-      true "INFO: rebuild ${source_pkg}: source content changed since last build (or first build)."
+   ## 'nohash' is dm_package_source_hash's failure sentinel, NOT a digest. It must
+   ## never be compared like one: a source tree that fails to hash twice would
+   ## otherwise read as 'unchanged' and be skipped. A hash failure forces a rebuild.
+   if [ "${current_hash}" = "nohash" ] || [ -z "${stored_hash}" ] || [ "${stored_hash}" != "${current_hash}" ]; then
+      true "INFO: rebuild ${source_pkg}: source content changed since last build (or first build, or hash failure)."
       return 0
    fi
 
