@@ -7,9 +7,8 @@
 
 # shellcheck shell=bash
 
-## FIXME: This script's name is no longer accurate, as it also manages a
-## manifest of custom-built package hashes. "package-build-freshness.bsh"
-## might be preferable.
+## Named for what it does: decide whether a package needs a rebuild, via both the
+## reprepro published-version check and a manifest of custom-built package hashes.
 
 ## TODO: Consider removing all reprepro functionality from this script and
 ## just operate based on repo content hashes. The latter is guaranteed to be
