@@ -10,7 +10,6 @@
 ## verified; verification + rebuild + compare is the separate
 ## 'dm-reproducible-verify'. Run with --help for details.
 
-## TODO: Support for Whonix images?
 
 ## No minimum-version check: images predating reproducible-build support are
 ## non-reproducible, but there is no hard block -- someone can still investigate a
@@ -55,8 +54,10 @@ print_help() {
       "  --url IMAGE_URL    full download URL." \
       "  --arch ARCH        amd64 | arm64 (mandatory with --version; never defaulted)." \
       "  --target TARGET    iso | virtualbox | raw | qcow2 (with --version)." \
-      "  --flavor FLAVOR    kicksecure-lxqt | kicksecure-cli | kicksecure-debug (with --version)." \
-      "  --project DOMAIN   download domain (default: kicksecure.com)." \
+      "  --flavor FLAVOR    kicksecure-{lxqt,cli,debug} | whonix-{gateway,workstation}-{cli,lxqt}" \
+      "                     (with --version)." \
+      "  --project DOMAIN   download domain (default: kicksecure.com for kicksecure-*," \
+      "                     whonix.org for whonix-*)." \
       "  --output-dir DIR   where to place the downloads (default: current dir)." \
       "" \
       "Then verify with: dm-reproducible-verify DIR/<image>" \
@@ -74,7 +75,9 @@ version=""
 target=""
 flavor=""
 arch=""
-project="kicksecure.com"
+## Empty by default; defaulted from the flavor's project (kicksecure.com /
+## whonix.org) after parsing, unless --project overrides it.
+project=""
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
@@ -154,27 +157,57 @@ source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
 
 ## VERSION mode: build the download URL. Mirrors the image naming in
 ## help-steps/variables:
-##   https://download.<domain>/<url_part>/<version>/Kicksecure-<desktop>-<version>.<arch_pretty>.<ext>
-## A naming drift here just yields a 404, never a wrong download.
+##   https://download.<domain>/<url_part>/<version>/<image-name>-<version>.<arch_pretty>.<ext>
+## where <image-name> is Kicksecure-<desktop> or Whonix-<role>-<desktop> (set in
+## the flavor case below). A naming drift here just yields a 404, never a wrong
+## download.
 if [ -n "${version}" ]; then
    [ -n "${arch}" ]   || error "--version requires --arch (see --help); it is not defaulted."
    [ -n "${target}" ] || error "--version requires --target (see --help)."
    [ -n "${flavor}" ] || error "--version requires --flavor (see --help)."
 
+   ## The published image name mirrors the build's own naming in
+   ## help-steps/variables: Kicksecure is 'Kicksecure-<desktop>', Whonix is
+   ## 'Whonix-<Gateway|Workstation>-<desktop>' (Whonix ships gateway and
+   ## workstation as separate images, so its flavor carries the role too).
    case "${flavor}" in
       kicksecure-lxqt)
-         desktop="LXQt"
+         image_name_base="Kicksecure-LXQt"
          ;;
       kicksecure-cli)
-         desktop="CLI"
+         image_name_base="Kicksecure-CLI"
          ;;
       kicksecure-debug)
-         desktop="Debug"
+         image_name_base="Kicksecure-Debug"
+         ;;
+      whonix-gateway-cli)
+         image_name_base="Whonix-Gateway-CLI"
+         ;;
+      whonix-gateway-lxqt)
+         image_name_base="Whonix-Gateway-LXQt"
+         ;;
+      whonix-workstation-cli)
+         image_name_base="Whonix-Workstation-CLI"
+         ;;
+      whonix-workstation-lxqt)
+         image_name_base="Whonix-Workstation-LXQt"
          ;;
       *)
-         error "unsupported --flavor '${flavor}' (Kicksecure flavors only)."
+         error "unsupported --flavor '${flavor}' (kicksecure-{lxqt,cli,debug} | whonix-{gateway,workstation}-{cli,lxqt})."
          ;;
    esac
+
+   ## Default the download domain from the flavor's project when not given.
+   if [ -z "${project}" ]; then
+      case "${flavor}" in
+         whonix-*)
+            project="whonix.org"
+            ;;
+         *)
+            project="kicksecure.com"
+            ;;
+      esac
+   fi
 
    case "${arch}" in
       amd64)
@@ -194,7 +227,7 @@ if [ -n "${version}" ]; then
       || error "unsupported --target '${target}' (iso|virtualbox|raw|qcow2)."
    dm_reproducible_target_ext ext "${target}"
 
-   url="https://download.${project}/${url_part}/${version}/Kicksecure-${desktop}-${version}.${arch_pretty}.${ext}"
+   url="https://download.${project}/${url_part}/${version}/${image_name_base}-${version}.${arch_pretty}.${ext}"
    printf '%s\n' "INFO: built download URL from --version: ${url}" >&2
 fi
 
