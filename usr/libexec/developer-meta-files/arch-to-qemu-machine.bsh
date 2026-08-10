@@ -59,8 +59,10 @@ dist_build_arch_to_qemu_machine() {
    esac
 }
 
-## TODO: Are either of the following two functions used outside of dist-ai? If
-## not, this code should move into dist-ai.
+## TODO: move the two functions below (dist_build_arch_to_qemu_machine_type,
+## dist_build_arch_to_serial_console) into dist-ai -- an audit found them used
+## ONLY by dist-ai (dm-image-boot-tests/dm-qemu). dist_build_arch_to_qemu_machine
+## above stays; derivative-maker build-steps use it.
 
 ## Translate a Debian architecture to the qemu '-machine' board TYPE dm-qemu boots it on.
 ## Board choice is a qemu specific (not a uname/binfmt concern), kept next to the machine-name
