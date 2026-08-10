@@ -99,12 +99,20 @@ val() {
 ## fetch. It also carries the submodule SHAs the build actually used, which CI's
 ## fork-branch checkout resolves from moving branch tips and records nowhere else.
 ##
-## TODO: See if we can get rid of dm-source-state/source_state_file. It should
-## only be useful for builds where sign-and-tag runs, and sign-and-tag should
-## only ever run in exceptional cases. There is no need for CI-built images to
-## be reproducible other than to test reproducibility itself in CI, in which
-## case we can probably build from the same sign-and-tag'd repo twice to
-## verify that we get the same result and thus still not need dm-source-state.
+## Verified that dm-source-state/source_state_file STAYS (cannot be dropped):
+## sign-tag-head amends any UNSIGNED HEAD -- the parent and every submodule -- with
+## 'commit --amend -S', which changes the commit SHA. The signature itself is
+## commit METADATA, outside the source tree, so it does NOT leak into the built
+## image: image reproducibility is unaffected by signing (a build from the same
+## source FILES yields the same image, signed or not). What the amend changes is
+## the commit IDENTITY -- the amended SHA exists only inside this build. So the
+## pre-amend, upstream-FETCHABLE SHA must be recorded (by sign-and-tag, before the
+## amend) so a verifier can fetch THAT exact source and rebuild-to-compare; a
+## buildinfo naming the local amended SHA would be unfetchable. That is PROVENANCE,
+## not reproducibility. The "build twice from a sign-and-tag'd repo" shortcut only
+## holds from an ALREADY-signed input, where sign-and-tag is a no-op -- but
+## reaching that state needs a prior sign-and-tag whose provenance this same record
+## captured, so it cannot bootstrap itself.
 source_state_file="${dm_source_state_file:-}"
 if [ -z "${source_state_file}" ] && [ -n "${binary_build_folder_dist:-}" ]; then
    source_state_file="${binary_build_folder_dist}/dm-source-state"
