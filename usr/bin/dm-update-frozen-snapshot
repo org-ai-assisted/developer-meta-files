@@ -23,8 +23,9 @@
 ## briefly absent (mid-sync), the probe 404s and the tool ERRORS rather than
 ## guessing an older snapshot -- the operator reruns later.
 ##
-## Invoked by the dm-maintenance orchestrator, or directly. Runs on the operator / build host over
-## clearnet (it queries snapshot.debian.org). It edits only the version-controlled sources file in
+## Invoked by the dm-maintenance orchestrator, or directly. Runs on the operator / build host: the
+## suite-availability probes go over CLEARNET (scurl), the trusted server CLOCK over TOR (sdwdate's
+## url_to_unixtime), so a wrong local clock cannot pin a future snapshot. It edits only the version-controlled sources file in
 ## the derivative-maker SOURCE tree, leaving a reviewable diff -- commit it so a third party can
 ## reproduce at that exact snapshot.
 ##
@@ -305,30 +306,30 @@ snapshot_serves_all() {
    return 0
 }
 
+## The Tor SOCKS proxy sdwdate's url_to_unixtime dials for the server time. The
+## suite probes below stay on clearnet scurl -- only the CLOCK goes over Tor.
+FROZEN_TIME_SOCKS_IP='127.0.0.1'
+FROZEN_TIME_SOCKS_PORT='9050'
+
 ## The current instant in snapshot.debian.org's timestamp shape 'YYYYMMDDTHHMMSSZ',
-## taken from the SERVER's own clock (its HTTP Date header), NOT the local one.
-## A fast local clock would pin a FUTURE timestamp: it resolves to the current
-## newest snapshot now, but once a snapshot with a timestamp between the two is
-## published it becomes the nearer predecessor, so the SAME committed pin later
-## resolves to DIFFERENT content -- silently non-reproducible, and the rollback
-## guard (backwards only) cannot catch it. The server's own now is <= real now, so
-## no future snapshot can fall at or before it. Local time is used for nothing.
+## from the SERVER's own clock, NOT the local one. A fast local clock would pin a
+## FUTURE timestamp: it resolves to the current newest snapshot now, but once a
+## snapshot with a timestamp between the two is published it becomes the nearer
+## predecessor, so the SAME committed pin later resolves to DIFFERENT content --
+## silently non-reproducible, and the rollback guard (backwards only) cannot catch
+## it. The server's own now is <= real now, so no future snapshot can fall at or
+## before it. Uses sdwdate's url_to_unixtime (over Tor), whose HTTP-Date parse is
+## hardened with length / numeric / range sanity checks -- not reimplemented here.
 current_utc_timestamp() {
-   local headers http_date status
+   local unixtime status
    status=0
-   headers="$(scurl --silent --show-error --head --max-time 60 -- "${SNAPSHOT_BASE}/")" || status="$?"
-   if [ "${status}" -ne 0 ]; then
-      printf '%s\n' "dm-update-frozen-snapshot: could not reach snapshot.debian.org for its server time (curl exit ${status})." >&2
+   unixtime="$(url_to_unixtime "${FROZEN_TIME_SOCKS_IP}" "${FROZEN_TIME_SOCKS_PORT}" 'https://snapshot.debian.org' false)" \
+      || status="$?"
+   if [ "${status}" -ne 0 ] || [ -z "${unixtime}" ]; then
+      printf '%s\n' "dm-update-frozen-snapshot: could not get snapshot.debian.org server time via url_to_unixtime over Tor (${FROZEN_TIME_SOCKS_IP}:${FROZEN_TIME_SOCKS_PORT}, exit ${status}); is Tor running?" >&2
       return 1
    fi
-   ## HTTP Date header, e.g. 'Date: Wed, 15 Mar 2028 12:00:00 GMT'. 'date -d' parses
-   ## that RFC form directly. --max-count so only the first Date line is taken.
-   http_date="$(printf '%s\n' "${headers}" | grep --ignore-case --max-count=1 '^date:' | cut -d' ' -f2- | tr -d '\r')"
-   if [ -z "${http_date}" ]; then
-      printf '%s\n' "dm-update-frozen-snapshot: snapshot.debian.org returned no Date header; refusing to pin from the local clock." >&2
-      return 1
-   fi
-   date --utc --date="${http_date}" '+%Y%m%dT%H%M%SZ'
+   date --utc --date="@${unixtime}" '+%Y%m%dT%H%M%SZ'
 }
 
 update_frozen_snapshot() {
@@ -522,5 +523,7 @@ command -v grep-dctrl >/dev/null 2>&1 \
    || { printf '%s\n' 'dm-update-frozen-snapshot: grep-dctrl not found; install dctrl-tools.' >&2; exit 2; }
 command -v scurl >/dev/null 2>&1 \
    || { printf '%s\n' 'dm-update-frozen-snapshot: scurl not found; helper-scripts is required.' >&2; exit 2; }
+command -v url_to_unixtime >/dev/null 2>&1 \
+   || { printf '%s\n' 'dm-update-frozen-snapshot: url_to_unixtime not found; sdwdate is required (server time over Tor).' >&2; exit 2; }
 
 update_frozen_snapshot
