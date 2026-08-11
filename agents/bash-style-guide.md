@@ -1057,6 +1057,26 @@ Short glue stays inline: a one-line `python3 -c` is not a program.
 
 Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
 
+**R-191: A systemd unit does not embed a multi-statement shell
+script.** An `Exec*=` directive must not carry embedded scripting:
+
+    ## Bad -- invisible to shellcheck, no importable home, no coverage:
+    ExecStart=/bin/bash -c 'mkdir -p /run/foo && chown x /run/foo; start'
+
+    ## Good:
+    ExecStart=/usr/libexec/foo/start
+
+Why: the same defect R-100 catches in workflow YAML and R-190 in a
+heredoc. The `-c` body is hidden from shellcheck, has no importable
+home a unit test can reach, and no coverage tool can see it. Move the
+logic into a script with a shebang and call that. A single-command
+wrapper (`ExecStart=/bin/bash -c 'touch /run/foo'`) is glue, not a
+program, and is allowed; only a `sh -c` / `bash -c` value carrying a
+`;`, `&&`, `||`, a pipe, a shell control keyword (`for while if case
+until do then`), or a `\` line-continuation is flagged.
+
+Waiver: `# style-ok: allow-embedded-script` anywhere in the unit.
+
 ## Python files
 
 **R-180: A Python file carries a shebang and is executable.**
