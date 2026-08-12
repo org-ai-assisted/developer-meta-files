@@ -62,6 +62,13 @@ is not masked by a later command's success.
 `inherit_errexit` makes `$()` subshells respect errexit (bash >= 4.4).
 `shift_verbose` logs when `shift` runs past argv end.
 
+**R-010b: Do not declare a versioned `bash` dependency (`bash (>= 4.4)`
+or similar) in `debian/control` for the strict block.** Supported Debian
+(trixie and later) ships bash >= 4.4, and earlier Debian and bash
+versions are unsupported, so `inherit_errexit` and the rest of the
+preamble are always available. The dependency adds nothing; leave it out,
+with no explanatory comment.
+
 **R-010a: A script a dist-ai test sources shall be source-able:
 `main()` holds the logic, and both the strict-mode block and the
 `main` call are guarded by `was_executed`.**
