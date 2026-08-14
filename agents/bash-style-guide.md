@@ -707,6 +707,30 @@ Exception: bootstrap that runs before the executable bit is set
 lost +x), or surfaces that don't honor the shebang. State the
 reason inline.
 
+**R-193: Call an in-repo Python script directly, not via `python3 --
+<file>.py`.** R-180 makes every `*.py` executable with a shebang, so
+run it like any other program.
+
+Bad:
+
+    python3 -- "${dir}/report-summary.py" "${report}"
+
+Good:
+
+    "${dir}/report-summary.py" "${report}"
+
+Why: the same contract R-102 states for shell -- the shebang declares
+the interpreter, the caller should not restate it. It matters more
+here: a `python3 -- file` prefix DROPS the shebang's own flags
+(`#!/usr/bin/python3 -Bsu`), so the direct call is not just tidier, it
+runs the interpreter the file asked for. A generic dispatcher passing
+`"$@"` (no literal path) is glue, not a named call, and is fine.
+
+Enforced by R-193 in the pre-push gate: it flags a literal
+`<interpreter> -- <path>.py` at quote depth zero, outside comments.
+Waiver: `## style-ok: allow-python-dashdash` for a script deliberately
+not executable, or an external path you don't control.
+
 **R-103: Don't replace the process with `exec <command>`; run it as
 a child and forward the exit code.** Process-replacement `exec`
 drops the wrapper from the `ps` tree (harder to debug) and skips
@@ -745,6 +769,33 @@ flagged. A surface that genuinely needs to hand off the process
 (a remote-command payload where a lingering wrapper would deadlock
 the transport; a pty/login shim) carries a script-wide `##
 style-ok: allow-exec` waiver stating the reason.
+
+**R-104: Prefer multi-line, multi-step over a long single-line
+pipeline.** A pipeline of five or more stages on one physical line is
+hard to read, debug and diff. Assign an intermediate, or backslash-
+continue one stage per line, so each step is named and inspectable.
+
+Bad:
+
+    top="$(grep pat log | cut -f2 | sort | uniq -c | sort -rn | head)"
+
+Good:
+
+    matches="$(grep pat log | cut -f2)"
+    counts="$(printf '%s\n' "${matches}" | sort | uniq -c)"
+    top="$(printf '%s\n' "${counts}" | sort -rn | head)"
+
+Why: a wedged or wrong stage in a six-stage one-liner leaves you no
+intermediate to inspect, and a diff touching one stage rewrites the
+whole line. Naming the intermediates turns "the pipeline is wrong"
+into "step 2 is wrong."
+
+Guidance only -- there is deliberately NO pre-push gate for this. A
+`|` is too overloaded in shell (pipe operator, `||`, `case`/glob
+alternation, a pipe nested in `$(...)`, a literal inside a string) for
+a static rule to tell a long pipeline from an ordinary multi-line
+`case` pattern without false positives, and the tree already follows
+the convention. Keep it by review, not by gate.
 
 
 ## Errors and logging
