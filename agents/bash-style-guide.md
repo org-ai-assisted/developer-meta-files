@@ -1086,6 +1086,59 @@ starting with it (`/tmpfs`, `/tmp.bak`) is not matched. Comment lines
 are excluded -- prose about `/tmp` is not a path.
 
 
+**R-172: A `mkdir` that creates a temp directory must set the mode
+ATOMICALLY with `--mode=`.**
+
+    mkdir --parents --mode=700 -- "${TMPDIR}"
+
+`mkdir --mode=` applies the permission bits as part of the directory's
+creation. Setting the mode any other way -- dropping it, or splitting it
+into a following `chmod` -- leaves a window in which the directory exists
+with the umask-default (world-traversable) mode. Another process can
+enter that window and race the temp path; for a directory that will hold
+a journal or any private data, that is a TOCTOU disclosure hole.
+
+Bad -- the mode is not atomic (a `chmod` follows the create):
+
+    mkdir --parents -- "${TMPDIR}"
+    chmod 700 -- "${TMPDIR}"          # TOCTOU: dir is world-visible first
+
+Bad -- no mode at all:
+
+    mkdir --parents -- "${TMPDIR}"
+
+Use the long `--mode=`, not the short `-m`: `pre-push-fix` upgrades a
+`-m 700` / `-m700` to `--mode=700` automatically, and the gate FAILS a
+standalone short `-m` so the long form is what lands. This is the same
+long-option discipline R-013 applies to `set -o`.
+
+The atomic form pairs with a `# shellcheck disable=SC2174`:
+
+    # shellcheck disable=SC2174
+    mkdir --parents --mode=700 -- "${TMPDIR}"
+
+`--parents` is what makes the create idempotent (re-running is fine when
+the directory already exists); combined with `--mode=`, shellcheck raises
+SC2174 -- "with `-p`, `-m` only applies to the deepest directory." That
+is exactly the intent here: the parents (`/var/cache`, `~/.cache`, ...)
+pre-exist, so only the temp directory itself is created and it gets the
+mode atomically. There is no form that is both idempotent AND atomic
+without the flag combination SC2174 warns about, so the disable is part
+of the pattern -- `pre-push-fix` inserts it for you.
+
+Waiver: `## style-ok: allow-mkdir-no-mode` anywhere in the script (same
+mechanism as R-120's `## style-ok: no-safe-rm`). Reserve it for a temp
+directory whose permissions genuinely do not matter, or a `mkdir` whose
+mode is set by a form the rule cannot read (a symbolic `-m u=rwx`, a
+`--mode="${mode}"` variable).
+
+Enforcement: the gate flags a command-position `mkdir` whose operand is
+a `TMPDIR` / `TMP` / `TEMP` / `TEMPDIR` variable and that carries no
+`--mode=`, on a non-comment line of a changed shell file. A `mkdir` that
+does not create one of those temp variables, and a name that merely
+starts with the prefix (`${TMPFILE}`), are not matched.
+
+
 **R-190: A substantial interpreter program does not belong in a
 shell heredoc.** If the embedded body is more than ~5 lines, put it
 in its own file with a shebang and call it.
