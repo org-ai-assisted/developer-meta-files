@@ -1107,10 +1107,16 @@ Bad -- no mode at all:
 
     mkdir --parents -- "${TMPDIR}"
 
-Use the long `--mode=`, not the short `-m`: `pre-push-fix` upgrades a
+Use the long `--mode`, not the short `-m`: `pre-push-fix` upgrades a
 `-m 700` / `-m700` to `--mode=700` automatically, and the gate FAILS a
-standalone short `-m` so the long form is what lands. This is the same
-long-option discipline R-013 applies to `set -o`.
+standalone short `-m` so the long form is what lands. `--mode=700` is the
+canonical spelling; `--mode 700` (space) is equally atomic and accepted.
+This is the same long-option discipline R-013 applies to `set -o`.
+
+The mode is judged on the `mkdir` command itself, not the whole line: a
+`--mode` in a trailing comment or in a second command sharing the line
+does not satisfy the rule, and the fixer never rewrites another command's
+options.
 
 The atomic form pairs with a `# shellcheck disable=SC2174`:
 
