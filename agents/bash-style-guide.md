@@ -1017,7 +1017,52 @@ manpage, "if the -q or --quiet or --silent is used and a line is
 selected, the exit status is 0 even if an error occurred." Silencing
 errors is not acceptable. To silence grep's *output* (but not exit
 code), append `>/dev/null 2>&1` to the end of the grep command. To
-prevent grep from looking for more than one match, use `--max-count=1`.
+prevent grep from looking for more than one match, use `--max-count=1`
+(but never on the reading end of a pipe -- see R-161).
+
+**R-161: A `grep` that consumes a pipe must not use a quiet flag, and
+`grep` never takes a SHORT quiet flag.** Two related bans.
+
+*Pipe + quiet is a `pipefail` bug.* `-q` / `--quiet` / `--silent` make
+grep exit at the first match. On the reading end of a pipe that closes
+the pipe early, so the writer on the left gets `SIGPIPE` and dies with
+141 -- and our default `set -o pipefail` (R-010) turns that into a
+failed pipeline:
+
+    seq 1 100000000 | grep --quiet 5     # pipeline exits 141, not 0
+
+Whether it bites depends on how much the producer still had to write, so
+it passes on small inputs and fails on large ones -- a latent,
+size-dependent flake. Remedies:
+
+- Streaming producer -- drop the quiet flag and send grep's stdout to
+  `/dev/null`. grep then reads to EOF, so nothing is SIGPIPE'd; its exit
+  code, and any real error on stderr, are preserved:
+
+      producer | grep pattern >/dev/null
+
+- Variable / string input -- use a here-string, which is a temp file,
+  not a pipe, so there is no writer to kill. A quiet flag is fine here:
+
+      grep --quiet pattern <<< "${var}"     # not  printf ... | grep -q
+
+`--max-count=N` / `-m N` cause the SAME early exit; R-160's
+`--max-count=1` tip is for a non-pipe grep only.
+
+*Short quiet flag violates R-060.* `grep -q`, and any bundled cluster
+carrying it (`grep -iq`, `grep -Fq`), use short options; write the long
+form -- `--quiet`, `grep --ignore-case --quiet`, `grep --fixed-strings
+--quiet`. A long quiet flag reading a file (`grep --quiet -- PAT FILE`)
+stays the accepted boolean-test idiom; R-160's caveat is about masking a
+real error, not about the flag existing.
+
+Enforcement: the pre-push gate FAILS a quiet grep on the right of a `|`
+(here-strings and plain file reads are spared) and a short quiet flag
+anywhere; `pre-push-fix` auto-expands a short quiet cluster to its long
+form. The pipe rewrite (drop the quiet flag, add the redirect or
+here-string) is left to a human -- relocating a redirect is not a
+mechanical single-token edit, the same line `pre-push-static` draws for
+R-172's non-atomic `mkdir`.
 
 
 ## Temporary files
