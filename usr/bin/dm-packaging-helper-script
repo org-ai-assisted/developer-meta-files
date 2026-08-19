@@ -167,18 +167,15 @@ commit_filter() {
 
    commit_msg_short="${commit_msg_short,,}"
 
-   if printf '%s\n' "${commit_msg_short}" | grep --ignore-case --quiet -- 'Merge remote-tracking branch' ; then
-      set -x
-      return 1
-   fi
-   if printf '%s\n' "${commit_msg_short}" | grep --ignore-case --quiet -- 'Merge pull request' ; then
-      set -x
-      return 1
-   fi
-   if printf '%s\n' "${commit_msg_short}" | grep --ignore-case --quiet -- 'Merge branch' ; then
-      set -x
-      return 1
-   fi
+   ## 'commit_msg_short' is already lowercased above, so a pure-bash case match
+   ## (no grep, no pipe -- R-161) with lowercase literals is equivalent to the
+   ## former case-insensitive greps.
+   case "${commit_msg_short}" in
+      *"merge remote-tracking branch"*|*"merge pull request"*|*"merge branch"*)
+         set -x
+         return 1
+         ;;
+   esac
 
    for text_any_case in \
       'add debian install file (generated using "genmkfile debinstfile")' \
