@@ -94,9 +94,26 @@ fi
 
 ## Unmount FIRST, then disconnect. A disconnect while a mount still holds the
 ## device is what leaves the unreadable half-state this exists to clear.
+##
+## Read /proc/mounts directly (a file redirection, not a pipe or process
+## substitution), so this loop runs in THIS shell and its counters survive.
+## /proc/mounts, NOT mount(8): mount(8) prints a mount point containing a space
+## verbatim, so field-splitting yields a TRUNCATED path -- '/mnt/my nbd' became
+## '/mnt/my', which names a different filesystem and would have been unmounted
+## instead. /proc/mounts octal-escapes the space (\040), which 'printf %b -v'
+## restores unambiguously into the loop variable.
 release_failures=0
 released_mounts=0
-while IFS= read -r mount_point; do
+while read -r mounts_device mounts_point _; do
+   ## Only nbd mounts; skip every other line.
+   case "${mounts_device}" in
+      /dev/nbd*)
+         ;;
+      *)
+         continue
+         ;;
+   esac
+   printf -v mount_point '%b' "${mounts_point}"
    [ -n "${mount_point}" ] || continue
    if [ "${dry_run}" = "true" ]; then
       printf '%s\n' "  would umount ${mount_point}"
@@ -112,28 +129,17 @@ while IFS= read -r mount_point; do
       printf '%s\n' "  FAILED to umount ${mount_point}" >&2
       release_failures=$(( release_failures + 1 ))
    fi
-## /proc/mounts, NOT mount(8): mount(8) prints a mount point containing a space
-## verbatim, so field-splitting yields a TRUNCATED path -- '/mnt/my nbd' became
-## '/mnt/my', which names a different filesystem and would have been unmounted
-## instead. /proc/mounts octal-escapes the space (\040), which printf '%b'
-## restores unambiguously.
-done < <(
-   while read -r mounts_device mounts_point _; do
-      case "${mounts_device}" in
-         /dev/nbd*)
-            printf '%b\n' "${mounts_point}"
-            ;;
-      esac
-   done < /proc/mounts
-)
+done < /proc/mounts
 
 released_devices=0
 for nbd_device in /dev/nbd[0-9] /dev/nbd[0-9][0-9]; do
    [ -e "${nbd_device}" ] || continue
    ## An unconnected device has size 0, so only touch the ones actually in use.
+   ## 'read' from the sysfs file, no 'cat' subshell.
    size_path="/sys/block/${nbd_device##*/}/size"
    [ -r "${size_path}" ] || continue
-   if [ "$( cat -- "${size_path}" )" = "0" ]; then
+   read -r nbd_size < "${size_path}" || nbd_size=""
+   if [ "${nbd_size}" = "0" ]; then
       continue
    fi
    if [ "${dry_run}" = "true" ]; then
