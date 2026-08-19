@@ -369,7 +369,7 @@ libvirt_compress() {
       member_paths+=( "${dist_binary_build_folder}/${member_item}" )
    done
    local input_size
-   input_size="$(du -scB1 -- "${member_paths[@]}" | tail -1 | cut -f1)"
+   input_size="$(du --summarize --total --block-size=1 -- "${member_paths[@]}" | tail --lines=1 | cut --fields=1)"
    ## Member mtimes are pinned to SOURCE_DATE_EPOCH -- the build's single source
    ## of reproducible time (help-steps/variables, from the changelog timestamp or,
    ## for a frozen build, the snapshot pin) -- so this archive's dates match every
