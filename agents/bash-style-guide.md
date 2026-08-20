@@ -1112,3 +1112,36 @@ stated as a pair. `check-shebang-scripts-are-executable` fails a
 shebang without the mode; `check-executables-have-shebangs` fails the
 mode without a shebang; R-180 in the pre-push gate fails a file with
 NEITHER, which would otherwise slip past both.
+
+
+## External command timeouts
+
+**R-200: `timeout` should almost always carry `--kill-after=`.** A bare
+`timeout <N> <cmd>` sends only `SIGTERM` after `<N>` seconds; a child
+wedged in an uninterruptible syscall can ignore `SIGTERM` and keep
+running, defeating the very bound `timeout` was added for. Add
+`--kill-after=<K>` so `timeout` follows up with `SIGKILL` `<K>` seconds
+later:
+
+    timeout --kill-after=5 5 -- eglinfo -B
+
+`--kill-after=<K>` is the canonical spelling (R-060 long flags); the
+short `-k` provides the same safety. `<K>` is the grace window after the
+`SIGTERM`, not the total budget -- mirroring the main duration
+(`--kill-after=5 5`) is a fine default.
+
+Why: the whole point of `timeout` is a hard upper bound on wall-clock;
+without the `SIGKILL` follow-up that bound is only advisory, and the one
+process you most need to bound (a hung one, blocked in the kernel) is
+exactly the one that ignores `SIGTERM`.
+
+The rare legitimate bare `timeout` (a command that MUST be allowed to
+finish its own cleanup on `SIGTERM`, or where `SIGKILL` would corrupt
+state) waives it: put `## style-ok: allow-bare-timeout` anywhere in the
+script and the pre-push gate skips R-200 script-wide.
+
+The pre-push gate (and its auto-fixer) flag a `timeout` in COMMAND
+position with no kill-after option. A `timeout` inside a string (the
+deferred `x="timeout 5"` spelling) or used as another command's argument
+is spared -- a line-based gate cannot safely reason about it -- so add
+the option to those by hand.
