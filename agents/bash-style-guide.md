@@ -707,6 +707,30 @@ Exception: bootstrap that runs before the executable bit is set
 lost +x), or surfaces that don't honor the shebang. State the
 reason inline.
 
+**R-193: Call an in-repo Python script directly, not via `python3 --
+<file>.py`.** R-180 makes every `*.py` executable with a shebang, so
+run it like any other program.
+
+Bad:
+
+    python3 -- "${dir}/report-summary.py" "${report}"
+
+Good:
+
+    "${dir}/report-summary.py" "${report}"
+
+Why: the same contract R-102 states for shell -- the shebang declares
+the interpreter, the caller should not restate it. It matters more
+here: a `python3 -- file` prefix DROPS the shebang's own flags
+(`#!/usr/bin/python3 -Bsu`), so the direct call is not just tidier, it
+runs the interpreter the file asked for. A generic dispatcher passing
+`"$@"` (no literal path) is glue, not a named call, and is fine.
+
+Enforced by R-193 in the pre-push gate: it flags a literal
+`<interpreter> -- <path>.py` at quote depth zero, outside comments.
+Waiver: `## style-ok: allow-python-dashdash` for a script deliberately
+not executable, or an external path you don't control.
+
 **R-103: Don't replace the process with `exec <command>`; run it as
 a child and forward the exit code.** Process-replacement `exec`
 drops the wrapper from the `ps` tree (harder to debug) and skips
@@ -745,6 +769,33 @@ flagged. A surface that genuinely needs to hand off the process
 (a remote-command payload where a lingering wrapper would deadlock
 the transport; a pty/login shim) carries a script-wide `##
 style-ok: allow-exec` waiver stating the reason.
+
+**R-104: Prefer multi-line, multi-step over a long single-line
+pipeline.** A pipeline of five or more stages on one physical line is
+hard to read, debug and diff. Assign an intermediate, or backslash-
+continue one stage per line, so each step is named and inspectable.
+
+Bad:
+
+    top="$(grep pat log | cut -f2 | sort | uniq -c | sort -rn | head)"
+
+Good:
+
+    matches="$(grep pat log | cut -f2)"
+    counts="$(printf '%s\n' "${matches}" | sort | uniq -c)"
+    top="$(printf '%s\n' "${counts}" | sort -rn | head)"
+
+Why: a wedged or wrong stage in a six-stage one-liner leaves you no
+intermediate to inspect, and a diff touching one stage rewrites the
+whole line. Naming the intermediates turns "the pipeline is wrong"
+into "step 2 is wrong."
+
+Guidance only -- there is deliberately NO pre-push gate for this. A
+`|` is too overloaded in shell (pipe operator, `||`, `case`/glob
+alternation, a pipe nested in `$(...)`, a literal inside a string) for
+a static rule to tell a long pipeline from an ordinary multi-line
+`case` pattern without false positives, and the tree already follows
+the convention. Keep it by review, not by gate.
 
 
 ## Errors and logging
@@ -966,7 +1017,52 @@ manpage, "if the -q or --quiet or --silent is used and a line is
 selected, the exit status is 0 even if an error occurred." Silencing
 errors is not acceptable. To silence grep's *output* (but not exit
 code), append `>/dev/null 2>&1` to the end of the grep command. To
-prevent grep from looking for more than one match, use `--max-count=1`.
+prevent grep from looking for more than one match, use `--max-count=1`
+(but never on the reading end of a pipe -- see R-161).
+
+**R-161: A `grep` that consumes a pipe must not use a quiet flag, and
+`grep` never takes a SHORT quiet flag.** Two related bans.
+
+*Pipe + quiet is a `pipefail` bug.* `-q` / `--quiet` / `--silent` make
+grep exit at the first match. On the reading end of a pipe that closes
+the pipe early, so the writer on the left gets `SIGPIPE` and dies with
+141 -- and our default `set -o pipefail` (R-010) turns that into a
+failed pipeline:
+
+    seq 1 100000000 | grep --quiet 5     # pipeline exits 141, not 0
+
+Whether it bites depends on how much the producer still had to write, so
+it passes on small inputs and fails on large ones -- a latent,
+size-dependent flake. Remedies:
+
+- Streaming producer -- drop the quiet flag and send grep's stdout to
+  `/dev/null`. grep then reads to EOF, so nothing is SIGPIPE'd; its exit
+  code, and any real error on stderr, are preserved:
+
+      producer | grep pattern >/dev/null
+
+- Variable / string input -- use a here-string, which is a temp file,
+  not a pipe, so there is no writer to kill. A quiet flag is fine here:
+
+      grep --quiet pattern <<< "${var}"     # not  printf ... | grep -q
+
+`--max-count=N` / `-m N` cause the SAME early exit; R-160's
+`--max-count=1` tip is for a non-pipe grep only.
+
+*Short quiet flag violates R-060.* `grep -q`, and any bundled cluster
+carrying it (`grep -iq`, `grep -Fq`), use short options; write the long
+form -- `--quiet`, `grep --ignore-case --quiet`, `grep --fixed-strings
+--quiet`. A long quiet flag reading a file (`grep --quiet -- PAT FILE`)
+stays the accepted boolean-test idiom; R-160's caveat is about masking a
+real error, not about the flag existing.
+
+Enforcement: the pre-push gate FAILS a quiet grep on the right of a `|`
+(here-strings and plain file reads are spared) and a short quiet flag
+anywhere; `pre-push-fix` auto-expands a short quiet cluster to its long
+form. The pipe rewrite (drop the quiet flag, add the redirect or
+here-string) is left to a human -- relocating a redirect is not a
+mechanical single-token edit, the same line `pre-push-static` draws for
+R-172's non-atomic `mkdir`.
 
 
 ## Temporary files
@@ -1033,6 +1129,65 @@ non-comment line of a changed shell file. A path that merely ends in
 or in HOME (`${build_dir}/tmp`, `$(pwd)/tmp`, `~/tmp`), or a longer name
 starting with it (`/tmpfs`, `/tmp.bak`) is not matched. Comment lines
 are excluded -- prose about `/tmp` is not a path.
+
+
+**R-172: A `mkdir` that creates a temp directory must set the mode
+ATOMICALLY with `--mode=`.**
+
+    mkdir --parents --mode=700 -- "${TMPDIR}"
+
+`mkdir --mode=` applies the permission bits as part of the directory's
+creation. Setting the mode any other way -- dropping it, or splitting it
+into a following `chmod` -- leaves a window in which the directory exists
+with the umask-default (world-traversable) mode. Another process can
+enter that window and race the temp path; for a directory that will hold
+a journal or any private data, that is a TOCTOU disclosure hole.
+
+Bad -- the mode is not atomic (a `chmod` follows the create):
+
+    mkdir --parents -- "${TMPDIR}"
+    chmod 700 -- "${TMPDIR}"          # TOCTOU: dir is world-visible first
+
+Bad -- no mode at all:
+
+    mkdir --parents -- "${TMPDIR}"
+
+Use the long `--mode`, not the short `-m`: `pre-push-fix` upgrades a
+`-m 700` / `-m700` to `--mode=700` automatically, and the gate FAILS a
+standalone short `-m` so the long form is what lands. `--mode=700` is the
+canonical spelling; `--mode 700` (space) is equally atomic and accepted.
+This is the same long-option discipline R-013 applies to `set -o`.
+
+The mode is judged on the `mkdir` command itself, not the whole line: a
+`--mode` in a trailing comment or in a second command sharing the line
+does not satisfy the rule, and the fixer never rewrites another command's
+options.
+
+The atomic form pairs with a `# shellcheck disable=SC2174`:
+
+    # shellcheck disable=SC2174
+    mkdir --parents --mode=700 -- "${TMPDIR}"
+
+`--parents` is what makes the create idempotent (re-running is fine when
+the directory already exists); combined with `--mode=`, shellcheck raises
+SC2174 -- "with `-p`, `-m` only applies to the deepest directory." That
+is exactly the intent here: the parents (`/var/cache`, `~/.cache`, ...)
+pre-exist, so only the temp directory itself is created and it gets the
+mode atomically. There is no form that is both idempotent AND atomic
+without the flag combination SC2174 warns about, so the disable is part
+of the pattern -- `pre-push-fix` inserts it for you.
+
+Waiver: `## style-ok: allow-mkdir-no-mode` anywhere in the script (same
+mechanism as R-120's `## style-ok: no-safe-rm`). Reserve it for a temp
+directory whose permissions genuinely do not matter, or a `mkdir` whose
+mode is set by a form the rule cannot read (a symbolic `-m u=rwx`, a
+`--mode="${mode}"` variable).
+
+Enforcement: the gate flags a command-position `mkdir` whose operand is
+a `TMPDIR` / `TMP` / `TEMP` / `TEMPDIR` variable and that carries no
+`--mode=`, on a non-comment line of a changed shell file. A `mkdir` that
+does not create one of those temp variables, and a name that merely
+starts with the prefix (`${TMPFILE}`), are not matched.
 
 
 **R-190: A substantial interpreter program does not belong in a

@@ -47,6 +47,9 @@ Wire as a hook so the gate is unmissable:
     [ ] has from has.sh, not 'command -v X >/dev/null 2>&1'
         (R-090)
     [ ] safe-rm, not rm (R-120)
+    [ ] temp-dir mkdir sets the mode atomically:
+        'mkdir --parents --mode=700 -- "${TMPDIR}"', never a
+        following chmod (TOCTOU) and never the short -m (R-172)
     [ ] traps as named functions, registered after vars init
         (R-051)
     [ ] true "INFO: ..." not bare ':' (R-130)

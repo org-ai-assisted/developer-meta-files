@@ -73,32 +73,67 @@ cleanup() {
 }
 trap cleanup EXIT
 
-## Read via STDIN redirection, NOT as a perl filename argument: perl's '<>'
-## opens an @ARGV filename with the 2-argument open, which treats a name ending
-## in '|' as a command to run and a leading '<'/'>' as a redirection. The path is
-## fixed and root-owned in this tool's callers, but feeding it on stdin removes
-## the hazard entirely rather than relying on the caller.
-perl -pe '
-   if (/^Owners: /) {
-      chomp;
-      s/^Owners: //;
-      my %seen;
-      my @owners = grep { length && !$seen{$_}++ }
-                   map  { my $o = $_; $o =~ s/:.*//; $o }
-                   split /, /, $_;
-      $_ = "Owners: " . join(", ", @owners) . "\n";
-   }
-   ## ucf records the temp copy it diffed a conffile against under the "NEW"
-   ## substitution variable -- config.dat serializes each variable on its own
-   ## continuation line, e.g. " NEW = /tmp/grub.JI3HRI56IT". The mktemp suffix
-   ## differs every build (it was the last ISO local-vs-CI difference) and the
-   ## installed system never acts on the stored value. Collapse the >=6-char
-   ## mktemp suffix to a constant. Anchored to the NEW key specifically -- NOT any
-   ## "/tmp/*" value -- so an unrelated /tmp path under a different key, or any
-   ## non-/tmp value, is left intact. Idempotent: the normalized ".XXXXXX"
-   ## re-matches to itself.
-   s{^(\s+NEW = /tmp/\S+?)\.[A-Za-z0-9]{6,}(\s*)$}{$1.XXXXXX$2}g;
-' < "${config_dat}" > "${tmp_out}"
+## Pure bash, no perl/awk: both transforms are per-line with no cross-line state.
+## Reading the path as a plain file (via '<', never as a command argument) also
+## removes the filename-as-command hazard an @ARGV-style reader would carry -- a
+## name ending in '|' is just a path here.
+##
+## The NEW-key match, factored out so the loop body stays readable. ucf records
+## the temp copy it diffed a conffile against under the "NEW" substitution
+## variable; config.dat serializes each variable on its own continuation line,
+## e.g. " NEW = /tmp/grub.JI3HRI56IT". The mktemp suffix differs every build (it
+## was the last ISO local-vs-CI difference) and the installed system never acts
+## on the stored value. Collapse the >=6-char mktemp suffix to a constant.
+## Anchored to the NEW key specifically -- NOT any "/tmp/*" value -- so an
+## unrelated /tmp path under a different key, or any non-/tmp value, is left
+## intact. Idempotent: the normalized ".XXXXXX" re-matches to itself.
+new_key_regex='^([[:space:]]+NEW = /tmp/[^[:space:]]+)\.[A-Za-z0-9]{6,}([[:space:]]*)$'
+
+while IFS= read -r line || [ -n "${line}" ]; do
+   case "${line}" in
+      "Owners: "*)
+         ## Strip the ':arch' qualifier from every owner and de-duplicate,
+         ## preserving first-seen order. Owners are ", "-separated package names,
+         ## so a space-delimited seen-set membership test is unambiguous.
+         owners_rest="${line#Owners: }"
+         normalized_owners=""
+         owner_seen=" "
+         while [ -n "${owners_rest}" ]; do
+            case "${owners_rest}" in
+               *", "*)
+                  owner="${owners_rest%%, *}"
+                  owners_rest="${owners_rest#*, }"
+                  ;;
+               *)
+                  owner="${owners_rest}"
+                  owners_rest=""
+                  ;;
+            esac
+            owner="${owner%%:*}"
+            [ -n "${owner}" ] || continue
+            case "${owner_seen}" in
+               *" ${owner} "*)
+                  continue
+                  ;;
+            esac
+            owner_seen="${owner_seen}${owner} "
+            if [ -z "${normalized_owners}" ]; then
+               normalized_owners="${owner}"
+            else
+               normalized_owners="${normalized_owners}, ${owner}"
+            fi
+         done
+         printf '%s\n' "Owners: ${normalized_owners}"
+         ;;
+      *)
+         if [[ "${line}" =~ ${new_key_regex} ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}.XXXXXX${BASH_REMATCH[2]}"
+         else
+            printf '%s\n' "${line}"
+         fi
+         ;;
+   esac
+done < "${config_dat}" > "${tmp_out}"
 
 chmod --reference="${config_dat}" -- "${tmp_out}"
 chown --reference="${config_dat}" -- "${tmp_out}"
