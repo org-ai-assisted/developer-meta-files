@@ -28,14 +28,15 @@ derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
 
 cd -- "${MYDIR}"
 
-## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre for a
-## from-source build); this source runs BEFORE 'pre' below, so fall back to the
-## resolved tree when the variable is not in the environment.
-##
-## TODO: Can't we just import strings.bsh after importing help-steps/pre?
-# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source "${HELPER_SCRIPTS_PATH:-${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
+## help-steps/pre sets and exports HELPER_SCRIPTS_PATH (to the sibling
+## helper-scripts in the derivative-maker source tree) and uses no strings.bsh
+## function, so source it FIRST; strings.bsh then resolves via that variable
+## (including its own sibling libraries such as wc-test.sh). This script only ever
+## runs from a source tree -- it sources help-steps/pre by source-tree path -- so
+## pre is always present to set the variable, and no manual export is needed.
 source "${derivative_maker_source_code_dir}/help-steps/pre"
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/strings.bsh"
 source "${derivative_maker_source_code_dir}/help-steps/variables"
 
 ## Build upload_file_list (reset) for ONE image file: the image plus its

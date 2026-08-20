@@ -18,14 +18,31 @@ shopt -s shift_verbose
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-cd -- "$MYDIR"
+cd -- "${MYDIR}"
 
 ## XXX: hardcoded path
-source "$HOME/derivative-maker/help-steps/pre"
-source "$HOME/derivative-maker/help-steps/variables"
+source "${HOME}/derivative-maker/help-steps/pre"
+source "${HOME}/derivative-maker/help-steps/variables"
 
 main() {
    trap "exception_handler_unchroot_unmount" ERR INT TERM
+
+   ## Fail fast, before any apt work: when 'pkg' is not overridden the meta-package
+   ## name is derived from the qubes axis below, and 'dist_build_qubes' is an
+   ## operator-supplied toggle that nothing in the build sets. Validate it to
+   ## 'true' or 'false' here, so an unset/typo value aborts with a clear message
+   ## rather than an unbound-variable error (nounset) AFTER sources.list has been
+   ## rewritten and apt updated.
+   if [ "${pkg:-}" = "" ]; then
+      case "${dist_build_qubes:-}" in
+         true|false)
+            true
+            ;;
+         *)
+            error "${BASH_SOURCE[0]}: dist_build_qubes must be set to 'true' or 'false' (got: '${dist_build_qubes:-}', empty means unset). It selects the qubes vs nonqubes meta-package. Export it, or pass an explicit 'pkg'. Please report this bug if unexpected!"
+            ;;
+      esac
+   fi
 
    ## Move existing /etc/apt/sources.list out of the way.
    if ! test -e /etc/apt/sources.list.backup ; then
@@ -35,48 +52,55 @@ main() {
    fi
 
    ## This file doesn't include Whonix's APT repository.
-   cp -- "$source_code_folder_dist/packages/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "$CHROOT_FOLDER/etc/apt/sources.list.d/debian.sources"
-   chmod o+r -- "$CHROOT_FOLDER/etc/apt/sources.list.d/debian.sources"
+   cp -- "${source_code_folder_dist}/packages/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
+   chmod o+r -- "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
 
-   "$dist_source_help_steps_folder/create-local-temp-apt-repo" "$@"
+   "${dist_source_help_steps_folder}/create-local-temp-apt-repo" "$@"
 
    ## Reading local repository containing Whonix's packages.
-   chroot_run apt-get "${DIST_APTGETOPT[@]}" $apt_sourcelist_empty $apt_sourceparts -o APT::Get::List-Cleanup="0" update
+   chroot_run apt-get "${DIST_APTGETOPT[@]}" ${apt_sourcelist_empty} ${apt_sourceparts} -o APT::Get::List-Cleanup="0" update
 
    if [ "${pkg:-}" = "" ]; then
-      ## TODO: only the `*-kde` flavors are recognised here, so any
-      ## other UI variant (cli, lxqt, ...) hits the catch-all error
-      ## even though it is in fact a gateway/workstation. Either
-      ## extend the branches to map every supported flavor or accept
-      ## the pkg name from the caller and document that.
-      ##
-      ## TODO: the package names below are inconsistent - two of
-      ## the four branches end in `-kde` and the other two do not
-      ## (`non-qubes-whonix-gateway`, `qubes-whonix-workstation`).
-      ## Likely accidental; verify against the actual package list.
-      if [ "$dist_build_flavor" = "whonix-gateway-kde" ]; then
-         if [ "$dist_build_qubes" = "true" ]; then
-            pkg="qubes-whonix-gateway-kde"
-         else
-            pkg="non-qubes-whonix-gateway"
-         fi
-      elif [ "$dist_build_flavor" = "whonix-workstation-kde" ]; then
-         if [ "$dist_build_qubes" = "true" ]; then
-            pkg="qubes-whonix-workstation"
-         else
-            pkg="non-qubes-whonix-workstation-kde"
-         fi
+      ## Compose the canonical meta-package name from the flavor and qubes-ness:
+      ##   whonix-<gateway|workstation>-<qubes|nonqubes>-<cli|gui-lxqt>
+      ## exactly as it appears in packages/whonix/anon-meta-packages/debian/control.
+      ## The three axes (role, virtualization, UI) are independent, so derive each.
+      local whonix_role whonix_ui whonix_virt
+      case "${dist_build_flavor}" in
+         whonix-gateway-*)
+            whonix_role="gateway"
+            ;;
+         whonix-workstation-*)
+            whonix_role="workstation"
+            ;;
+         *)
+            error "${BASH_SOURCE[0]}: flavor '${dist_build_flavor}' is neither whonix-gateway-* nor whonix-workstation-*. Please report this bug!"
+            ;;
+      esac
+      case "${dist_build_flavor}" in
+         *-cli)
+            whonix_ui="cli"
+            ;;
+         *-lxqt)
+            whonix_ui="gui-lxqt"
+            ;;
+         *)
+            error "${BASH_SOURCE[0]}: flavor '${dist_build_flavor}' has no recognised UI suffix (-cli or -lxqt). Please report this bug!"
+            ;;
+      esac
+      if [ "${dist_build_qubes}" = "true" ]; then
+         whonix_virt="qubes"
       else
-         local MSG="${bold}${red}${BASH_SOURCE[0]} ERROR: VMNAME is neither Whonix-Gateway nor Whonix-Workstation. Please report this bug! ${reset}"
-         error "$MSG"
+         whonix_virt="nonqubes"
       fi
+      pkg="whonix-${whonix_role}-${whonix_virt}-${whonix_ui}"
    fi
 
-   chroot_run apt-get "${DIST_APTGETOPT[@]}" $apt_sourcelist_empty $apt_sourceparts --yes install $pkg
+   chroot_run apt-get "${DIST_APTGETOPT[@]}" ${apt_sourcelist_empty} ${apt_sourceparts} --yes install ${pkg}
 
    #chroot_run apt-get "${DIST_APTGETOPT[@]}" $apt_sourcelist_empty $apt_sourceparts -f install
 
-   "$dist_source_help_steps_folder/remove-local-temp-apt-repo" "$@"
+   "${dist_source_help_steps_folder}/remove-local-temp-apt-repo" "$@"
 
    ## Forget about local repository containing Whonix's packages.
    chroot_run apt-get --no-download --list-cleanup update

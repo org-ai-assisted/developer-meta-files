@@ -7,6 +7,17 @@
 ## documentation only.
 # shellcheck disable=SC2317
 
+## style-ok: no-strict
+##
+## No strict-mode preamble here, deliberately. The 'exit 0' below is the second
+## executed statement in the file, so a preamble would govern nothing that runs,
+## and everything under it is documentation rather than code. Converting the
+## dead body would assert a correctness it was never exercised for.
+##
+## If the short-circuit is ever lifted, the body needs the R-010 preamble AND a
+## real review: it sets ip_forward, flushes every iptables and ip6tables chain
+## to a default-ACCEPT policy, and chmod -x's the DHCP nodnsupdate hook.
+
 exit 0
 
 ###########################
@@ -45,9 +56,9 @@ TOR_USER="$(id -u debian-tor)"
 CLEARNET_USER="$(id -u clearnet)"
 ROOT_USER="$(id -u root)"
 
-printf '%s\n' "OK: TOR_USER: $TOR_USER"
-printf '%s\n' "OK: CLEARNET_USER: $CLEARNET_USER"
-printf '%s\n' "OK: ROOT_USER: $ROOT_USER"
+printf '%s\n' "OK: TOR_USER: ${TOR_USER}"
+printf '%s\n' "OK: CLEARNET_USER: ${CLEARNET_USER}"
+printf '%s\n' "OK: ROOT_USER: ${ROOT_USER}"
 
 ###########################
 ## interfaces
@@ -93,9 +104,9 @@ chmod -x /etc/dhcp/dhclient-enter-hooks.d/nodnsupdate
 ###########################
 
 printf '%s\n' 1 > /proc/sys/net/ipv4/ip_forward
-iptables -t nat -A POSTROUTING -o "$EXT_IF" -j MASQUERADE
-iptables -A FORWARD -i "$EXT_IF" -o "$INT_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -A FORWARD -i "$INT_IF" -o "$EXT_IF" -j ACCEPT
+iptables -t nat -A POSTROUTING -o "${EXT_IF}" -j MASQUERADE
+iptables -A FORWARD -i "${EXT_IF}" -o "${INT_IF}" -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i "${INT_IF}" -o "${EXT_IF}" -j ACCEPT
 
 systemctl --no-pager networking restart
 

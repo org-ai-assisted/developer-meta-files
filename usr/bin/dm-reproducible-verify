@@ -7,31 +7,8 @@
 
 ## Verify a LOCAL published image against a LOCAL rebuild -- image-level
 ## reproducible build verification (the analogue of a Debian package rebuilder,
-## applied to the derivative's disk/ISO images).
-##
-## Operates on a LOCAL file so it does not care how the image arrived: fetched by
-## 'dm-reproducible-fetch', or copied by hand. Its reproducibility sidecars must
-## sit NEXT TO it in the same directory (as published, and as dm-reproducible-fetch
-## leaves them): '<image>.dm-buildinfo' (+ '.asc'/'.sig') and '<image>.sha512sums'
-## (+ '.asc'/'.sig'). Everything needed to reproduce is read from the signed
-## '.dm-buildinfo', so no build flags are required. This:
-##   1. verifies the '.dm-buildinfo' + '.sha512sums' signatures (sq + signify),
-##   2. checks the image against the signed sha512sum,
-##   3. rebuilds the recorded target locally and compares the two with
-##      'dm-reproducible-compare-artifacts'.
-##
-## The image is only ever READ here -- never executed, booted, or rw-mounted.
-## How the comparison itself is performed is that tool's concern, not this
-## one's.
-##
-## Usage:
-##   dm-reproducible-verify IMAGE_FILE [--signify-pubkey KEY] [--output REPORT] \
-##      [--skip-build]
-##
-## Exit codes:
-##   0  reproduced bit-for-bit
-##   1  differences remain -- NOT reproducible (report written)
-##   2  usage / signature / environment error
+## applied to the derivative's disk/ISO images). The image is only ever READ --
+## never executed, booted, or rw-mounted. Run with --help for details.
 
 set -o errexit
 set -o nounset
@@ -52,15 +29,48 @@ error() {
    exit 2
 }
 
+me="${0##*/}"
+
+print_usage() {
+   printf '%s\n' \
+      "Usage:" \
+      "  ${me} IMAGE_FILE [--signify-pubkey KEY] [--output REPORT] [--skip-build]"
+}
+
+print_help() {
+   print_usage
+   printf '%s\n' \
+      "" \
+      "Verify a local published image against a local rebuild. Operates on a local" \
+      "file (fetched by dm-reproducible-fetch or copied by hand); its reproducibility" \
+      "sidecars must sit next to it: '<image>.dm-buildinfo' (+ .asc/.sig) and" \
+      "'<image>.sha512sums' (+ .asc/.sig). Everything needed is read from the signed" \
+      ".dm-buildinfo, so no build flags are required. It:" \
+      "  1. verifies the .dm-buildinfo + .sha512sums signatures (sq + signify)," \
+      "  2. checks the image against the signed sha512sum," \
+      "  3. rebuilds the recorded target locally and compares the two via" \
+      "     dm-reproducible-compare-artifacts." \
+      "" \
+      "  --signify-pubkey KEY   signify public key to verify with (default: the" \
+      "                         keyname.pub under ~/.signify)." \
+      "  --output REPORT        write the comparison report to REPORT." \
+      "  --skip-build           compare against an existing local build instead of" \
+      "                         rebuilding." \
+      "" \
+      "Exit codes:" \
+      "  0  reproduced bit-for-bit" \
+      "  4  differences remain -- NOT reproducible (report written)" \
+      "  2  usage / signature / environment error" \
+      "  1  unexpected internal error"
+}
+
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 ## The derivative-maker source root: this submodule lives under
 ## <derivative-maker>/packages/kicksecure/developer-meta-files, so five levels up
-## from usr/bin (same walk dm-prepare-release uses). Needed to run the rebuild
-## and read the source git state.
-##
-## FIXME: An earlier comment says that this script runs outside of a build
-## tree, but then this comment and the line of code benath it assume that it
-## runs within a build tree.
+## from usr/bin (same walk dm-prepare-release uses). Needed ONLY by the default
+## rebuild path -- to rebuild the image and read the source git state. It is the
+## derivative-maker SOURCE tree, not the "build tree" the verifier itself runs
+## outside of; with --skip-build it is unused (see the guard below).
 dm_source_root="$( cd -- "${MYDIR}/../../../../.." 2>/dev/null && pwd || true )"
 
 ## Reuse dm-prepare-release's exact sign/verify code -- no hand-rolled sq/signify.
@@ -95,9 +105,7 @@ while [ "$#" -gt 0 ]; do
          shift
          ;;
       -h|--help)
-         ## FIXME: Violation of Bash Style Guide R-153 (do not extract help
-         ## from comments
-         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+         print_help
          exit 0
          ;;
       -*)
@@ -114,7 +122,7 @@ done
 [ -n "${HOMEVAR}" ] || error "HOMEVAR is set but empty; unset it to default to \$HOME."
 [ -n "${signify_public_key}" ] || error "signify_public_key is set but empty; unset it to default to '${default_signify_public_key}'."
 [ -n "${DEBEMAIL}" ] || error "DEBEMAIL is set but empty; unset it for the default signing identity."
-[ -n "${image_file}" ] || error "a local image file is required: dm-reproducible-verify IMAGE_FILE"
+[ -n "${image_file}" ] || { print_usage >&2; error "a local image file is required"; }
 [ -f "${image_file}" ] || error "image file does not exist: '${image_file}'"
 
 ## Command-availability preflight: probe every external tool once here (R-091),
@@ -140,10 +148,9 @@ done
 ## via the shared signing lib -- not a hand-rolled invocation.
 [ -f "${signify_public_key}" ] || error "signify public key not found: '${signify_public_key}' (pass --signify-pubkey)."
 printf '%s\n' "INFO: verifying buildinfo + sha512sums signatures (sq + signify)..." >&2
-## FIXME: "verify_and_check" is a bad function name, "verify" and "check" are near synonyms.
-verify_and_check "${buildinfo_file}" \
+verify_signature "${buildinfo_file}" \
    || error "buildinfo signature verification FAILED -- refusing to trust it."
-verify_and_check "${sha_file}" \
+verify_signature "${sha_file}" \
    || error "sha512sums signature verification FAILED."
 
 ## The buildinfo carries no checksum by design; the signed sha512sums covers the
@@ -218,12 +225,17 @@ compare_args=( --target "${bi_target}" --dir-a "${image_dir}" --dir-b "${build_o
 verify_exit="0"
 "${MYDIR}/dm-reproducible-compare-artifacts" "${compare_args[@]}" || verify_exit="$?"
 
+## dm-reproducible-compare-artifacts' verdict: 0 identical, 4 artifacts differ,
+## 2 setup/environment error, 1 unexpected internal error. Propagated verbatim.
 case "${verify_exit}" in
    0)
       printf '%s\n' "INFO: REPRODUCIBLE -- the published image matches the local rebuild." >&2
       ;;
-   1)
+   4)
       printf '%s\n' "INFO: NOT reproducible -- differences remain${output_file:+ (report: ${output_file})}." >&2
+      ;;
+   2)
+      printf '%s\n' "ERROR: could not compare (setup / artifact-not-found; exit 2)." >&2
       ;;
    *)
       printf '%s\n' "ERROR: verification could not complete (exit ${verify_exit})." >&2

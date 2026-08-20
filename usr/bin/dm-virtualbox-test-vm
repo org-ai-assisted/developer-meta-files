@@ -9,9 +9,9 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
 
-benchmarktimestart=0
-benchmarktimeend=0
+benchmark_start=0
 
 ## Thanks to perreal for the convertsecs function.
 ## http://stackoverflow.com/a/12199798
@@ -25,26 +25,27 @@ benchmarktimeend=0
 #   printf "%02d:%02d:%02d\n" "$h" "$m" "$s"
 #}
 
-## TODO: rename to match derivative-maker's benchmark helpers
-##   (benchmarktimestart / benchmarktimeend in this file are local
-##   to the VBox test driver; derivative-maker's help-steps expose
-##   the same notion under a different name). Aligning the function
-##   names here with derivative-maker's would let this script reuse
-##   the upstream helpers instead of redefining them.
+## Elapsed-time timing using bash's SECONDS, matching derivative-maker's benchmark
+## convention (benchmark_since / benchmark_format in helper-scripts' benchmark.bsh)
+## rather than the old 'date +%s'. Kept local rather than sourcing benchmark.bsh
+## into this standalone VBox test driver: benchmark_since returns a FORMATTED
+## string, while the loops below need the raw integer seconds for their
+## '-ge timeout' comparisons.
 benchmark_time_start() {
-   benchmarktimestart="$(date +%s)"
+   benchmark_start="${SECONDS}"
 }
 
 benchmark_time_end() {
-   benchmarktimeend="$(date +%s)"
-   benchmark_took_seconds="$(( $benchmarktimeend - $benchmarktimestart ))"
+   benchmark_took_seconds="$(( SECONDS - benchmark_start ))"
 }
 
 variables() {
    vmname="Whonix-Gateway-LXQt"
    user_name="user"
-   ## TODO: empty by default nowadays
-   password="changeme"
+   ## The guest account is passwordless (helper-scripts user_create.bsh does
+   ## 'passwd --delete'); guest LOGIN auth is therefore an EMPTY password. sudo
+   ## inside the guest is a separate concern handled by sudo-askpass-wrapper.
+   password=""
 
    vboxmanage_cmd="VBoxManage --nologo"
    vboxheadless_cmd="vboxheadless"
@@ -52,11 +53,24 @@ variables() {
    vm_wait_for_vm_start_timeout=60
    vm_wait_for_vm_shutdown_timeout=20
 
-   vboxmanage_sudo_wrapper="$vboxmanage_cmd guestcontrol $vmname run --username $user_name --password $password --wait-stdout --wait-stderr --exe /usr/libexec/helper-scripts/sudo-askpass-wrapper -- apt/sudo-askpass-wrapper"
+   ## An ARRAY, not a word-split string: the empty '--password ""' must survive
+   ## as a distinct argument. In a string, an empty '${password}' would collapse
+   ## and the next flag ('--wait-stdout') would be read as the password value.
+   # shellcheck disable=SC2206 # ${vboxmanage_cmd} is meant to word-split into 'VBoxManage --nologo'
+   vboxmanage_sudo_wrapper=(
+      ${vboxmanage_cmd}
+      guestcontrol "${vmname}" run
+      --username "${user_name}"
+      --password "${password}"
+      --wait-stdout --wait-stderr
+      --exe /usr/libexec/helper-scripts/sudo-askpass-wrapper
+      --
+      apt/sudo-askpass-wrapper
+   )
 }
 
 vm_is_running_test() {
-   running_vms_list="$($vboxmanage_cmd list runningvms)" || true
+   running_vms_list="$(${vboxmanage_cmd} list runningvms)" || true
 
    ## example running_vms_list:
    ##   "Whonix-Workstation-LXQt" {c504a345-8217-4954-8864-a5270a661b11}
@@ -65,7 +79,7 @@ vm_is_running_test() {
    ## split across multiple words). Match the full quoted name +
    ## the following ` {uuid}` separator with grep -F instead.
    vm_running=false
-   if grep -F -- "\"$vmname\" {" <<< "$running_vms_list" >/dev/null ; then
+   if grep -F -- "\"${vmname}\" {" <<< "${running_vms_list}" >/dev/null ; then
       vm_running=true
    fi
 }
@@ -75,12 +89,12 @@ wait_vm_shutdown() {
    while true ; do
       vm_is_running_test
       benchmark_time_end
-      if [ "$vm_running" = "false" ]; then
-         printf '%s\n' "INFO: VM shutdown took $benchmark_took_seconds seconds."
+      if [ "${vm_running}" = "false" ]; then
+         printf '%s\n' "INFO: VM shutdown took ${benchmark_took_seconds} seconds."
          break
       fi
-      if [ "$benchmark_took_seconds" -ge "$vm_wait_for_vm_shutdown_timeout" ]; then
-         printf '%s\n' "ERROR: VM shutdown longer than $vm_wait_for_vm_shutdown_timeout seconds." >&2
+      if [ "${benchmark_took_seconds}" -ge "${vm_wait_for_vm_shutdown_timeout}" ]; then
+         printf '%s\n' "ERROR: VM shutdown longer than ${vm_wait_for_vm_shutdown_timeout} seconds." >&2
          exit 1
       fi
       sleep 2
@@ -89,7 +103,7 @@ wait_vm_shutdown() {
 
 error_out_if_vm_is_running() {
    vm_is_running_test
-   if [ "$vm_running" = "true" ]; then
+   if [ "${vm_running}" = "true" ]; then
       printf '%s\n' "ERROR: VM not expected to be still running!" >&2
       exit 1
    fi
@@ -99,23 +113,23 @@ start_vm() {
    ## Does not exist but more debug output.
    #$vboxheadless_cmd --startvm "$vmname"
 
-   $vboxmanage_cmd startvm "$vmname" --type headless
+   ${vboxmanage_cmd} startvm "${vmname}" --type headless
 }
 
 power_off_vm_audit() {
-   $vboxmanage_cmd controlvm "$vmname" poweroff
+   ${vboxmanage_cmd} controlvm "${vmname}" poweroff
 }
 
 power_off_vm_ignore() {
-   $vboxmanage_cmd controlvm "$vmname" poweroff &>/dev/null || true
+   ${vboxmanage_cmd} controlvm "${vmname}" poweroff &>/dev/null || true
 }
 
 acpipowerbutton_vm() {
-   VBoxManage controlvm "$vmname" acpipowerbutton
+   VBoxManage controlvm "${vmname}" acpipowerbutton
 }
 
 vm_guest_control_cmd() {
-   $vboxmanage_cmd guestcontrol "$vmname" run --username "$user_name" --password "$password" --wait-stdout --wait-stderr --exe "$@"
+   ${vboxmanage_cmd} guestcontrol "${vmname}" run --username "${user_name}" --password "${password}" --wait-stdout --wait-stderr --exe "$@"
 }
 
 wait_for_vm() {
@@ -124,11 +138,11 @@ wait_for_vm() {
    while true ; do
       benchmark_time_end
       if vm_guest_control_cmd "/bin/ls" &>/dev/null ; then
-         printf '%s\n' "INFO: VM was ready after $benchmark_took_seconds seconds."
+         printf '%s\n' "INFO: VM was ready after ${benchmark_took_seconds} seconds."
          break
       fi
-      if [ "$benchmark_took_seconds" -ge "$vm_wait_for_vm_start_timeout" ]; then
-         printf '%s\n' "ERROR: VM took longer than $vm_wait_for_vm_start_timeout seconds to start." >&2
+      if [ "${benchmark_took_seconds}" -ge "${vm_wait_for_vm_start_timeout}" ]; then
+         printf '%s\n' "ERROR: VM took longer than ${vm_wait_for_vm_start_timeout} seconds to start." >&2
          exit 1
       fi
       sleep 2
@@ -136,7 +150,7 @@ wait_for_vm() {
 }
 
 whonix_developer_repository_enable() {
-   $vboxmanage_sudo_wrapper repository-dist --verbose --enable --repository developers
+   "${vboxmanage_sudo_wrapper[@]}" repository-dist --verbose --enable --repository developers
 }
 
 # kill_apt() {
@@ -146,15 +160,15 @@ whonix_developer_repository_enable() {
 # }
 
 apt_update() {
-   $vboxmanage_sudo_wrapper dpkg --configure -a
+   "${vboxmanage_sudo_wrapper[@]}" dpkg --configure -a
 
-   $vboxmanage_sudo_wrapper apt-get update
+   "${vboxmanage_sudo_wrapper[@]}" apt-get update
 }
 
 install_packages() {
-   $vboxmanage_sudo_wrapper apt-get --yes install lkrg tirdad
+   "${vboxmanage_sudo_wrapper[@]}" apt-get --yes install lkrg tirdad
 
-   $vboxmanage_sudo_wrapper apt-get --yes autoremove
+   "${vboxmanage_sudo_wrapper[@]}" apt-get --yes autoremove
 }
 
 snapshot_vm_create() {
@@ -169,17 +183,17 @@ snapshot_vm_create() {
    snapshot_name="before-dev-upgrade"
 
    ## Do not create another snapshot with the same name.
-   snapshot_list_output="$($vboxmanage_cmd snapshot "$vmname" list --machinereadable)"
-   if printf '%s\n' "$snapshot_list_output" | grep -- "$snapshot_name" >/dev/null 2>/dev/null; then
+   snapshot_list_output="$(${vboxmanage_cmd} snapshot "${vmname}" list --machinereadable)"
+   if printf '%s\n' "${snapshot_list_output}" | grep -- "${snapshot_name}" >/dev/null 2>/dev/null; then
       return 0
    fi
 
-   $vboxmanage_cmd snapshot "$vmname" take "$snapshot_name"
+   ${vboxmanage_cmd} snapshot "${vmname}" take "${snapshot_name}"
 }
 
 snapshot_vm_restore() {
    snapshot_name="before-dev-upgrade"
-   $vboxmanage_cmd snapshot "$vmname" restore "$snapshot_name"
+   ${vboxmanage_cmd} snapshot "${vmname}" restore "${snapshot_name}"
 }
 
 variables

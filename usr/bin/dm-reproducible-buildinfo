@@ -99,12 +99,20 @@ val() {
 ## fetch. It also carries the submodule SHAs the build actually used, which CI's
 ## fork-branch checkout resolves from moving branch tips and records nowhere else.
 ##
-## TODO: See if we can get rid of dm-source-state/source_state_file. It should
-## only be useful for builds where sign-and-tag runs, and sign-and-tag should
-## only ever run in exceptional cases. There is no need for CI-built images to
-## be reproducible other than to test reproducibility itself in CI, in which
-## case we can probably build from the same sign-and-tag'd repo twice to
-## verify that we get the same result and thus still not need dm-source-state.
+## Verified that dm-source-state/source_state_file STAYS (cannot be dropped):
+## sign-tag-head amends any UNSIGNED HEAD -- the parent and every submodule -- with
+## 'commit --amend -S', which changes the commit SHA. The signature itself is
+## commit METADATA, outside the source tree, so it does NOT leak into the built
+## image: image reproducibility is unaffected by signing (a build from the same
+## source FILES yields the same image, signed or not). What the amend changes is
+## the commit IDENTITY -- the amended SHA exists only inside this build. So the
+## pre-amend, upstream-FETCHABLE SHA must be recorded (by sign-and-tag, before the
+## amend) so a verifier can fetch THAT exact source and rebuild-to-compare; a
+## buildinfo naming the local amended SHA would be unfetchable. That is PROVENANCE,
+## not reproducibility. The "build twice from a sign-and-tag'd repo" shortcut only
+## holds from an ALREADY-signed input, where sign-and-tag is a no-op -- but
+## reaching that state needs a prior sign-and-tag whose provenance this same record
+## captured, so it cannot bootstrap itself.
 source_state_file="${dm_source_state_file:-}"
 if [ -z "${source_state_file}" ] && [ -n "${binary_build_folder_dist:-}" ]; then
    source_state_file="${binary_build_folder_dist}/dm-source-state"
@@ -114,11 +122,71 @@ state_unrecorded() {
    printf '%s\n' "Source-Commit: unrecorded ($1)" "Submodule-State: unrecorded"
 }
 
+## sign-and-tag writes dm-source-state ONLY when it amends
+## (dist_build_sign_and_tag=true). Its ABSENCE therefore means the build did NOT
+## rewrite HEAD or the submodule gitlinks -- so HEAD is the REAL, fetchable
+## source commit and the checked-out gitlinks are the REAL pins. Read them
+## directly, in the SAME Deb822 shape sign-and-tag records, so a build that did
+## not sign still publishes verifiable provenance instead of 'unrecorded'.
+##
+## source_code_folder_dist is the build's EXPLICIT, bind-mounted source tree
+## (help-steps/variables) -- NOT a guess from the working directory. That
+## distinction is the whole safety argument: a past false positive came from
+## guessing PWD and reading an unrelated repo, so an unset (or non-git)
+## source_code_folder_dist returns non-zero and the caller falls through to
+## 'unrecorded' rather than reaching for whatever repo happens to surround us.
+state_from_head() {
+   local repo toplevel head submodules
+   repo="${source_code_folder_dist:-}"
+   [ -n "${repo}" ] || return 1
+   ## 'git -C DIR' walks UP to the nearest enclosing .git, so a non-git build
+   ## directory nested under an UNRELATED repo would otherwise borrow that repo's
+   ## HEAD -- the exact "whatever repo happens to surround us" hazard. Require
+   ## repo to BE the work-tree root git resolves ('-ef': same directory inode,
+   ## symlink/relative-path safe), not merely a descendant of one.
+   toplevel="$(git -C "${repo}" rev-parse --show-toplevel 2>/dev/null)" || return 1
+   [ -n "${toplevel}" ] || return 1
+   [ "${repo}" -ef "${toplevel}" ] || return 1
+   head="$(git -C "${repo}" rev-parse HEAD 2>/dev/null)" || return 1
+   [ -n "${head}" ] || return 1
+   ## Capture git's output on its OWN line so a git failure aborts here; a sed
+   ## pipe would mask it (sed succeeds on empty input) and record empty submodule
+   ## state as if it were valid provenance.
+   submodules="$(git -C "${repo}" submodule status --recursive 2>/dev/null)" || return 1
+   if [ -n "${submodules}" ]; then
+      ## Leading space per line keeps each gitlink a Deb822 continuation of
+      ## Submodule-State, exactly as sign-and-tag formats dm-source-state.
+      submodules="$(printf '%s\n' "${submodules}" | sed -e 's/^[[:space:]]*/ /')"
+   fi
+   printf '%s\n' "Source-Commit: ${head}"
+   printf '%s\n' "Submodule-State:"
+   [ -z "${submodules}" ] || printf '%s\n' "${submodules}"
+}
+
+## Readability is not enough. This block is interpolated INTO the Deb822 record
+## below, where a blank line is the record TERMINATOR -- so an empty or partial
+## file does not merely lose provenance, it truncates the record and detaches
+## every field after it into an invalid paragraph. Content is therefore
+## validated, and anything short of both records is reported as unrecorded.
 source_state_block=""
+head_block=""
 if [ -z "${source_state_file}" ]; then
-   source_state_block="$(state_unrecorded "neither dm_source_state_file nor binary_build_folder_dist is set")"
+   ## Without a resolvable state-file path, an unset binary_build_folder_dist
+   ## would otherwise yield the absolute path '/dm-source-state' and read
+   ## whatever sits in the root directory. Prefer the real HEAD when a source
+   ## tree is available; only then fall back to 'unrecorded'.
+   if head_block="$(state_from_head)" && [ -n "${head_block}" ]; then
+      source_state_block="${head_block}"
+   else
+      source_state_block="$(state_unrecorded "neither dm_source_state_file nor binary_build_folder_dist is set, and no source_code_folder_dist git tree to read HEAD from")"
+   fi
 elif [ ! -f "${source_state_file}" ] || [ ! -r "${source_state_file}" ]; then
-   source_state_block="$(state_unrecorded "help-steps/sign-and-tag did not run, or did not write '${source_state_file}'")"
+   ## No state file: sign-and-tag did not amend, so HEAD IS the source commit.
+   if head_block="$(state_from_head)" && [ -n "${head_block}" ]; then
+      source_state_block="${head_block}"
+   else
+      source_state_block="$(state_unrecorded "help-steps/sign-and-tag did not run, and no source_code_folder_dist git tree to read HEAD from")"
+   fi
 else
    source_state_candidate="$(cat -- "${source_state_file}")"
    state_reject=""
@@ -127,8 +195,6 @@ else
          state_reject="${source_state_file} is empty"
          ;;
       *$'\n\n'*)
-         ## TODO: Should we reject a single newline at the start of the file
-         ## too?
          state_reject="${source_state_file} contains a blank line, which would terminate this Deb822 record"
          ;;
    esac
@@ -144,9 +210,10 @@ else
    fi
    if [ -z "${state_reject}" ]; then
       case "${source_state_candidate}" in
-         *"Submodule-State:"*)
-            ## FIXME: This can be fooled if 'Submodule-State:' occurs anywhere
-            ## in a key's value.
+         *$'\n'"Submodule-State:"*)
+            ## Anchored to line start (the record begins with Source-Commit:), so
+            ## a field value that merely contains 'Submodule-State:' cannot be
+            ## mistaken for the real field.
             true
             ;;
          *)

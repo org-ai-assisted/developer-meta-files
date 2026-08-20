@@ -47,8 +47,7 @@ dm_reproducible_target_ext() {
          ext_ref="qcow2.libvirt.xz"
          ;;
       utm)
-         ## FIXME: The extension we use is .utm.tar.gz, not just .utm.
-         ext_ref="utm"
+         ext_ref="utm.tar.gz"
          ;;
       *)
          return 1
@@ -69,12 +68,39 @@ dm_reproducible_target_url_part() {
       virtualbox)
          url_part_ref="ova"
          ;;
-      ## TODO: raw isn't published for download, should this be here?
+      ## raw is not a published download, but the case is kept for manual /
+      ## future / debugging use (e.g. comparing a locally-built raw image).
       raw)
          url_part_ref="raw"
          ;;
       qcow2)
          url_part_ref="libvirt"
+         ;;
+      *)
+         return 1
+         ;;
+   esac
+}
+
+## Set $1 to the build target for the download-URL path segment <url_part> $2 --
+## the inverse of dm_reproducible_target_url_part, kept here next to it so the
+## forward and reverse mappings can never drift.
+dm_reproducible_url_part_to_target() {
+   check_variable_name "${1:-}" || return 1
+
+   local -n target_ref="$1"
+   case "${2:-}" in
+      iso)
+         target_ref="iso"
+         ;;
+      ova)
+         target_ref="virtualbox"
+         ;;
+      raw)
+         target_ref="raw"
+         ;;
+      libvirt)
+         target_ref="qcow2"
          ;;
       *)
          return 1

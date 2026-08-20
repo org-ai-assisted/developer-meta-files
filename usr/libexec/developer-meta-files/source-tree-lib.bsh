@@ -33,11 +33,15 @@
 
 ## SELECTS one source, most authoritative first -- it is deliberately NOT a
 ## fallback chain that retries the others:
-##   1. an in-tree copy locates the tree by its own path, and that is final. It
-##      must operate on the tree it is PART OF; silently falling back to another
-##      one would let dm-prepare-release sign artifacts from a tree other than
-##      the code doing the signing. $source_code_folder_dist is ignored here on
-##      purpose, and the diagnostic below says so rather than suggesting it.
+##   1. an in-tree copy -- VERIFIED as a real derivative-maker tree by finding
+##      help-steps/pre five levels up -- binds to that tree by its own path, and
+##      that is final. It must operate on the tree it is PART OF; silently falling
+##      back would let dm-prepare-release sign artifacts from a tree other than
+##      the code doing the signing, so $source_code_folder_dist is ignored for a
+##      verified in-tree copy on purpose (the diagnostic below says so). A
+##      STANDALONE developer-meta-files checkout has the same directory shape but
+##      no tree above it: the help-steps/pre check fails, so it is NOT in-tree and
+##      correctly falls through to the explicit sources below.
 ##   2. otherwise $source_code_folder_dist -- help-steps/variables exports it and
 ##      the build preserves it across its sudo boundary, so it is right wherever
 ##      the tree is. An explicit instruction is honoured, not second-guessed.
@@ -47,13 +51,6 @@
 ##   4. otherwise the ~/derivative-maker convention.
 ## Returns 1, after a NAMED diagnostic, when the SELECTED source does not hold a
 ## tree.
-##
-## FIXME: The logic in point 1 above is violated by this function; if the
-## caller is in-tree and derivative-maker can't be found, it falls back to
-## checking source_code_folder_dist and checking other potential paths. This
-## is because the check for whether we're in a standalone developer-meta-files
-## repo or in a derivative-maker source tree falls through on failure. Fix
-## either the comment or the code.
 derivative_maker_source_tree_resolve() {
    local caller_dir="$1"
    local derivative_maker_in_tree_candidate

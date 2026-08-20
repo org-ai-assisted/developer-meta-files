@@ -32,8 +32,14 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 
 ## Symmetry with dm-github-org-policy's ORGS_OVERRIDE convention so
 ## the same wrapper runs in tests.
+##
+## Only the mirror org is scanned: the SOURCE orgs (Kicksecure / Whonix) and the
+## PROJECT orgs (secure-terminal / output-lies) are all mirrored into
+## org-ai-assisted, where the AI-assisted CI runs CodeQL / Coverity, so their
+## alerts surface there. The bot is also a read-only member on the SOURCE orgs
+## and could not read their code-scanning alerts directly regardless.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
-readonly MIRROR_ORGS=( 'org-ai-assisted' 'output-lies' )
+readonly MIRROR_ORGS=( 'org-ai-assisted' )
 if [ -n "${ORGS_OVERRIDE:-}" ]; then
    IFS=',' read -ra ORGS <<< "${ORGS_OVERRIDE}"
 else
@@ -130,53 +136,86 @@ printf '%s\n' "# Security report - ${report_timestamp} - mode=${mode}
 total_rows=0
 for org in "${ORGS[@]}"; do
    log notice "fetching alerts for '${org}'..."
-   ## /code-scanning/alerts paginates at per_page<=100. One page is
-   ## enough at current scale (~100 total org-wide); add a Link-header
-   ## walk if alert count outgrows it.
-   result="$(ghorg_api GET "/orgs/${org}/code-scanning/alerts?state=open&per_page=100")" \
-      || {
-         log warn "${org}: api call failed"
+   org_rows=0
+   org_failed=0
+   ## /code-scanning/alerts caps at per_page=100, so the page count
+   ## rises with the org's open-alert count. Walk pages until a short
+   ## one. A single unpaginated request silently reported the first
+   ## 100 of 329 open alerts as the whole result - truncation that is
+   ## indistinguishable from "that is all there is" in the output.
+   ##
+   ## Walking pages also keeps each body well under
+   ## GHORG_JQ_MAX_BYTES; a page of 100 alerts is ~1 MB, so raising
+   ## per_page instead would eventually hit the jq input cap and
+   ## degrade to a parse failure.
+   page=1
+   while true ; do
+      if [ "${page}" -gt "${GHORG_MAX_PAGES}" ]; then
+         log warn "${org}: hit pagination cap GHORG_MAX_PAGES='${GHORG_MAX_PAGES}'; report is incomplete"
          policy_warn_seen=1
-         continue
+         org_failed=1
+         break
+      fi
+      result="$(ghorg_api GET "/orgs/${org}/code-scanning/alerts?state=open&per_page=100&page=${page}")" \
+         || {
+            log warn "${org}: api call failed on page '${page}'"
+            policy_warn_seen=1
+            org_failed=1
+            break
+         }
+      status="$(ghorg_status_of "${result}")"
+      if [ "${status}" != '200' ]; then
+         log warn "${org}: HTTP ${status} on page '${page}'"
+         policy_warn_seen=1
+         org_failed=1
+         break
+      fi
+      body="$(ghorg_body_of "${result}")"
+      alert_count="$(printf '%s' "${body}" | ghorg_jq_capped -r -- 'length')" \
+         || {
+            log warn "${org}: jq parse failed on page '${page}'"
+            policy_warn_seen=1
+            org_failed=1
+            break
+         }
+      [ "${alert_count}" = '0' ] && break
+      ## Escape "|" in message text so it does not break the table
+      ## column separator.
+      rows="$(printf '%s' "${body}" | ghorg_jq_capped -r -- "
+         ${filter_jq}
+         | [
+               .repository.full_name,
+               .tool.name,
+               (.rule.severity // \"-\"),
+               (.rule.id // \"-\"),
+               (.most_recent_instance.location.path // \"-\"),
+               ((.most_recent_instance.location.start_line // 0) | tostring),
+               ((.most_recent_instance.message.text // \"-\")
+                  | gsub(\"\\\\|\"; \"\\\\\\\\|\")
+                  | gsub(\"\\n\"; \" \"))
+            ]
+         | \"| \" + join(\" | \") + \" |\"
+      ")" || {
+         log warn "${org}: jq parse failed on page '${page}'"
+         policy_warn_seen=1
+         org_failed=1
+         break
       }
-   status="$(ghorg_status_of "${result}")"
-   if [ "${status}" != '200' ]; then
-      log warn "${org}: HTTP ${status}"
-      policy_warn_seen=1
-      continue
-   fi
-   body="$(ghorg_body_of "${result}")"
-   ## Escape "|" in message text so it does not break the table
-   ## column separator.
-   rows="$(printf '%s' "${body}" | ghorg_jq_capped -r -- "
-      ${filter_jq}
-      | [
-            .repository.full_name,
-            .tool.name,
-            (.rule.severity // \"-\"),
-            (.rule.id // \"-\"),
-            (.most_recent_instance.location.path // \"-\"),
-            ((.most_recent_instance.location.start_line // 0) | tostring),
-            ((.most_recent_instance.message.text // \"-\")
-               | gsub(\"\\\\|\"; \"\\\\\\\\|\")
-               | gsub(\"\\n\"; \" \"))
-         ]
-      | \"| \" + join(\" | \") + \" |\"
-   ")" || {
-      log warn "${org}: jq parse failed"
-      policy_warn_seen=1
-      continue
-   }
 
-   if [ -z "${rows}" ]; then
+      while IFS= read -r row; do
+         [ -z "${row}" ] && continue
+         printf '%s\n' "${row}"
+         total_rows=$(( total_rows + 1 ))
+         org_rows=$(( org_rows + 1 ))
+      done <<< "${rows}"
+
+      [ "${alert_count}" -lt 100 ] && break
+      page=$(( page + 1 ))
+   done
+
+   if [ "${org_failed}" -eq 0 ] && [ "${org_rows}" -eq 0 ]; then
       log notice "  ${org}: no matching alerts"
-      continue
    fi
-   while IFS= read -r row; do
-      [ -z "${row}" ] && continue
-      printf '%s\n' "${row}"
-      total_rows=$(( total_rows + 1 ))
-   done <<< "${rows}"
 done
 
 log notice "total rows in report: ${total_rows}"
