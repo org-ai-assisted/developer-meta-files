@@ -29,19 +29,21 @@
 ##   * regular-file CONTENT in path order -- the path itself is already carried by the first
 ##     stream, so only the content digest is folded in (no filename, hence location-neutral).
 ## Paths are relative (find's %P), NUL-terminated and sorted under LC_ALL=C, so the result is
-## deterministic and safe for odd filenames. No 'cd' -- the caller's working directory is
-## never touched, and the hash does not depend on where the tree lives on disk.
+## deterministic and safe for odd filenames. 'find -H' follows a SYMLINKED source root (as the
+## old 'cd' did) while still recording -- never chasing -- symlinks INSIDE the tree. '.git' is
+## pruned by NAME, so no glob character or trailing slash in the directory name can defeat the
+## prune. No 'cd' -- the caller's working directory is never touched, and the hash does not
+## depend on where the tree lives on disk.
 dm_package_source_hash() {
    local package_source_dir="$1"
    if [ ! -d "${package_source_dir}" ]; then
       printf '%s\n' "nohash"
       return
    fi
-   local git_dir="${package_source_dir}/.git"
    {
-      find "${package_source_dir}" -path "${git_dir}" -prune -o -printf '%y %m %P\0' | LC_ALL=C sort -z
-      find "${package_source_dir}" -path "${git_dir}" -prune -o -type l -printf '%P -> %l\0' | LC_ALL=C sort -z
-      find "${package_source_dir}" -path "${git_dir}" -prune -o -type f -print0 \
+      find -H "${package_source_dir}" -name .git -prune -o -printf '%y %m %P\0' | LC_ALL=C sort -z
+      find -H "${package_source_dir}" -name .git -prune -o -type l -printf '%P -> %l\0' | LC_ALL=C sort -z
+      find -H "${package_source_dir}" -name .git -prune -o -type f -print0 \
          | LC_ALL=C sort -z \
          | xargs -0 -r sha256sum \
          | cut -d ' ' -f 1
