@@ -109,8 +109,16 @@ if [ ! "${verify_status}" = "0" ]; then
       exit 1
    fi
    true "$0: retrying verification with ${crl_fetched} CRL(s)."
-   osslsigncode verify -CRLfile "${crl_pem_file}" -in "${selected_file_name}"
+   ## Capture the status so the temp files are removed on BOTH outcomes; a bare
+   ## failing verify under errexit would exit before the cleanup below.
+   verify_retry_status=0
+   osslsigncode verify -CRLfile "${crl_pem_file}" -in "${selected_file_name}" \
+      || verify_retry_status="$?"
    safe-rm --force -- "${crl_pem_file}" "${crl_der_file}"
+   if [ ! "${verify_retry_status}" = "0" ]; then
+      true "$0: ERROR: signature verification failed after retry with fetched CRLs."
+      exit 1
+   fi
 fi
 
 sha256sum --ignore-missing --strict --check SHA256SUMS
