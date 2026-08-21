@@ -584,13 +584,26 @@ Path conventions by depth (relative to the script's directory):
 | `ci/<s>` | `../usr/libexec/developer-meta-files/<lib>` | `../../helper-scripts/usr/libexec/helper-scripts/<file>` |
 | `ci/tests/<s>` | `../../usr/libexec/developer-meta-files/<lib>` | `../../../helper-scripts/usr/libexec/helper-scripts/<file>` |
 
-In a standalone checkout where helper-scripts is not a sibling,
-shellcheck falls back to SC1091 ("not found") for that line, which
-is acceptable - the in-tree copy of the self-lib is what matters
-for accurate linting.
+In a standalone single-repo checkout helper-scripts is not a sibling,
+so shellcheck would emit SC1091 for that line. CI provides the sibling
+via the `helper-scripts: true` flag (see R-085); the canonical
+derivative-maker checkout already has it as a submodule sibling. Do NOT
+silence it with a per-line `# shellcheck disable=SC1091` (R-085). For a
+self-lib in a standalone checkout the in-tree copy is what matters, and
+its SC1091 there is acceptable.
 
 **R-081: Never fall back to `source=/dev/null`.** That silences
 cross-file checks.
+
+**R-085: No `# shellcheck disable=SC1091` on a helper-scripts
+source.** The `reusable-pre-push-static` CI gate checks out
+helper-scripts as the repo sibling when the consumer sets
+`dist-ai-tests: helper-scripts: true` in `.github/dm-consumer.yml`, so
+shellcheck FOLLOWS the `# shellcheck source=` directive instead of
+emitting SC1091. The per-line disable is then dead code; drop it and
+set the flag. See the `shellcheck` skill. Waiver:
+`## style-ok: allow-sc1091-disable` for a genuinely unfollowable
+optional source.
 
 **R-082: Each consumer sources every helper-scripts file it uses
 directly.** Don't rely on transitive sourcing.
@@ -616,11 +629,14 @@ producing an empty count.
 **R-090: `has` from `helper-scripts/has.sh`, not
 `command -v X >/dev/null 2>&1`.**
 
-    # shellcheck source=/usr/libexec/helper-scripts/has.sh
+    # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
     source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 
     has github-org-fork \
        || die 1 "'github-org-fork' not on PATH"
+
+The `source=` depth follows the R-080 table (this one is for a
+`usr/bin/` script); it must be relative, never absolute.
 
 Why: `has` verifies the result is executable and guards against
 aliases/functions; `command -v` matches any of those. To deviate
