@@ -70,7 +70,14 @@ propagates into child processes AND, if the script is sourced, into
 the sourcing shell; it therefore obeys the same guard/library
 placement rules as the rest of the block (see R-010a). A command that
 must handle multibyte data prefixes its own override, e.g.
-`LC_ALL=C.UTF-8 sort`, rather than dropping the block default.
+`LC_ALL=C.UTF-8 sort`, rather than dropping the block default. The C
+locale also makes bash's OWN string operations byte-oriented: `${#var}`
+counts bytes, `${var:off:len}` slices bytes (so a `${body:0:512}` log
+truncation can split a UTF-8 sequence), and `${var^^}`/`${var,,}`,
+`[[ =~ ]]`, and `[[:class:]]` match by byte. A per-command prefix cannot
+reach an expansion the PARENT shell evaluates, so a script that must
+measure or slice multibyte data in the shell scopes a `LC_ALL=C.UTF-8`
+block around that code (e.g. a subshell) instead.
 
 **R-010b: Do not declare a versioned `bash` dependency (`bash (>= 4.4)`
 or similar) in `debian/control` for the strict block.** Supported Debian
