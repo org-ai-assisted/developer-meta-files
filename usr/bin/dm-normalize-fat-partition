@@ -141,10 +141,12 @@ trap cleanup EXIT
 ## Listing captured with command substitution, NOT '< <( mdir ... )': a process
 ## substitution runs mdir in a subshell whose non-zero exit errexit cannot see,
 ## so an unreadable device would silently list nothing and normalize to an EMPTY
-## root -- dropping every file. mdir -b exits 0 for an empty root (no output) and
-## non-zero only on a real error, so capturing it makes a failed listing ABORT
-## rather than produce a stripped image.
-root_listing="$( mdir -b -i "${fat_device}" "::/" 2>/dev/null )"
+## root -- dropping every file. mdir -a -b exits 0 for an empty root (no output)
+## and non-zero only on a real error, so capturing it makes a failed listing
+## ABORT rather than produce a stripped image. '-a' also lists HIDDEN root
+## entries, so a hidden file or directory at the root is not silently dropped
+## from the rebuilt image.
+root_listing="$( mdir -a -b -i "${fat_device}" "::/" 2>/dev/null )"
 while IFS= read -r root_child; do
    root_child="${root_child#::/}"
    root_child="${root_child%/}"
