@@ -1239,6 +1239,63 @@ until do then`), or a `\` line-continuation is flagged.
 
 Waiver: `# style-ok: allow-embedded-script` anywhere in the unit.
 
+**R-194: An apt configuration hook does not embed a multi-statement shell
+command.** A `Pre-Invoke` / `Post-Invoke` / `Pre-Install-Pkgs` directive runs
+its double-quoted value through `sh -c`:
+
+    // Bad -- a script inlined in a config file, invisible to every tool:
+    DPkg::Post-Invoke {"if [ -x /usr/bin/foo ]; then /usr/bin/foo; fi";};
+
+    // Good:
+    DPkg::Post-Invoke {"/usr/libexec/mypkg/post-invoke-hook";};
+
+Why: the same defect R-191 catches in a systemd unit. The command is hidden
+from shellcheck, has no importable home a test can reach, and no coverage tool
+sees it. Move the logic into a script with a shebang and call it from the hook.
+
+Flagged: the INNER text of a hook's quoted value contains a `;` statement
+separator or a `|` pipe. Tolerated as glue: a `&&` / `||` chain and a `|| true`
+error-suppression tail -- an apt hook has no native alternative for them. The
+`;` apt uses to terminate a directive or separate a `{...}` list element sits
+outside the quotes and is config syntax, not a shell separator, so it is not
+counted.
+
+Scope: apt config paths only (`apt.conf.d/`, `apt.conf`). The check is per-line
+and does not parse a rare multi-LINE brace block across lines (a config parser
+for a rare case is the wrong tool -- see R-195's note); such a form is a
+documented fail-open. Waiver: `// style-ok: allow-embedded-script` (or `#`).
+
+**R-195: A cron entry does not embed a multi-statement command.** A cron table's
+command field runs through `sh -c`:
+
+    # Bad -- an inlined script in a crontab:
+    0 3 * * * root cd /srv/app && ./purge.sh; systemctl restart app | logger
+
+    # Good:
+    0 3 * * * root /usr/local/bin/nightly-maintenance
+
+Why: the same defect R-191 catches in a systemd unit -- invisible to shellcheck,
+no importable home, no coverage.
+
+Flagged: the command contains a `;` statement separator or a `|` pipe. Tolerated
+as glue: `&&` / `||` chains and a `( ... )` subshell -- the stock `/etc/crontab`
+itself uses `cd / && run-parts ...` and `test -x X || ( cd / && run-parts ... )`,
+and cron has no native directive for a working directory or a conditional run,
+so flagging that glue would fight the OS default. Blank lines, comments, and
+environment assignments (`SHELL=`, `PATH=`, `MAILTO=`) are not commands and are
+skipped.
+
+Scope: cron tables only (`cron.d/`, a `crontab` file) -- NOT the
+`/etc/cron.{daily,hourly,...}/` run-parts directories, whose entries are ordinary
+executable scripts already covered by the shell rules. Waiver:
+`# style-ok: allow-embedded-script`.
+
+The general rule behind R-194/R-195: a gate check (and an auto-fixer) must never
+grow a shell/config parser to reach a rare construct. Scan a line at a time,
+report the common case, and accept a documented fail-open on the rare multi-line
+form -- a one-line notification is cheaper and more reliable than an endless tail
+of parser edge cases.
+
 ## Python files
 
 **R-180: A Python file carries a shebang and is executable.**
