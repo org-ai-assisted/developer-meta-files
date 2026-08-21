@@ -77,17 +77,26 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
-## Probe the whole range, not just nbd0. Keying on /dev/nbd0 alone missed a
-## leaked /dev/nbd1 on a host where node 0 was absent, and exited 0 reporting
-## nothing to do.
-nbd_present=false
-for nbd_probe in /dev/nbd[0-9] /dev/nbd[0-9][0-9]; do
-   if [ -e "${nbd_probe}" ]; then
-      nbd_present=true
-      break
-   fi
+## Enumerate every whole-device NBD node once, not just nbd0. Keying on
+## /dev/nbd0 alone missed a leaked /dev/nbd1 on a host where node 0 was absent
+## and exited 0 reporting nothing to do. Retaining only a bare 'nbd<digits>'
+## name covers ANY digit count -- so nbd100+ under a raised nbds_max is not
+## missed -- and drops partition nodes (nbd0p1) and the literal glob when
+## nothing matches (no nullglob is set). The disconnect loop reuses this list.
+nbd_devices=()
+for nbd_candidate in /dev/nbd*; do
+   [ -e "${nbd_candidate}" ] || continue
+   nbd_node="${nbd_candidate##*/}"
+   nbd_digits="${nbd_node#nbd}"
+   [ -n "${nbd_digits}" ] || continue
+   case "${nbd_digits}" in
+      *[!0-9]*)
+         continue
+         ;;
+   esac
+   nbd_devices+=( "${nbd_candidate}" )
 done
-if [ "${nbd_present}" = "false" ]; then
+if [ "${#nbd_devices[@]}" -eq 0 ]; then
    printf '%s\n' "${0##*/}: no /dev/nbd* devices; nothing to release."
    exit 0
 fi
@@ -142,8 +151,7 @@ for mount_point in "${nbd_mount_points[@]}"; do
 done
 
 released_devices=0
-for nbd_device in /dev/nbd[0-9] /dev/nbd[0-9][0-9]; do
-   [ -e "${nbd_device}" ] || continue
+for nbd_device in "${nbd_devices[@]}"; do
    ## An unconnected device has size 0, so only touch the ones actually in use.
    ## 'read' from the sysfs file, no 'cat' subshell.
    size_path="/sys/block/${nbd_device##*/}/size"
