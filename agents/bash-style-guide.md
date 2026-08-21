@@ -53,6 +53,7 @@ policy.
     set -o errtrace
     shopt -s inherit_errexit
     shopt -s shift_verbose
+    export LC_ALL=C
 
 Why: `errexit` aborts on first uncaught failure. `nounset` catches
 unset-variable typos. `pipefail` makes a pipeline's exit code the
@@ -61,6 +62,15 @@ is not masked by a later command's success.
 `errtrace` makes ERR traps inherit into shell functions.
 `inherit_errexit` makes `$()` subshells respect errexit (bash >= 4.4).
 `shift_verbose` logs when `shift` runs past argv end.
+`export LC_ALL=C` pins the locale so `sort`, `[a-z]` ranges, `printf`
+number formatting, and tool error-message text are deterministic
+regardless of the caller's environment - the reproducible-build
+default. Unlike the `set -o`/`shopt` lines it is an `export`, so it
+propagates into child processes AND, if the script is sourced, into
+the sourcing shell; it therefore obeys the same guard/library
+placement rules as the rest of the block (see R-010a). A command that
+must handle multibyte data prefixes its own override, e.g.
+`LC_ALL=C.UTF-8 sort`, rather than dropping the block default.
 
 **R-010b: Do not declare a versioned `bash` dependency (`bash (>= 4.4)`
 or similar) in `debian/control` for the strict block.** Supported Debian
@@ -88,6 +98,7 @@ moves its former top-level logic into `main()`:
        set -o errtrace
        shopt -s inherit_errexit
        shopt -s shift_verbose
+       export LC_ALL=C
     fi
 
     main() {
@@ -109,7 +120,7 @@ into the sourcing shell).
 
 Why: the gate (R-010) already recognises the guarded form - zero
 column-0 strict directives plus a `was_executed`/`was_sourced` call in
-command position exempts the script from the top-level all-six
+command position exempts the script from the top-level all-seven
 requirement, because enabling strict-mode at top level would leak into
 any sourcing script.
 
@@ -121,6 +132,11 @@ used to check the indented block. So when a guarded block enables
 `errexit`, the gate requires both `shopt` lines inside the guard (an
 `errexit` guard without `inherit_errexit` leaves `$()` subshells not
 respecting errexit - the very leak the strict block exists to close).
+It also requires `export LC_ALL=C` inside that same guard: as an
+`export` it is the MOST leak-prone line in the block - an unguarded
+top-level `export LC_ALL=C` in a source-able script silently forces
+the C locale onto the sourcing shell and everything it runs
+afterwards, changing collation and multibyte handling with no error.
 The `set -o` choice itself stays the script's own: a script may
 deliberately defer `pipefail` (`live-mode.sh`, `get_writable_fs_lists.sh`)
 or omit `nounset` (`onion-time-pre-script`, which carries a
