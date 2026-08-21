@@ -411,9 +411,15 @@ short-flag meanings.
 **R-062: Use `--` end-of-options separator wherever the tool
 supports one and positional args follow.** Verified working in:
 `git`, `grep`, `sed`, `tr`, `jq`, `head`, `tail`, `stat`,
-`mktemp`, `wc`, `sort`, `cat`, `rm`, `safe-rm`, `mkdir`, `find`,
+`mktemp`, `wc`, `sort`, `cat`, `rm`, `safe-rm`, `mkdir`,
 `sudo` (`sudo -- cmd args` ends sudo's OWN options, before the
 command word). Verify before extending the list.
+
+NB: `find` is deliberately NOT in this list. `--` ends find's option
+parsing but does NOT protect a starting path that begins with `-`:
+`find -- -leading` still dies with "unknown predicate". A find starting
+path that may begin with `-` must be written `./path` or an absolute
+path -- `--` is not sufficient.
 
 Why: a positional that begins with `-` (legitimate or hostile)
 gets treated as a flag without `--`.

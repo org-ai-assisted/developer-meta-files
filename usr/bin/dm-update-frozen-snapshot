@@ -442,8 +442,14 @@ update_frozen_snapshot() {
       printf '%s\n' "dm-update-frozen-snapshot: that is a downgrade (older but validly signed packages); investigate before pinning it." >&2
       return 1
    fi
+   ## Bumping is unconditional by design: new_ts is the server's 'now' and
+   ## current_ts a previously-committed 'now', so new_ts > current_ts virtually
+   ## always -- a fresh pin is written even when it resolves to the same snapshot
+   ## (see the header: pinning 'now' and proving it serves the suites is settled).
+   ## This guard fires only on a pathological same-second rerun; it is a cheap
+   ## no-op short-circuit, not a general skip-when-unchanged path.
    if [ "${new_ts}" = "${current_ts}" ]; then
-      printf '%s\n' "dm-update-frozen-snapshot: already at the newest valid snapshot (${current_ts}); nothing to do."
+      printf '%s\n' "dm-update-frozen-snapshot: pin already at ${current_ts} (same server second); nothing to do."
       return 0
    fi
 

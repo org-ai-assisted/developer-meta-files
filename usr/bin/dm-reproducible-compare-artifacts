@@ -688,7 +688,7 @@ if [ "${explained}" = "no" ]; then
    ## NOTE: rc 0 here -- diffoscope finding no difference while the sha256 mismatch above
    ## proves the artifacts differ -- is a diffoscope shortcoming, not a verdict change.
    ## diffoscope's exit is IGNORED by design: the sha256 comparison is definitive, so this
-   ## path exits 1 unconditionally (below). A diff-less explanation can never soften the
+   ## path exits 4 unconditionally (below). A diff-less explanation can never soften the
    ## verdict to 0 (reproducible).
    if [ "${diffoscope_rc}" = "0" ]; then
       printf '%s\n' "(diffoscope reported no differences; the mismatch is in bytes it does not descend into, or in a path excluded above)" >> "${report}"
