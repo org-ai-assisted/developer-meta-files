@@ -82,6 +82,8 @@ if [ ! "${verify_status}" = "0" ]; then
    ## The failed run PRINTS every distribution point it tried, so the URLs come
    ## from the file under test rather than being hardcoded -- they survive
    ## certificate rotation.
+   crl_urls="$( printf '%s\n' "${verify_output}" \
+      | sed -n 's/^.*CRL distribution point: \(http[^ ]*\)$/\1/p' | sort -u )"
    while IFS= read -r crl_url; do
       [ -n "${crl_url}" ] || continue
       if ! curl --silent --show-error --location --max-time 60 \
@@ -99,8 +101,7 @@ if [ ! "${verify_status}" = "0" ]; then
       else
          true "$0: ${crl_url} is neither DER nor PEM"
       fi
-   done < <( printf '%s\n' "${verify_output}" \
-      | sed -n 's/^.*CRL distribution point: \(http[^ ]*\)$/\1/p' | sort -u )
+   done <<< "${crl_urls}"
 
    if [ "${crl_fetched}" -eq 0 ]; then
       safe-rm --force -- "${crl_pem_file}" "${crl_der_file}"
