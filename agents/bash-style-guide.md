@@ -1290,11 +1290,19 @@ Scope: cron tables only (`cron.d/`, a `crontab` file) -- NOT the
 executable scripts already covered by the shell rules. Waiver:
 `# style-ok: allow-embedded-script`.
 
+Both defang a `;` / `|` that is DATA before testing: an escaped `find ... -exec
+rm {} \;` terminator, or a `|` inside a quoted pattern (`awk '/foo|bar/'`,
+`grep -E 'a|b'`), is a single command, not a multi-statement one. Quoted spans,
+`$(...)`, backticks, and backslash escapes are stripped first (a bounded defang,
+the same one R-030 uses). The defang only ever DELETES data, so it can miss a
+separator hidden inside a quote (a documented fail-open) but never over-blocks a
+valid single command.
+
 The general rule behind R-194/R-195: a gate check (and an auto-fixer) must never
 grow a shell/config parser to reach a rare construct. Scan a line at a time,
 report the common case, and accept a documented fail-open on the rare multi-line
-form -- a one-line notification is cheaper and more reliable than an endless tail
-of parser edge cases.
+(or quote-hidden) form -- a one-line notification is cheaper and more reliable
+than an endless tail of parser edge cases.
 
 ## Python files
 
