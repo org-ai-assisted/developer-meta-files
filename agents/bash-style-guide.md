@@ -1410,3 +1410,61 @@ position with no kill-after option. A `timeout` inside a string (the
 deferred `x="timeout 5"` spelling) or used as another command's argument
 is spared -- a line-based gate cannot safely reason about it -- so add
 the option to those by hand.
+
+
+## Package management
+
+**R-210: `apt-get-noninteractive`, not `apt-get`.** Use the
+helper-scripts wrapper for every `apt-get` invocation (including behind
+`sudo`/`doas`):
+
+    sudo apt-get-noninteractive update
+    sudo apt-get-noninteractive install --yes --no-install-recommends -- foo
+
+Why: the wrapper exports `DEBIAN_FRONTEND=noninteractive`,
+`DEBIAN_PRIORITY=critical`, a `policy-rc.d`, and force-conf* options, so a
+scripted install never blocks on a debconf prompt or a conffile question
+(the class of hang that wedges an unattended build or a boot-time
+install). A bare `apt-get` inherits the caller's frontend and stalls.
+
+**R-211: `dpkg-noninteractive`, not `dpkg`, for state-changing actions.**
+Any action that unpacks or changes package state -- `--install`/`-i`,
+`--unpack`, `--configure`, `--remove`/`-r`, `--purge`/`-P`,
+`--record-avail`/`-A`, `--{set,clear}-selections`,
+`--{update,merge}-avail`, `--forget-old-unavail`, `--triggers-only` --
+goes through the wrapper (`dpkg --force-confnew`):
+
+    sudo dpkg-noninteractive --install --refuse-downgrade -- ./foo.deb
+
+A read-only QUERY (`dpkg --compare-versions`, `-l`, `-L`, `-s`, `-S`,
+`--print-architecture`, `--get-selections`, ...) and the separate
+`dpkg-*` tools (`dpkg-deb`, `dpkg-query`) stay bare -- the wrapper's
+`--force-confnew` is meaningless there, and forcing a query through it
+would break early-boot code where the wrapper may be absent.
+
+**R-212: never `--allow-downgrades`.** A silent downgrade masks a
+dependency or repository regression that should fail loudly; rely on the
+default refuse-downgrade behaviour (`dpkg --refuse-downgrade`).
+
+**R-213: never `make_use_lintian=false`.** Disabling lintian on a
+genmkfile build hides packaging defects. Fix the lintian findings
+instead.
+
+Why a wrapper file is exempt: the helper-scripts scripts that DEFINE
+`apt-get-noninteractive` / `dpkg-noninteractive` necessarily call bare
+`apt-get` / `dpkg` -- that is their job -- so the gate never flags them
+(matched by basename).
+
+The pre-push gate flags R-210 through R-213 on shell files (command
+position, sparing an apt-get/dpkg inside a string or comment); its
+auto-fixer rewrites R-210 (`apt-get` -> `apt-get-noninteractive`) but not
+R-211/R-212/R-213 (dpkg needs an action-aware decision, and the other two
+are a deliberate removal a human must make).
+
+The ONLY sanctioned override is an explicit human-operator decision, for
+an environment where the wrapper genuinely does not exist (a minimal CI
+image without helper-scripts): put the matching waiver -- `## style-ok:
+allow-apt-get`, `allow-dpkg`, `allow-downgrades`, or
+`allow-lintian-disable` -- in the script, with a comment stating why. A
+model must not add these waivers on its own; converting to the wrapper is
+the default.
