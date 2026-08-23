@@ -139,7 +139,7 @@ upload_files() {
       local dns_probe_item dns_probe_host
       local -a dns_probed_host_list
       dns_probed_host_list=()
-      for dns_probe_item in ${dist_server_with_upload_location_list}; do
+      for dns_probe_item in "${dist_build_upload_locations[@]}"; do
          dns_probe_host="$(dns_probe_host_from_target "${dns_probe_item}")"
          if [ -z "${dns_probe_host}" ]; then
             continue
@@ -203,8 +203,8 @@ main() {
       error "Variable dist_build_version is empty."
    fi
 
-   if [ "${dist_server_with_upload_location_list}" = "" ]; then
-      error "Variable dist_server_with_upload_location_list is empty."
+   if [ "${#dist_build_upload_locations[@]}" -eq 0 ]; then
+      error "Variable dist_build_upload_locations is empty."
    fi
 
    ## Upload each image to its OWN destination via the parallel arrays
