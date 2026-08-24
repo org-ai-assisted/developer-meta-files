@@ -697,9 +697,13 @@ without sourcing helper-scripts.
 ## Workflow scripts
 
 **R-100: Substantial bash logic does not belong inside a workflow
-YAML's `run: |` block.** If the step is more than ~5 lines (or
-has any control flow, retry loop, polling, error handler), put it
-in a standalone script under `ci/` and have the workflow call it.
+YAML's `run: |` block.** If the step is more than 5 shell
+statements (counted from a real bash parse, so a single command
+wrapped over many backslash-continued lines is one statement, not
+a block), or carries substantial control flow (a retry loop,
+polling, a real error handler), put it in a standalone script
+under `ci/` and have the workflow call it. A small pre-flight
+guard (a single `if`/`exit`) may stay inline.
 
     - name: Start systemd-enabled Debian container
       run: ./ci/dry-run-start-container.sh dryrun "${DEBIAN_IMAGE}"
