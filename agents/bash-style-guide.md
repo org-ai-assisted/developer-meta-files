@@ -619,7 +619,7 @@ its SC1091 there is acceptable.
 cross-file checks.
 
 **R-085: No `# shellcheck disable=SC1091` on a helper-scripts
-source.** The `reusable-pre-push-static` CI gate checks out
+source.** The `pre-push-static` gate checks out
 helper-scripts as the repo sibling when the consumer sets
 `dist-ai-tests: helper-scripts: true` in `.github/dm-consumer.yml`, so
 shellcheck FOLLOWS the `# shellcheck source=` directive instead of

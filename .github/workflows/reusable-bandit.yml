@@ -155,7 +155,7 @@ jobs:
           set -o errexit
           set -o nounset
           set -o pipefail
-          .github/dmf/ci/bandit-discover-python.sh \
+          .github/dist-ai/ci/bandit-discover-python.sh \
             | xargs -0 --no-run-if-empty -- bandit -ll -ii --
 
       - name: Emit step summary

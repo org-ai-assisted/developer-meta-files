@@ -250,11 +250,9 @@ ask but has no resolution.
 **Affects**: every reusable workflow that checks
 `developer-meta-files` into `.github/dmf/` for downstream
 `ci/`-helper scripts -
-[`reusable-pre-push-static.yml`](../.github/workflows/reusable-pre-push-static.yml),
 [`reusable-bandit.yml`](../.github/workflows/reusable-bandit.yml),
 [`reusable-cppcheck.yml`](../.github/workflows/reusable-cppcheck.yml),
 [`reusable-codeql.yml`](../.github/workflows/reusable-codeql.yml),
-[`reusable-secrets-audit.yml`](../.github/workflows/reusable-secrets-audit.yml),
 [`reusable-scorecard.yml`](../.github/workflows/reusable-scorecard.yml).
 
 **Why CodeQL reports it**: the rule fires on static properties

@@ -146,7 +146,7 @@
 ## 'workflow_call.secrets' is documentation - 'secrets: inherit'
 ## bypasses it. Callers must use an explicit 'secrets:' map for the
 ## schema to actually constrain what flows in. Run
-## .github/workflows/consumer-secrets-audit.yml manually
+## .github/workflows/local-secrets-audit.yml manually
 ## (workflow_dispatch) to verify the secrets context.
 ##
 ## ## Caller responsibilities

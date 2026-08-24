@@ -219,7 +219,7 @@ jobs:
           BUILD_MODE: ${{ inputs.build-mode }}
         ## See ci/codeql-load-config.sh (build-mode=manual makes
         ## build-command required; otherwise optional).
-        run: .github/dmf/ci/codeql-load-config.sh
+        run: .github/dist-ai/ci/codeql-load-config.sh
 
       ## Pre-init hook - source-tree prep that the extractor must
       ## see. Skipped when dm-consumer.yml.<section>.prepare-command
