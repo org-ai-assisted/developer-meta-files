@@ -30,13 +30,14 @@ set -o nounset
 set -o pipefail
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
-if printf ',%s,' "${CANONICAL_REPOS}" | grep --fixed-strings --quiet -- ",${THIS_REPO},"; then
+if grep --fixed-strings --quiet -- ",${THIS_REPO}," <<< ",${CANONICAL_REPOS},"; then
    printf '%s\n' \
       "gate: ${THIS_REPO} is canonical (in '${CANONICAL_REPOS}'); allowing" >&2
-   printf 'allowed=true\n' >> "${GITHUB_OUTPUT}"
+   printf '%s\n' 'allowed=true' >> "${GITHUB_OUTPUT}"
 else
    printf '%s\n' \
       "gate: ${THIS_REPO} is not canonical (list: '${CANONICAL_REPOS}'); skipping expensive steps" >&2
-   printf 'allowed=false\n' >> "${GITHUB_OUTPUT}"
+   printf '%s\n' 'allowed=false' >> "${GITHUB_OUTPUT}"
 fi
