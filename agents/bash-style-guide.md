@@ -364,6 +364,24 @@ right tool.**
 `log notice ""`).** Once every line carries a `[NOTICE]:` prefix,
 blank lines are noise.
 
+**R-063: A `printf -v` with a DYNAMIC target name must be guarded by
+`check_variable_name` on that same name first.** Bash evaluates an
+array subscript inside the `-v` target, so `printf -v "${name}"` with
+an unvalidated `name` of the form `x[$(cmd)]` RUNS `cmd` -- a command
+injection driven by whatever supplied the name (`helper-scripts`
+`strings.bsh` carries the regression test for exactly this).
+
+    check_variable_name "${name}" || return 1
+    printf -v "${name}" '%s' "${value}"
+
+The gate FAILS on a `printf -v` whose name is built from an expansion
+unless a `check_variable_name` naming that same variable appears
+earlier in the same function. A LITERAL target (`printf -v out ...`)
+carries no expansion and is spared. A file that genuinely needs an
+unguarded dynamic `printf -v` carries a script-wide
+`## style-ok: allow-unchecked-printf-v` waiver (same shape as
+`no-safe-rm`).
+
 
 ## Functions
 
