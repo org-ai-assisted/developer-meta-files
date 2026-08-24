@@ -1335,19 +1335,22 @@ Scope: cron tables only (`cron.d/`, a `crontab` file) -- NOT the
 executable scripts already covered by the shell rules. Waiver:
 `# style-ok: allow-embedded-script`.
 
-Both defang a `;` / `|` that is DATA before testing: an escaped `find ... -exec
-rm {} \;` terminator, or a `|` inside a quoted pattern (`awk '/foo|bar/'`,
-`grep -E 'a|b'`), is a single command, not a multi-statement one. Quoted spans,
-`$(...)`, backticks, and backslash escapes are stripped first (a bounded defang,
-the same one R-030 uses). The defang only ever DELETES data, so it can miss a
-separator hidden inside a quote (a documented fail-open) but never over-blocks a
-valid single command.
+Both PARSE the extracted shell value before testing (the gate's shfmt-backed
+detector), so a `;` / `|` that is DATA -- an escaped `find ... -exec rm {} \;`
+terminator, or a `|` inside a quoted pattern (`awk '/foo|bar/'`, `grep -E 'a|b'`)
+-- is correctly a single command, never a multi-statement one. A separator hidden
+inside a quote is no longer a false positive: the parser knows it is string
+content.
 
-The general rule behind R-194/R-195: a gate check (and an auto-fixer) must never
-grow a shell/config parser to reach a rare construct. Scan a line at a time,
-report the common case, and accept a documented fail-open on the rare multi-line
-(or quote-hidden) form -- a one-line notification is cheaper and more reliable
-than an endless tail of parser edge cases.
+The general rule behind R-194/R-195 (and the shell command-position rules): never
+HAND-ROLL a parser -- a quote/brace/heredoc state machine -- but USE a real one.
+The gate and the auto-fixer analyse the shell VALUE with the shfmt AST (the
+`pre-push-detect` detector and `pre-push-fix`, via `dist_ai.bash_ast`), so a
+command, a separator, or a quote is told from data EXACTLY, not by a fragile regex
+that has to accept a documented fail-open. Only the config-line EXTRACTION
+(finding the value in an `apt.conf` / crontab / unit) stays a simple per-line
+scan; a rare multi-LINE brace block is still declined, because a config-format
+parser for that one case is the wrong tool.
 
 ## Python files
 
