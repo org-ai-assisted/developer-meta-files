@@ -1471,3 +1471,25 @@ allow-apt-get`, `allow-dpkg`, `allow-downgrades`, or
 `allow-lintian-disable` -- in the script, with a comment stating why. A
 model must not add these waivers on its own; converting to the wrapper is
 the default.
+
+**R-220: no unauthorized SKIP.** A test SKIP -- `exit 77` / `return 77`,
+the reserved skip code -- must be authorized:
+
+    # Bad -- a required tool absent is an ENVIRONMENT BUG, not a skip:
+    type -P helper-script >/dev/null || exit 77
+
+    # Good -- a required tool absent fails LOUD:
+    type -P helper-script >/dev/null || { printf 'FATAL: helper-script absent\n' >&2 ; exit 1 ; }
+
+    # Good -- a genuinely OPTIONAL target may skip, WITH a reason:
+    [ -x /usr/bin/optional-e2e-daemon ] || exit 77  ## style-ok: allow-skip: e2e-only daemon, absent in the core lane
+
+Why: a skip added to make a red suite green is a silent pass -- the gate
+exists to stop exactly that. A REQUIRED dependency's absence is an
+environment bug and must be `exit 1` (FATAL), so it fails loudly and gets
+fixed; only a genuinely OPTIONAL target may `exit 77`, and it must say why
+in a PER-SKIP `## style-ok: allow-skip: <reason>` waiver on the `exit 77`
+line or the line directly above it. The gate flags an unwaived `exit 77` /
+`return 77` in command position (an `exit 77` inside a string or a comment
+is not a skip). Unlike the package-wrapper waivers, the reason is
+mandatory: `allow-skip` with no rationale still reads as a bare skip.
