@@ -1529,6 +1529,7 @@ pkg_git_diff_and_merge_branch_bot_ai() {
    repo_skip 'derivative-maker' || return 0
    repo_skip 'security-misc' || return 0
    repo_skip 'developer-meta-files' || return 0
+   repo_skip 'privleap' || return 0
 
    pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/ai"
 }
