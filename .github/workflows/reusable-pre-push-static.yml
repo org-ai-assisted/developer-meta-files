@@ -121,10 +121,13 @@ jobs:
         ## R-100: 4 lines, no control flow -- inline is acceptable.
         ## file: required by is_text_file()'s MIME-type fallback for
         ## extension-less text files.
+        ## shfmt: the gate's parser-backed shell rules run over the shfmt AST
+        ## (pre-push-detect); the gate hard-FAILS if it is absent, never a
+        ## silent skip.
         run: |
           apt-get update --quiet
           apt-get install --yes --no-install-recommends \
-            ca-certificates file git pre-commit-hooks shellcheck yq
+            ca-certificates file git pre-commit-hooks shellcheck shfmt yq
           git config --global --add safe.directory '*'
 
       - name: Checkout caller repo (full history for git diff)
