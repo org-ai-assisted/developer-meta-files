@@ -1515,8 +1515,18 @@ pkg_git_diff_and_merge_branch_arraybolt3() {
    pkg_git_diff_and_merge_branch "ArrayBolt3/arraybolt3/trixie"
 }
 
-pkg_git_diff_and_merge_branch_bot() {
+pkg_git_diff_and_merge_branch_bot_master() {
    pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/master"
+}
+
+pkg_git_diff_and_merge_branch_bot_ai() {
+   ## TODO: assigned to arraybolt3
+   repo_skip 'derivative-maker' || return 0
+   repo_skip 'security-misc' || return 0
+   repo_skip 'developer-meta-files' || return 0
+   repo_skip 'privleap' || return 0
+
+   pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/ai"
 }
 
 ### }}}
@@ -1587,7 +1597,15 @@ pkg_git_diff_and_merge_branch() {
       ## the drive-by commits below it (sq-git policy).
       dry_run_or_run git merge --no-ff "${origin_ref}"
    elif [ "${origin_branch}" = "${DM_GITHUB_MIRROR}/master" ]; then
-      ## TODO: Can't we verify against Claude's SSH key?
+      ## Cannot verify against Claude SSH key: appliable to claude web sessions
+      ## only, which are no longer being used.
+      ## TODO: Create a local signing key for claude?
+      #git verify-commit "${origin_ref}"
+      ## '--no-ff': same sq-git policy rationale as above; maintainer
+      ## merge commit authenticates the AI-generated commits below it.
+      dry_run_or_run git merge --no-ff --no-verify-signature "${origin_ref}"
+   elif [ "${origin_branch}" = "${DM_GITHUB_MIRROR}/ai" ]; then
+      ## TODO: Same as above.
       #git verify-commit "${origin_ref}"
       ## '--no-ff': same sq-git policy rationale as above; maintainer
       ## merge commit authenticates the AI-generated commits below it.
