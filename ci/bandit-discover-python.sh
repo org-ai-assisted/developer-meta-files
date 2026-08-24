@@ -35,6 +35,7 @@ set -o nounset
 set -o pipefail
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 ## Base find excludes.
 exclude_args=(

@@ -46,6 +46,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 ## style-ok: no-has -- standalone operator tool; does not source the derivative-maker
 ## help-steps stack, so 'has' is not available. External tools are probed with

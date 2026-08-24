@@ -29,6 +29,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 ## CI guard. Requires ./cov-analysis/bin/coverity (set up by
 ## coverity-download.sh). Refuse outside CI unless ALLOW_LOCAL=true

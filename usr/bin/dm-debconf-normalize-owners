@@ -44,6 +44,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (exported by help-steps/pre
 ## for a from-source build); empty falls back to the installed system path.

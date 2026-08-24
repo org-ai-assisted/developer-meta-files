@@ -33,6 +33,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 ## Inverted on purpose: see the header. Acting is the opt-in.
 dry_run=true
