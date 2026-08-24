@@ -166,14 +166,6 @@ jobs:
           path: .github/dist-ai
           persist-credentials: false
 
-      - name: Checkout developer-meta-files (orchestration scripts)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/developer-meta-files
-          ref: master
-          path: .github/dmf
-          persist-credentials: false
-
       - name: Install yq
         ## Ubuntu 24.04 ships kislyuk's python-yq jq wrapper. The
         ## `// ""` defaults and `-r` raw output in the next step
