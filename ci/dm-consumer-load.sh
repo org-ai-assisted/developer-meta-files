@@ -40,6 +40,7 @@ set -o nounset
 set -o pipefail
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 if [ "$#" -ne 3 ]; then
    printf '%s\n' \
@@ -63,7 +64,7 @@ emit_empty_for() {
    IFS=',' read -ra keys <<< "${keys_csv}"
    for key in "${keys[@]}"; do
       out_name="${key//-/_}"
-      printf '%s=\n' "${out_name}" >> "${GITHUB_OUTPUT}"
+      printf '%s\n' "${out_name}=" >> "${GITHUB_OUTPUT}"
    done
 }
 
@@ -85,7 +86,7 @@ read_key() {
          ;;
    esac
    out_name="${key//-/_}"
-   printf '%s=%s\n' "${out_name}" "${value}" >> "${GITHUB_OUTPUT}"
+   printf '%s\n' "${out_name}=${value}" >> "${GITHUB_OUTPUT}"
 }
 
 ## Soft-skip if file or section absent AND no required keys.

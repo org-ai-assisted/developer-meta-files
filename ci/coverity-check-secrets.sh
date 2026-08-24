@@ -21,6 +21,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 ## CI guard. The Coverity workflow expects to find token/email/project
 ## in env. There is no sensible local invocation. Refuse outside CI
@@ -45,4 +46,4 @@ if [ -z "${COVERITY_PROJECT:-}" ]; then
   exit 1
 fi
 
-printf 'Coverity project: %s\n' "${COVERITY_PROJECT}"
+printf '%s\n' "Coverity project: ${COVERITY_PROJECT}"

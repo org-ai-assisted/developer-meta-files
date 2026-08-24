@@ -21,6 +21,7 @@ set -o nounset
 set -o pipefail
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 case "${BUILD_MODE}" in
    manual)
@@ -33,5 +34,5 @@ case "${BUILD_MODE}" in
       ;;
 esac
 
-exec "$(dirname -- "$0")/dm-consumer-load.sh" \
+"$(dirname -- "$0")/dm-consumer-load.sh" \
    "${DM_SECTION}" "${required}" "${optional}"

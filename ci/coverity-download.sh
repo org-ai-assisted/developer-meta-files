@@ -43,6 +43,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 ## CI guard. Downloads a token-gated binary and writes it to disk.
 ## Refuse outside CI unless ALLOW_LOCAL=true is set explicitly.
@@ -82,12 +83,12 @@ if [ "${actual_md5}" != "${expected_md5}" ]; then
   printf '%s\n' "::error::Coverity tool md5 mismatch: got ${actual_md5}, expected ${expected_md5}" >&2
   exit 1
 fi
-printf 'Coverity tool md5 verified: %s\n' "${actual_md5}"
+printf '%s\n' "Coverity tool md5 verified: ${actual_md5}"
 
 ## Layer 2: sha256 hard-pin (against caller-repo-committed expected
 ## value).
 actual_sha256="$(sha256sum -- cov-analysis-linux64.tgz | awk '{print $1}')"
-printf 'Coverity tool sha256: %s\n' "${actual_sha256}"
+printf '%s\n' "Coverity tool sha256: ${actual_sha256}"
 
 sha256_pin_file='.coverity-tool-sha256.expected'
 if [ -f "${sha256_pin_file}" ]; then
@@ -100,7 +101,7 @@ if [ -f "${sha256_pin_file}" ]; then
     printf '%s\n' "::error::Coverity tool sha256 mismatch: got ${actual_sha256}, expected ${expected_sha256} (from ${sha256_pin_file})" >&2
     exit 1
   fi
-  printf 'Coverity tool sha256 hard-pin verified: %s\n' "${actual_sha256}"
+  printf '%s\n' "Coverity tool sha256 hard-pin verified: ${actual_sha256}"
 else
   printf '%s\n' "::warning::No ${sha256_pin_file} in repo; only md5 was verified. After verifying the printed sha256 independently, commit it to pin against md5-collision attacks."
 fi

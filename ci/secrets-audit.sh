@@ -16,6 +16,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 if [ "${CI:-}" != "true" ] && [ "${ALLOW_LOCAL:-}" != "true" ]; then
   printf '%s\n' "${BASH_SOURCE[0]}: refusing to run outside CI. Set ALLOW_LOCAL=true to override." >&2
@@ -24,10 +25,10 @@ fi
 
 fail=0
 
-printf 'ANTHROPIC_API_KEY present:   %s\n' "${ANTHROPIC_PRESENT:-unknown}"
-printf 'OPENAI_API_KEY present:      %s\n' "${OPENAI_PRESENT:-unknown}"
-printf 'COVERITY_SCAN_TOKEN present: %s\n' "${COVERITY_TOKEN_PRESENT:-unknown}"
-printf 'COVERITY_SCAN_EMAIL present: %s\n' "${COVERITY_EMAIL_PRESENT:-unknown}"
+printf '%s\n' "ANTHROPIC_API_KEY present:   ${ANTHROPIC_PRESENT:-unknown}"
+printf '%s\n' "OPENAI_API_KEY present:      ${OPENAI_PRESENT:-unknown}"
+printf '%s\n' "COVERITY_SCAN_TOKEN present: ${COVERITY_TOKEN_PRESENT:-unknown}"
+printf '%s\n' "COVERITY_SCAN_EMAIL present: ${COVERITY_EMAIL_PRESENT:-unknown}"
 
 if [ "${OPENAI_PRESENT:-}" = "true" ]; then
   printf '%s\n' '::error::OPENAI_API_KEY leaked into the reusable secrets context' >&2

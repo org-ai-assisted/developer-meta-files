@@ -26,6 +26,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 if [ "${CI:-}" != "true" ]; then
    printf '%s\n' \
@@ -41,16 +42,28 @@ source /usr/libexec/helper-scripts/has.sh
 ## org-clone read paths without burning much quota.
 readonly target_org='octokit'
 
+## Temp resources cleaned on exit; out_dir is created later but the
+## trap is armed up front so an early skip-exit cleans the probe file.
+probe_rl_file="$(mktemp)"
+out_dir=""
+probe_live_unauth_cleanup() {
+   safe-rm --force -- "${probe_rl_file}"
+   if [ -n "${out_dir}" ]; then
+      safe-rm --recursive --force -- "${out_dir}"
+   fi
+}
+trap probe_live_unauth_cleanup EXIT
+
 ## Pre-flight: check unauth bucket. If empty, skip with a clear
 ## warning - exit 0 so the workflow's continue-on-error step does
 ## not surface a false failure.
-status="$(curl --silent --max-time 10 --output /tmp/probe-rl.json \
+status="$(curl --silent --max-time 10 --output "${probe_rl_file}" \
    --write-out '%{http_code}' 'https://api.github.com/rate_limit')"
 if [ "${status}" != '200' ]; then
    printf '%s\n' "skip: rate_limit endpoint HTTP ${status}; cannot probe." >&2
    exit 0
 fi
-remaining="$(jq --raw-output -- '.resources.core.remaining // 0' /tmp/probe-rl.json)"
+remaining="$(jq --raw-output -- '.resources.core.remaining // 0' "${probe_rl_file}")"
 if [ "${remaining}" -lt 5 ]; then
    printf '%s\n' \
       "skip: unauth core quota at ${remaining} (need >= 5); rate-limit window full." >&2
@@ -70,11 +83,6 @@ done
 ##  - dry-run output mentions at least one repo
 unset GITHUB_TOKEN
 out_dir="$(mktemp --directory)"
-
-probe_live_unauth_cleanup_out_dir() {
-   safe-rm --recursive --force -- "${out_dir}"
-}
-trap probe_live_unauth_cleanup_out_dir EXIT
 
 printf '%s\n' "=== github-org-clone --dry-run ${target_org} ==="
 out="$(github-org-clone --dry-run "${target_org}" "${out_dir}/clone" 2>&1)"
