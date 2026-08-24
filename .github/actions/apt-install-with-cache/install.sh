@@ -43,6 +43,10 @@
 ## sudo-copying into /var/cache/apt/archives); ALLOW_LOCAL=true
 ## overrides for the rare-on-purpose case.
 
+## style-ok: allow-apt-get -- this CI bootstrap installs the base apt packages
+## that helper-scripts itself needs, so it runs BEFORE helper-scripts (and its
+## 'apt-get-noninteractive' wrapper) is on PATH.
+
 set -o errexit
 set -o nounset
 set -o pipefail
