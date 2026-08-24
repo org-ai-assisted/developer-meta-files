@@ -38,7 +38,6 @@ this repo plus the per-consumer PRs referenced from them.
     |   |-- workflows/
     |   |   |   ## Library - called via `uses:`. Path is fixed.
     |   |   |-- reusable-bandit.yml
-    |   |   |-- reusable-claude-code-review.yml
     |   |   |-- reusable-codeql.yml
     |   |   |-- reusable-coverity.yml
     |   |   |-- reusable-cppcheck.yml
@@ -57,7 +56,6 @@ this repo plus the per-consumer PRs referenced from them.
     |   |   |   ## consumer-cppcheck.yml, consumer-codeql-cpp.yml
     |   |   |   ## NOT installed - the hub has no C/C++.
     |   |   |-- consumer-bandit.yml
-    |   |   |-- consumer-claude-code.yml
     |   |   |-- consumer-codeql-actions.yml
     |   |   `-- consumer-codeql-python.yml
     |   `-- actions/
@@ -73,7 +71,6 @@ this repo plus the per-consumer PRs referenced from them.
                 |   ## Single source of truth for every
                 |   ## consumer-*.yml propagated across the org.
                 |-- consumer-bandit.yml
-                |-- consumer-claude-code.yml
                 |-- consumer-codeql-actions.yml
                 |-- consumer-coverity.yml         ## parameterized
                 |-- consumer-cppcheck.yml         ## parameterized
@@ -89,8 +86,8 @@ no C/C++ to scan; those parameterized templates live in
 `consumer-templates/` and propagate only to consumers that have
 those workflows installed.
 
-The unprefixed wrappers from before the rename (`claude-code.yml`,
-`scorecard.yml`, `codeql-actions.yml`) are now `consumer-*.yml`.
+The unprefixed wrappers from before the rename (`scorecard.yml`,
+`codeql-actions.yml`) are now `consumer-*.yml`.
 The unprefixed hub-private workflows (formerly `live.yml`,
 `policy-live.yml`, `test-github-org-tools.yml`) are now
 `local-org-policy-live-probe.yml`,
@@ -255,9 +252,8 @@ file was still present; only the config it reads was gone, which
 makes the breakage easy to miss - CI stays green, the scan just
 goes nowhere.
 
-Universal templates (`consumer-claude-code.yml`,
-`consumer-scorecard.yml`, `consumer-codeql-actions.yml`,
-`consumer-bandit.yml`) carry no
+Universal templates (`consumer-scorecard.yml`,
+`consumer-codeql-actions.yml`, `consumer-bandit.yml`) carry no
 per-repo state. A consumer that only installs universal templates
 does not need a `.github/dm-consumer.yml` file at all.
 

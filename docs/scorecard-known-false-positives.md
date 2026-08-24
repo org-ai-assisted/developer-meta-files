@@ -36,7 +36,7 @@ For consumer-wrapper repos: after the centralization in
 in consumer wrappers are `uses: org-ai-assisted/developer-meta-
 files/.github/workflows/reusable-<name>.yml@master` references.
 The actual SHA-pinned `actions/checkout`,
-`anthropics/claude-code-action`, etc. live in the reusable
+`github/codeql-action`, etc. live in the reusable
 workflows in this repo. One
 `developer-meta-files/.github/dependabot.yml` updates them all;
 consumer repos pick up the bumped SHAs automatically through
@@ -254,8 +254,7 @@ CI helper scripts + step-summary binary -
 [`reusable-coverity.yml`](../.github/workflows/reusable-coverity.yml),
 [`reusable-cppcheck.yml`](../.github/workflows/reusable-cppcheck.yml),
 [`reusable-codeql.yml`](../.github/workflows/reusable-codeql.yml),
-[`reusable-scorecard.yml`](../.github/workflows/reusable-scorecard.yml),
-[`reusable-claude-code-review.yml`](../.github/workflows/reusable-claude-code-review.yml).
+[`reusable-scorecard.yml`](../.github/workflows/reusable-scorecard.yml).
 
 **Why CodeQL reports it**: the rule fires on static properties
 ("this job has write permissions AND it checks out cross-repo
@@ -315,7 +314,7 @@ boundary.
 
 ## zizmor `unpinned-uses` on the same `@master` reusable refs
 
-**Affects**: `consumer-claude-code.yml:66` and every other consumer
+**Affects**: `consumer-bandit.yml` and every other consumer
 wrapper line of the same shape. Reported at severity **high**,
 confidence **high**, as `error[unpinned-uses]: action is not pinned
 to a hash (required by blanket policy)`.

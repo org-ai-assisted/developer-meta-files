@@ -125,7 +125,7 @@ patterns:
 Group includes `github.ref` so each branch / PR has its own
 queue; a new push on the same ref cancels the in-flight run.
 Right for lint, test, codeql, cppcheck, bandit, scorecard,
-claude-code-review, codex-review, build matrices.
+build matrices.
 
 `github.ref` is unique per PR (`refs/pull/N/merge`) and per tag
 (`refs/tags/<tag>`), so a workflow file that handles both
@@ -144,8 +144,7 @@ group: ...` and cancels the run. Reusables therefore either omit
 `concurrency:` entirely (the caller's cancellable group covers it
 - see [`reusable-scorecard.yml`](../.github/workflows/reusable-scorecard.yml),
 [`reusable-bandit.yml`](../.github/workflows/reusable-bandit.yml),
-[`reusable-cppcheck.yml`](../.github/workflows/reusable-cppcheck.yml),
-[`reusable-claude-code-review.yml`](../.github/workflows/reusable-claude-code-review.yml))
+[`reusable-cppcheck.yml`](../.github/workflows/reusable-cppcheck.yml))
 or differentiate the group key with a per-call input the caller
 doesn't replicate ([`reusable-codeql.yml`](../.github/workflows/reusable-codeql.yml)
 adds `${{ inputs.language }}` to a key the caller carries as
@@ -202,8 +201,7 @@ see "Reusable-side concurrency" above for why):
 
     group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
 
-See [`consumer-templates/.github/workflows/consumer-claude-code.yml`](../consumer-templates/.github/workflows/consumer-claude-code.yml)
-for the live example.
+The code block above is the pattern.
 
 
 **G-A-007: Cache poisoning - no broad `restore-keys:`, no
