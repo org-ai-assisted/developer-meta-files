@@ -26,17 +26,15 @@
 ## acceptable. A runner-owned sidecar lets actions/cache tar/untar
 ## with zero interaction with apt's permissions.
 ##
-## Usage:
-##   apt-install-with-cache.sh PACKAGE [PACKAGE ...]
-##
-## Paired workflow steps (caller's responsibility):
-##   - name: Cache apt downloads
-##     uses: actions/cache@<sha>
-##     with:
-##       path: ~/.apt-deb-cache
-##       key: ${{ runner.os }}-apt-<tool>-${{ hashFiles('<workflow>') }}
+## Usage: invoked by this directory's action.yml as
+## "${GITHUB_ACTION_PATH}/install.sh" PACKAGE [PACKAGE ...]; the action
+## wraps actions/cache (the ~/.apt-deb-cache sidecar) + this script.
+## Callers use the ACTION, not this script directly:
 ##   - name: Install
-##     run: .github/dmf/ci/apt-install-with-cache.sh PACKAGE [...]
+##     uses: org-ai-assisted/developer-meta-files/.github/actions/apt-install-with-cache@master
+##     with:
+##       packages: PACKAGE [PACKAGE ...]
+##       cache-key: ${{ runner.os }}-apt-<tool>-${{ hashFiles('<workflow>') }}
 ##
 ## CI guard mirrors ci/coverity-check-secrets.sh - this script has
 ## no sensible local invocation (no developer machine should be

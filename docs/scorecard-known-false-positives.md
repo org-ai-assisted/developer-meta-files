@@ -245,15 +245,17 @@ trust-boundary recognition) yet exists for Signed-Releases -
 ask but has no resolution.
 
 
-## actions/untrusted-checkout/medium (CodeQL Actions) on dmf-checkout steps
+## actions/untrusted-checkout/medium (CodeQL Actions) on helper-checkout steps
 
 **Affects**: every reusable workflow that checks
-`developer-meta-files` into `.github/dmf/` for downstream
-`ci/`-helper scripts -
+`org-ai-assisted/dist-ai` into `.github/dist-ai/` for the shared
+CI helper scripts + step-summary binary -
 [`reusable-bandit.yml`](../.github/workflows/reusable-bandit.yml),
+[`reusable-coverity.yml`](../.github/workflows/reusable-coverity.yml),
 [`reusable-cppcheck.yml`](../.github/workflows/reusable-cppcheck.yml),
 [`reusable-codeql.yml`](../.github/workflows/reusable-codeql.yml),
-[`reusable-scorecard.yml`](../.github/workflows/reusable-scorecard.yml).
+[`reusable-scorecard.yml`](../.github/workflows/reusable-scorecard.yml),
+[`reusable-claude-code-review.yml`](../.github/workflows/reusable-claude-code-review.yml).
 
 **Why CodeQL reports it**: the rule fires on static properties
 ("this job has write permissions AND it checks out cross-repo
