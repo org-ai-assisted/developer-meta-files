@@ -217,6 +217,47 @@ one option on a single `set` line fails the gate. `set --` / `set --
 `set +o <name>` toggle is R-011's concern.
 
 
+**R-014: `errexit` is disabled inside any command that is the operand
+of `||`, `&&`, or an `if`/`while` condition -- and an inner `set -o
+errexit` does NOT re-arm it there.** So a failing command in a guarded
+group runs past its failure and can yield a false success.
+
+Bad:
+
+    ( set -o errexit; run_scenario ) || ec=$?   # errexit DEAD in the subshell
+
+Good:
+
+    set +o errexit
+    ( set -o errexit; run_scenario )            # standalone -> inner -e is live
+    ec=$?
+    set -o errexit
+
+Why: run the group STANDALONE (not as a `||`/`if` operand) with the
+outer errexit briefly off, then capture `$?`. A failed step then aborts
+the group instead of falling through to later commands (e.g. passing
+assertions after a failed setup -> a false PASS in a test runner).
+
+
+**R-015: A `while COND; do ...; done` loop's exit status is the LAST
+command run in the body (or 0 if the body never ran) -- never the
+EOF-terminating `read`.** So a stream-scanning value helper reports
+success on no-match.
+
+    apt_candidate() {
+       while IFS= read -r line; do
+          case "${line}" in *Candidate:*) printf '%s' "..."; return 0 ;; esac
+       done < <(apt-cache policy -- "$1")
+    }
+
+Why: on no match the last body command is the non-matching `case` (rc 0)
+and an empty stream never runs the body (also 0); the failed EOF `read`
+does not set the status. So `cand="$(apt_candidate x)"` under `errexit`
+does NOT abort -- `cand` is empty and the script continues. Guard the
+empty result explicitly; a 6-line repro settles any doubt (reviewers
+routinely claim the opposite).
+
+
 ## Variables
 
 **R-020: Wrap every variable reference in `${var}` braces.** No
@@ -283,6 +324,45 @@ so the guard is dead weight -- and R-025 already requires the
 conditional-substitution forms are legitimate and spared.
 
 
+**R-027: Hoist a `$(cmd)` out of another command's ARGUMENTS and out of
+an `if`/`while` condition into a named variable on its own line.**
+
+Bad:
+
+    if var="$(cmd)"; then ...
+    safe-rm --force -- "$(resolve_dir "${id}")/muted"
+
+Good:
+
+    var="$(cmd)" || return 1
+    if [ -n "${var}" ]; then ...
+    local dir
+    dir="$(resolve_dir "${id}")" || return 1
+    safe-rm --force -- "${dir}/muted"
+
+Why: a `$(...)` embedded in another command's argument MASKS the inner
+command's exit code -- on failure the outer command silently runs with a
+partial/empty argument. Hoisting lets `errexit` (or an explicit `||
+return`/`|| die`) catch it first; and under `set -x` a separate
+assignment line traces the resolved value before the branch. A plain
+top-level `var="$(...)"` already lets errexit catch the failure (see
+R-011, R-022 for `local`, R-033 for `printf`).
+
+
+**R-028: Default an unbound variable at its SOURCE with `[ -v VAR ] ||
+VAR=value`, not with per-consumer `${var:-}`.**
+
+Why: `set -o nounset` exists to catch a genuinely-unset variable as a
+bug; once every consumer defaults it away with `${var:-}`, a real
+missing-value bug passes silently. Set it once where it is defined --
+ideally derived from a related always-set variable -- so consumers
+reference it bare and nounset still catches the next real omission. Use
+`[ -v VAR ] || VAR=value` (then `export` if needed): it defaults only
+when the name is truly UNSET, so an intentional empty value is respected
+(`${VAR:-}` clobbers it) and it is safe under nounset (`[ -v VAR ]` does
+not dereference). Reserve `${var:-}` for genuinely-optional variables.
+
+
 ## printf
 
 **R-030: Always `printf '%s\n' "..."`.** Format string is fixed;
@@ -338,6 +418,19 @@ script-wide `## style-ok: allow-echo` waiver (same shape as
 `no-safe-rm`).
 
 
+**R-035: Prefer pure-bash text processing over `awk`.** Express
+line-scans and counts with `while read -r` (+ associative arrays) rather
+than an embedded `awk` program.
+
+Why: an `awk` program is a second language inside a bash file, and
+`read < <(awk ...)` hides failure modes a native loop does not have
+(SIGPIPE, exit-status masking -- see R-014/R-015); `awk` is also not
+`--`-safe. Applies on TOUCH (write/refactor), like other style debt --
+do not mass-rewrite pre-existing `awk` unprompted. With assoc arrays:
+an empty subscript is invalid, so bucket empties under a placeholder,
+and `read ... || [ -n "${var}" ]` keeps an unterminated final line.
+
+
 ## printf vs log
 
 **R-040: Output to user goes through `log`, not bare printf.**
@@ -381,6 +474,21 @@ carries no expansion and is spared. A file that genuinely needs an
 unguarded dynamic `printf -v` carries a script-wide
 `## style-ok: allow-unchecked-printf-v` waiver (same shape as
 `no-safe-rm`).
+
+
+**R-064: `read -a` / `readarray` / `mapfile` take the array NAME as the
+argument right after `-a`, so a `--` end-of-options separator can NEVER
+sit before that name** (see R-062).
+
+    read -r -a -- arr     # `--': not a valid identifier
+    read -ra -- arr       # same
+
+`--` is valid only AFTER the array name (`read -r -a arr --`) but
+pointless there -- end-of-options only protects a following dash-prefixed
+DATA value, and array data comes from stdin, not argv. Plain `read -r --
+var` (no `-a`) IS valid. Consequence: a blanket "add `--`" sweep breaks
+every `read -a`; the fix is to REMOVE the `--`, not reorder. Find them
+with `grep -rnE '\b(read|readarray|mapfile)\b[^|;&]*\s--\s'`.
 
 
 ## Functions
