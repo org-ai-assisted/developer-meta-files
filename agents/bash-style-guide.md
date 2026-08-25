@@ -13,11 +13,18 @@ of a section are hard; rules at the bottom are softer preferences.
 Rules that cite a helper script include the source path so a reader
 can confirm intent against implementation.
 
+Each rule is tagged `_auto-detected: yes|no | auto-fixed: yes|no_`:
+whether the `dist-ai-style` gate mechanically flags it, and whether it
+also fixes it in place. A `no` on detect is guidance the gate does not
+check -- apply it yourself; `auto-fixed: yes` means the gate corrects it
+for you, so you rarely hand-write it.
+
 
 ## File-level
 
 **R-001: ASCII only.** Source code and commit messages are ASCII
 only. No smart quotes, em dashes, zero-width spaces, emoji.
+_auto-detected: yes | auto-fixed: yes_
 
 Why: AI tools reflexively render text with cosmetic unicode (U+2014 em
 dash, U+2192 right-arrow); strip them. ASCII-only files make
@@ -29,6 +36,7 @@ impossible to push.
 
 **R-002: File header includes the 'AI-Assisted' marker.** Every
 new file from scratch carries the standard 5-line header:
+_auto-detected: yes | auto-fixed: no_
 
     #!/bin/bash
 
@@ -46,6 +54,7 @@ policy.
 ## Shell options
 
 **R-010: Set the strict-mode block at the top of every script.**
+_auto-detected: yes | auto-fixed: no_
 
     set -o errexit
     set -o nounset
@@ -156,6 +165,7 @@ the rest of R-010a directly; that remains a manual pre-push item (see
 
 **R-011: Don't toggle errexit around a command to capture its rc.**
 Use `||`-suffixed assignment.
+_auto-detected: yes | auto-fixed: no_
 
 Bad:
 
@@ -176,6 +186,7 @@ safe.
 **R-012: Arithmetic assignment uses `var=$((expr))`, never
 `(( expr ))`.** Under `errexit`, an arithmetic expression that
 evaluates to zero exits the shell.
+_auto-detected: no | auto-fixed: no_
 
 Bad:
 
@@ -197,6 +208,7 @@ value-zero case, not a claim that arithmetic can never fail.
 
 **R-013: Set shell options by long `-o` name, one per line -- even in
 POSIX `sh`.** `set -eu` -> `set -o errexit` / `set -o nounset`.
+_auto-detected: yes | auto-fixed: no_
 
     Bad:  set -eu
           set -euo pipefail
@@ -221,15 +233,22 @@ one option on a single `set` line fails the gate. `set --` / `set --
 of `||`, `&&`, or an `if`/`while` condition -- and an inner `set -o
 errexit` does NOT re-arm it there.** So a failing command in a guarded
 group runs past its failure and can yield a false success.
+_auto-detected: no | auto-fixed: no_
 
 Bad:
 
-    ( set -o errexit; run_scenario ) || ec=$?   # errexit DEAD in the subshell
+    (
+       set -o errexit
+       run_scenario
+    ) || ec=$?                                   # errexit DEAD in the subshell
 
 Good:
 
     set +o errexit
-    ( set -o errexit; run_scenario )            # standalone -> inner -e is live
+    (
+       set -o errexit
+       run_scenario
+    )                                            # standalone -> inner -e is live
     ec=$?
     set -o errexit
 
@@ -243,6 +262,7 @@ assertions after a failed setup -> a false PASS in a test runner).
 command run in the body (or 0 if the body never ran) -- never the
 EOF-terminating `read`.** So a stream-scanning value helper reports
 success on no-match.
+_auto-detected: no | auto-fixed: no_
 
     apt_candidate() {
        while IFS= read -r line; do
@@ -258,10 +278,40 @@ empty result explicitly; a 6-line repro settles any doubt (reviewers
 routinely claim the opposite).
 
 
+**R-016: Prefer running a command and CAPTURING its output before a loop
+over feeding the command into the loop through process substitution
+(`done < <(cmd)`) or a complex subshell.** Run the command on its own
+line, check its status, then iterate the captured value.
+_auto-detected: no | auto-fixed: no_
+
+Bad:
+
+    while IFS= read -r line; do
+       ...
+    done < <(apt-cache policy -- "$1")
+
+Good:
+
+    policy="$(apt-cache policy -- "$1")" || return
+    while IFS= read -r line; do
+       ...
+    done <<< "${policy}"
+
+Why: `< <(cmd)` runs the command in a subshell whose exit status the loop
+never sees, so a failed producer reads as an empty stream (see R-015);
+capturing first makes the failure catchable (`|| return`) and the flow
+linear and readable. Reserve process substitution for a stream too large
+to hold in memory, or one that MUST feed the CURRENT shell (a pipe would
+run the loop in a subshell and lose its variable writes) -- and then
+guard the producer's failure explicitly. Applies on TOUCH, like other
+structural debt -- do not mass-rewrite pre-existing `< <(...)` unprompted.
+
+
 ## Variables
 
 **R-020: Wrap every variable reference in `${var}` braces.** No
 bare `$var`.
+_auto-detected: no | auto-fixed: no_
 
 Why: removes shell-parser ambiguity at concatenation boundaries
 (`${prefix}foo` vs `$prefixfoo`); makes refactor regex-greppable;
@@ -269,6 +319,7 @@ matches what shellcheck would flag in pedantic mode.
 
 **R-021: Declare locals at the top of the function, blank line,
 then assignments.**
+_auto-detected: no | auto-fixed: no_
 
     foo() {
        local repo url current_branch
@@ -284,6 +335,7 @@ Why: separates declaration from assignment; one place to audit
 assignment.** `local x="$(cmd)"` masks the substitution's exit
 status (the `local` builtin returns 0 even when `$(cmd)` failed),
 so errexit cannot fire. Split into two statements.
+_auto-detected: no | auto-fixed: no_
 
 Bad: `local out="$(cmd)"`
 
@@ -294,15 +346,18 @@ Good:
 
 **R-023: Variable names are descriptive.** No single-letter (`e`,
 `x`, `t`) or cryptic abbreviations (`tmpfn`, `cfg2`).
+_auto-detected: no | auto-fixed: no_
 
 **R-024: Variable names in error messages are wrapped in single
 quotes.** `log error "couldn't read '${path}'"`.
+_auto-detected: no | auto-fixed: no_
 
 Why: single quotes make trailing/leading whitespace in the
 expanded value visible (otherwise lost in line-break artifacts).
 
 **R-025: Arrays touched under `nounset` must be `arr=()`-
 initialized before any access.**
+_auto-detected: no | auto-fixed: no_
 
 Why: `${#arr[@]}` and `"${arr[@]}"` raise `arr: unbound variable`
 when the array has never been assigned. The first `arr+=(item)`
@@ -312,6 +367,7 @@ appended (e.g., a parser that sees no positional args).
 **R-026: No obsolete empty-array guard `${arr[@]+"${arr[@]}"}`.**
 Expand a `arr=()`-initialized array plainly: `"${arr[@]}"`.
 GATE-ENFORCED.
+_auto-detected: yes | auto-fixed: no_
 
 Why: the `+alternate` operator applied directly to `[@]` only
 existed to work around bash BEFORE 4.4, where `"${arr[@]}"` on an
@@ -326,6 +382,7 @@ conditional-substitution forms are legitimate and spared.
 
 **R-027: Hoist a `$(cmd)` out of another command's ARGUMENTS and out of
 an `if`/`while` condition into a named variable on its own line.**
+_auto-detected: no | auto-fixed: no_
 
 Bad:
 
@@ -351,6 +408,7 @@ R-011, R-022 for `local`, R-033 for `printf`).
 
 **R-028: Default an unbound variable at its SOURCE with `[ -v VAR ] ||
 VAR=value`, not with per-consumer `${var:-}`.**
+_auto-detected: no | auto-fixed: no_
 
 Why: `set -o nounset` exists to catch a genuinely-unset variable as a
 bug; once every consumer defaults it away with `${var:-}`, a real
@@ -368,6 +426,7 @@ not dereference). Reserve `${var:-}` for genuinely-optional variables.
 **R-030: Always `printf '%s\n' "..."`.** Format string is fixed;
 all data goes in the data string. No `%d`, no `%q` (except where
 shell-escaping is genuinely required), no extra `\n` in the format.
+_auto-detected: yes | auto-fixed: no_
 
 Numeric-probe carve-out (GATE-ENFORCED as an exemption): a `printf`
 with a SINGLE-quoted literal format whose own command discards BOTH
@@ -386,6 +445,7 @@ does not qualify: those still emit.
 **R-031: Multi-line block: ONE quoted string with embedded
 newlines.** Multiple separate lines: one `printf '%s\n'` per line.
 Blank line: `printf '%s\n' ""`, NOT `printf '\n'` by itself.
+_auto-detected: yes | auto-fixed: no_
 
 A standalone newline is ALWAYS `printf '%s\n' ""`, with the empty
 string passed as an explicit data argument. Both `printf '\n'` (the
@@ -397,11 +457,13 @@ fixes its form once you decide to write one.
 
 **R-032: Quote choice.** Double quotes preferred. Single quotes
 acceptable when the body has many doubles to escape:
+_auto-detected: no | auto-fixed: no_
 
     printf '%s\n' '"has" "a" "lot" "quotes"'
 
 **R-033: Don't inline `$(cmd)` in a printf format string.** Pre-
 compute into a named variable.
+_auto-detected: no | auto-fixed: no_
 
 Bad:  `printf '%s\n' "warn: $(my_helper "${value}")"`
 
@@ -416,11 +478,13 @@ flag handling is problematic.
 used as a command; a file that genuinely needs it carries a
 script-wide `## style-ok: allow-echo` waiver (same shape as
 `no-safe-rm`).
+_auto-detected: yes | auto-fixed: no_
 
 
 **R-035: Prefer pure-bash text processing over `awk`.** Express
 line-scans and counts with `while read -r` (+ associative arrays) rather
 than an embedded `awk` program.
+_auto-detected: no | auto-fixed: no_
 
 Why: an `awk` program is a second language inside a bash file, and
 `read < <(awk ...)` hides failure modes a native loop does not have
@@ -438,6 +502,7 @@ Every line written to the operator's terminal uses `log notice` /
 `log warn` / `log error` (helpers from
 `helper-scripts/log_run_die.sh`). The helpers prefix with the
 script name and a level tag (`script.sh [NOTICE]: ...`).
+_auto-detected: no | auto-fixed: no_
 
 Why: the operator gets context for each line - which tool is
 talking and at what severity. Bare `printf '%s\n'` to stdout/
@@ -447,6 +512,7 @@ after the prefix.
 
 **R-041: Reserve `printf` for cases where it is genuinely the
 right tool.**
+_auto-detected: no | auto-fixed: no_
 
 - writing to a file or pipe: `printf '%s\n' "${name}" >> "${file}"`
 - feeding a value through a subshell to another tool:
@@ -456,6 +522,7 @@ right tool.**
 **R-042: Drop blank-line separators (`printf '%s\n' ""` /
 `log notice ""`).** Once every line carries a `[NOTICE]:` prefix,
 blank lines are noise.
+_auto-detected: no | auto-fixed: no_
 
 **R-063: A `printf -v` with a DYNAMIC target name must be guarded by
 `check_variable_name` on that same name first.** Bash evaluates an
@@ -463,6 +530,7 @@ array subscript inside the `-v` target, so `printf -v "${name}"` with
 an unvalidated `name` of the form `x[$(cmd)]` RUNS `cmd` -- a command
 injection driven by whatever supplied the name (`helper-scripts`
 `strings.bsh` carries the regression test for exactly this).
+_auto-detected: yes | auto-fixed: no_
 
     check_variable_name "${name}" || return 1
     printf -v "${name}" '%s' "${value}"
@@ -479,6 +547,7 @@ unguarded dynamic `printf -v` carries a script-wide
 **R-064: `read -a` / `readarray` / `mapfile` take the array NAME as the
 argument right after `-a`, so a `--` end-of-options separator can NEVER
 sit before that name** (see R-062).
+_auto-detected: no | auto-fixed: no_
 
     read -r -a -- arr     # `--': not a valid identifier
     read -ra -- arr       # same
@@ -495,6 +564,7 @@ with `grep -rnE '\b(read|readarray|mapfile)\b[^|;&]*\s--\s'`.
 
 **R-050: A function definition's closing `}` is followed by
 exactly one blank line.** End-of-file is the only exception.
+_auto-detected: no | auto-fixed: no_
 
     foo() {
        local x
@@ -511,6 +581,7 @@ body visually and the boundary is hard to spot in large files.
 
 **R-051: Trap targets are standalone named functions, never inline
 command strings.**
+_auto-detected: yes | auto-fixed: no_
 
     foo_cleanup_tmp() {
        safe-rm --force -- "${tmp_file}"
@@ -531,6 +602,7 @@ means the reference is `nounset`-safe with no `${var:-}` default.
 shell's variables.** If a per-item loop with `&` needs shared
 state (a counter, a flag), use other IPC mechanisms (flag files,
 STDIO, etc.).
+_auto-detected: no | auto-fixed: no_
 
 Why: child shells get a copy of the parent's vars; assignments
 inside the child are lost on `wait`.
@@ -538,6 +610,7 @@ inside the child are lost on `wait`.
 **R-053: Always use the strings 'true' and 'false' for booleans.** Do
 not use other truthy/falsey values (1/0, y/n, on/off) unless passing
 values to another tool that does not understand 'true' and 'false'.
+_auto-detected: no | auto-fixed: no_
 
 Why: All code should use the same convention for booleans to avoid
 mismatch bugs. The convention for Kicksecure and Whonix's codebase is
@@ -549,6 +622,7 @@ to use the strings 'true' and 'false'.
 **R-060: Long flag names whenever the tool supports one.**
 `--quiet`, `--ignore-case`, `--lines=1`, `--unique`,
 `wc --lines`, `sort --unique`.
+_auto-detected: no | auto-fixed: no_
 
 Why: long flags self-document; survive being copy-pasted into a
 context without `man <tool>` open; reviewers don't need to recall
@@ -556,6 +630,7 @@ short-flag meanings.
 
 **R-061: Split combined short flags.** `rm -rf` -> `rm -r -f`,
 `declare -gA` -> `declare -g -A`.
+_auto-detected: no | auto-fixed: no_
 
 **R-062: Use `--` end-of-options separator wherever the tool
 supports one and positional args follow.** Verified working in:
@@ -563,6 +638,7 @@ supports one and positional args follow.** Verified working in:
 `mktemp`, `wc`, `sort`, `cat`, `rm`, `safe-rm`, `mkdir`,
 `sudo` (`sudo -- cmd args` ends sudo's OWN options, before the
 command word). Verify before extending the list.
+_auto-detected: yes | auto-fixed: yes_
 
 NB: `find` is deliberately NOT in this list. `--` ends find's option
 parsing but does NOT protect a starting path that begins with `-`:
@@ -601,6 +677,7 @@ literally) but is already banned outright by R-034.
 statement, and the closing `;;` each on their own line.** No compact
 one-liner arms, spaced or jammed (`amd64) arch="x86_64" ;;` and
 `amd64) arch="x86_64";;` are both wrong).
+_auto-detected: yes | auto-fixed: no_
 
     amd64)
        arch="x86_64"
@@ -616,14 +693,17 @@ a bare `)` is too ambiguous to grep (`$(...)`, `func()`, arithmetic,
 globs), but a compact arm trips the `;;` check anyway.
 
 **R-071: (folded into R-070.)** One element per line in a case arm.
+_auto-detected: no | auto-fixed: no_
 
 **R-072: Reserved-name and metachar-looking literals are quoted.**
 `'.git'` not `.git`, `'-'*` not `-*`.
+_auto-detected: no | auto-fixed: no_
 
 **R-073: Quote interpolated values in case patterns: `"${x}"`,
 not `${x}`.** Bash does not interpret `|` characters in an expanded
 variable as special in this context. Only single-value semantics are
 supported.
+_auto-detected: no | auto-fixed: no_
 
 Why: shellcheck SC2254 fires on the unquoted form. The quoted
 form makes the interpolation a literal pattern. If you need
@@ -643,6 +723,7 @@ expanding a `|`-separated string.
 own line. Bash's syntactic `;` (case-arm `;;`, C-style for-loop
 `for ((i=0; i<N; i++))`) is the only exception; using `;` to
 glue two arbitrary commands onto one line is prohibited.
+_auto-detected: yes | auto-fixed: no_
 
 The control-flow keywords `break`, `continue` and `return` are the
 commonest offenders (loop bodies, one-line `if`s). A `;`-chained
@@ -688,6 +769,7 @@ source-tree path>` directive on the line above; the source line
 itself uses the system install path (with `${HELPER_SCRIPTS_PATH:-}`
 on helper-scripts).** The directive is the lint hint; the source
 line is the runtime resolution.
+_auto-detected: yes | auto-fixed: no_
 
     # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/<file>
     source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/<file>
@@ -743,6 +825,7 @@ its SC1091 there is acceptable.
 
 **R-081: Never fall back to `source=/dev/null`.** That silences
 cross-file checks.
+_auto-detected: yes | auto-fixed: no_
 
 **R-085: No `# shellcheck disable=SC1091` on a helper-scripts
 source.** The `pre-push-static` gate checks out
@@ -753,9 +836,11 @@ emitting SC1091. The per-line disable is then dead code; drop it and
 set the flag. See the `shellcheck` skill. Waiver:
 `## style-ok: allow-sc1091-disable` for a genuinely unfollowable
 optional source.
+_auto-detected: yes | auto-fixed: no_
 
 **R-082: Each consumer sources every helper-scripts file it uses
 directly.** Don't rely on transitive sourcing.
+_auto-detected: no | auto-fixed: no_
 
 Why: `log_run_die.sh` happens to source `strings.bsh` for its own
 use; if your script also calls `is_whole_number`, source
@@ -764,6 +849,7 @@ transitive source breaks your script silently.
 
 **R-083: `wc` invocations are preceded by sourcing
 `wc-test.sh`.**
+_auto-detected: no | auto-fixed: no_
 
 Why: this makes a broken `wc` binary fail loudly rather than silently
 producing an empty count.
@@ -771,12 +857,14 @@ producing an empty count.
 **R-084: Reuse strings.bsh helpers before reimplementing.**
 `is_whole_number`, `validate_safe_filename`,
 `check_is_alpha_numeric`, etc.
+_auto-detected: no | auto-fixed: no_
 
 
 ## Command availability checks
 
 **R-090: `has` from `helper-scripts/has.sh`, not
 `command -v X >/dev/null 2>&1`.**
+_auto-detected: yes | auto-fixed: no_
 
     # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
     source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
@@ -800,6 +888,7 @@ install location is fixed.
 runtime command dependencies are checked once, near the top of
 the script's setup phase, not lazily inside the function that
 happens to need each one.
+_auto-detected: no | auto-fixed: no_
 
 Why: lazy checks fail halfway through a per-repo loop and leave
 partial state behind; a top-of-file pre-flight bails before any
@@ -807,6 +896,7 @@ mutation runs.
 
 **R-092: Where a family of tools shares the same deps, the lib
 provides a single helper.**
+_auto-detected: no | auto-fixed: no_
 
     ghorg_require_deps    ## base set, including git
 
@@ -818,6 +908,7 @@ That script runs BEFORE helper-scripts is installed, so it falls
 back to plain `command -v`. The same exception applies to
 `pre-push-static` (dist-ai), which must run as a bare git hook
 without sourcing helper-scripts.
+_auto-detected: no | auto-fixed: no_
 
 
 ## Workflow scripts
@@ -830,6 +921,7 @@ a block), or carries substantial control flow (a retry loop,
 polling, a real error handler), put it in a standalone script
 under `ci/` and have the workflow call it. A small pre-flight
 guard (a single `if`/`exit`) may stay inline.
+_auto-detected: yes | auto-fixed: no_
 
     - name: Start systemd-enabled Debian container
       run: ./ci/dry-run-start-container.sh dryrun "${DEBIAN_IMAGE}"
@@ -841,6 +933,7 @@ of YAML-indent-embedded. The script's args are an explicit, named,
 testable contract.
 
 **R-101: Workflow YAML and its scripts share a prefix.**
+_auto-detected: no | auto-fixed: no_
 
     .github/workflows/dry-run.yml
                       ^  (same prefix)
@@ -855,6 +948,7 @@ A script with a `#!/bin/bash` shebang and executable bit, invoked
 as `path/script.sh`, runs under its declared interpreter. Adding
 an explicit `bash` (or worse, `sh`) prefix is redundant or
 actively wrong.
+_auto-detected: yes | auto-fixed: no_
 
 Bad:
 
@@ -885,6 +979,7 @@ reason inline.
 **R-193: Call an in-repo Python script directly, not via `python3 --
 <file>.py`.** R-180 makes every `*.py` executable with a shebang, so
 run it like any other program.
+_auto-detected: yes | auto-fixed: no_
 
 Bad:
 
@@ -910,6 +1005,7 @@ not executable, or an external path you don't control.
 a child and forward the exit code.** Process-replacement `exec`
 drops the wrapper from the `ps` tree (harder to debug) and skips
 any cleanup the wrapper would run on exit.
+_auto-detected: yes | auto-fixed: no_
 
 Bad:
 
@@ -949,6 +1045,7 @@ style-ok: allow-exec` waiver stating the reason.
 pipeline.** A pipeline of five or more stages on one physical line is
 hard to read, debug and diff. Assign an intermediate, or backslash-
 continue one stage per line, so each step is named and inspectable.
+_auto-detected: no | auto-fixed: no_
 
 Bad:
 
@@ -977,6 +1074,7 @@ the convention. Keep it by review, not by gate.
 
 **R-110: Use `log` and `die` from `helper-scripts/log_run_die.sh`,
 not ad-hoc `printf >&2; exit N`.**
+_auto-detected: no | auto-fixed: no_
 
     log error "couldn't read '${path}'"   ## log only
     log warn  "..."
@@ -996,6 +1094,7 @@ exit." Inside a function that should return rather than exit, use
 or `safe-rm --recursive --force --`. To deviate (rare), put
 `## style-ok: no-safe-rm` anywhere in the script; the pre-push
 gate skips R-120 script-wide when it finds that marker.
+_auto-detected: yes | auto-fixed: no_
 
 Why: `safe-rm` consults a blocklist before deleting (paths like
 `/`, `/usr`, `~`).
@@ -1005,17 +1104,20 @@ Why: `safe-rm` consults a blocklist before deleting (paths like
 
 **R-130: `true` instead of `:` for no-op placeholders.** Pass a
 descriptive message so xtrace logs convey intent:
+_auto-detected: yes | auto-fixed: no_
 
     true "INFO: ghorg_api: HTTP 429 - will retry"
 
 **R-131: Bare `true > "${file}"` is fine for "truncate file".
 `while true` is fine for an infinite loop.**
+_auto-detected: no | auto-fixed: no_
 
 
 ## Untrusted external data
 
 **R-140: Treat every byte returned by an external service as
 untrusted.**
+_auto-detected: no | auto-fixed: no_
 
 - **Identifier sinks** (URL paths, file paths, command-line
   arguments): pass through a strict allowlist validator (e.g.
@@ -1047,6 +1149,7 @@ it were part of the script. This injection can be done by passing a
 string such as `a[$(date)]` where a variable name or integer is
 expected. The following rules MUST be followed to avoid code injection
 when using these features of Bash:
+_auto-detected: no | auto-fixed: no_
 
 * If a variable is expected to contain an integer but comes from a
   potentially untrusted source (i.e. a function argument), verify it
@@ -1107,6 +1210,7 @@ when using these features of Bash:
 multi-line `Why` block to multiple sites; at subsequent sites,
 drop the comment or use a one-liner referencing a rule ID
 (`R-NNN`, `G-A-NNN`, `W-NNN`).
+_auto-detected: no | auto-fixed: no_
 
 Why: copy-pasted rationale rots - site N+1 drifts from site 1
 over time; readers stop trusting all of them. Single source of
@@ -1121,6 +1225,7 @@ reserve comments for hidden constraints, subtle invariants, bug
 workarounds, surprising side effects. Don't restate WHAT (well-
 named identifiers do that). Bad: `## initialize i with 0` over
 `i=0`.
+_auto-detected: no | auto-fixed: no_
 
 Why: obvious comments dilute attention from the ones that matter;
 reviewers learn to skim past them and miss the rare comment
@@ -1139,6 +1244,7 @@ adding comments to an existing file, read the comments already
 there - density, tone, idiom, voice - and match them. Don't
 impose your preferred style on a file someone else established
 (unless an explicit rule above says you must).
+_auto-detected: no | auto-fixed: no_
 
 Why: file-local consistency keeps each file readable as a unified
 document; jarring shifts in voice signal copy-paste and undermine
@@ -1149,6 +1255,7 @@ when it would otherwise conflict.
 it to the user.** A "help mode" is a dedicated function that PRINTS
 the help; it must not scrape the source. In particular, never turn the
 header comment into `--help` output with `grep '^##' -- "$0" | sed ...`.
+_auto-detected: yes | auto-fixed: no_
 
 Why: code that treats comments as user-interface text breaks the moment
 a comment-only edit is made, and it couples the help wording to comment
@@ -1179,6 +1286,7 @@ never how the code got there. Ban change-narrative: "formerly X",
 "was broken", "moved from Y", "used to", "no longer", "renamed from".
 A comment is not a changelog; keep it terse, bullet-style. Bad:
 `## shared with foo (formerly inline here)`. Good: `## shared with foo`.
+_auto-detected: no | auto-fixed: no_
 
 Why: git carries the history. A comment narrating a past state goes
 stale, misleads a reader who never saw that state, and grows on every
@@ -1194,9 +1302,11 @@ errors is not acceptable. To silence grep's *output* (but not exit
 code), append `>/dev/null 2>&1` to the end of the grep command. To
 prevent grep from looking for more than one match, use `--max-count=1`
 (but never on the reading end of a pipe -- see R-161).
+_auto-detected: no | auto-fixed: no_
 
 **R-161: A `grep` that consumes a pipe must not use a quiet flag, and
 `grep` never takes a SHORT quiet flag.** Two related bans.
+_auto-detected: yes | auto-fixed: yes_
 
 *Pipe + quiet is a `pipefail` bug.* `-q` / `--quiet` / `--silent` make
 grep exit at the first match. On the reading end of a pipe that closes
@@ -1244,6 +1354,7 @@ R-172's non-atomic `mkdir`.
 
 **R-170: Never hardcode `/tmp`. Initialise `TMP` once, then use
 `"${TMP}/..."`.**
+_auto-detected: yes | auto-fixed: no_
 
 `libpam-tmpdir` gives every login session a private, mode-0700 temp
 directory (`/tmp/user/<uid>`) and exports it as all four of `TMP`,
@@ -1284,6 +1395,7 @@ literal belongs.** All of these are correct and are not violations:
 Put `## style-ok: no-tmp-hardcode` anywhere in the script; the pre-push
 gate then skips R-170 for that file (same mechanism as R-120's
 `## style-ok: no-safe-rm`).
+_auto-detected: no | auto-fixed: no_
 
 Reserve it for paths that are not redirectable temp paths at all:
 
@@ -1308,6 +1420,7 @@ are excluded -- prose about `/tmp` is not a path.
 
 **R-172: A `mkdir` that creates a temp directory must set the mode
 ATOMICALLY with `--mode=`.**
+_auto-detected: yes | auto-fixed: yes_
 
     mkdir --parents --mode=700 -- "${TMPDIR}"
 
@@ -1368,6 +1481,7 @@ starts with the prefix (`${TMPFILE}`), are not matched.
 **R-190: A substantial interpreter program does not belong in a
 shell heredoc.** If the embedded body is more than ~5 lines, put it
 in its own file with a shebang and call it.
+_auto-detected: yes | auto-fixed: no_
 
     ## Bad -- invisible to every tool that would check it:
     summary="$(python3 - "${report}" <<'PY'
@@ -1396,6 +1510,7 @@ Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
 
 **R-191: A systemd unit does not embed a multi-statement shell
 script.** An `Exec*=` directive must not carry embedded scripting:
+_auto-detected: yes | auto-fixed: no_
 
     ## Bad -- invisible to shellcheck, no importable home, no coverage:
     ExecStart=/bin/bash -c 'mkdir -p /run/foo && chown x /run/foo; start'
@@ -1417,6 +1532,7 @@ Waiver: `# style-ok: allow-embedded-script` anywhere in the unit.
 **R-194: An apt configuration hook does not embed a multi-statement shell
 command.** A `Pre-Invoke` / `Post-Invoke` / `Pre-Install-Pkgs` directive runs
 its double-quoted value through `sh -c`:
+_auto-detected: yes | auto-fixed: no_
 
     // Bad -- a script inlined in a config file, invisible to every tool:
     DPkg::Post-Invoke {"if [ -x /usr/bin/foo ]; then /usr/bin/foo; fi";};
@@ -1442,6 +1558,7 @@ documented fail-open. Waiver: `// style-ok: allow-embedded-script` (or `#`).
 
 **R-195: A cron entry does not embed a multi-statement command.** A cron table's
 command field runs through `sh -c`:
+_auto-detected: yes | auto-fixed: no_
 
     # Bad -- an inlined script in a crontab:
     0 3 * * * root cd /srv/app && ./purge.sh; systemctl restart app | logger
@@ -1485,6 +1602,7 @@ parser for that one case is the wrong tool.
 ## Python files
 
 **R-180: A Python file carries a shebang and is executable.**
+_auto-detected: yes | auto-fixed: no_
 
     #!/usr/bin/python3 -Bsu
 
@@ -1520,6 +1638,7 @@ wedged in an uninterruptible syscall can ignore `SIGTERM` and keep
 running, defeating the very bound `timeout` was added for. Add
 `--kill-after=<K>` so `timeout` follows up with `SIGKILL` `<K>` seconds
 later:
+_auto-detected: yes | auto-fixed: yes_
 
     timeout --kill-after=5 5 -- eglinfo -B
 
@@ -1550,6 +1669,7 @@ the option to those by hand.
 **R-210: `apt-get-noninteractive`, not `apt-get`.** Use the
 helper-scripts wrapper for every `apt-get` invocation (including behind
 `sudo`/`doas`):
+_auto-detected: yes | auto-fixed: no_
 
     sudo apt-get-noninteractive update
     sudo apt-get-noninteractive install --yes --no-install-recommends -- foo
@@ -1566,6 +1686,7 @@ Any action that unpacks or changes package state -- `--install`/`-i`,
 `--record-avail`/`-A`, `--{set,clear}-selections`,
 `--{update,merge}-avail`, `--forget-old-unavail`, `--triggers-only` --
 goes through the wrapper (`dpkg --force-confnew`):
+_auto-detected: yes | auto-fixed: no_
 
     sudo dpkg-noninteractive --install --refuse-downgrade -- ./foo.deb
 
@@ -1578,10 +1699,12 @@ would break early-boot code where the wrapper may be absent.
 **R-212: never `--allow-downgrades`.** A silent downgrade masks a
 dependency or repository regression that should fail loudly; rely on the
 default refuse-downgrade behaviour (`dpkg --refuse-downgrade`).
+_auto-detected: yes | auto-fixed: no_
 
 **R-213: never `make_use_lintian=false`.** Disabling lintian on a
 genmkfile build hides packaging defects. Fix the lintian findings
 instead.
+_auto-detected: yes | auto-fixed: no_
 
 Why a wrapper file is exempt: the helper-scripts scripts that DEFINE
 `apt-get-noninteractive` / `dpkg-noninteractive` necessarily call bare
@@ -1604,6 +1727,7 @@ the default.
 
 **R-220: no unauthorized SKIP.** A test SKIP -- `exit 77` / `return 77`,
 the reserved skip code -- must be authorized:
+_auto-detected: yes | auto-fixed: no_
 
     # Bad -- a required tool absent is an ENVIRONMENT BUG, not a skip:
     type -P helper-script >/dev/null || exit 77
