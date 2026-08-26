@@ -157,9 +157,8 @@ if [ -n "${version}" ]; then
       kicksecure-cli)
          image_name_base="Kicksecure-CLI"
          ;;
-      kicksecure-debug)
-         ## FIXME: Bad package/flavor name!
-         image_name_base="Kicksecure-Debug"
+      kicksecure-ci-tiny-do-not-use)
+         image_name_base="Kicksecure-CI-Tiny-Do-Not-Use"
          ;;
       whonix-cli)
          image_name_base="Whonix-CLI"
