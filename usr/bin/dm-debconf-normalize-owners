@@ -5,38 +5,12 @@
 
 ## AI-Assisted
 
-## style-ok: no-tmp-hardcode -- the '/tmp/' below is ucf's OWN recorded path being
-## matched in config.dat, not a temp file this script creates.
+## style-ok: no-tmp-hardcode -- '/tmp/' in a regex that detects hardcoded /tmp.
 
 ## Canonicalize a debconf config.dat so the file is byte-identical regardless of
 ## the build environment. Two build-environment-noise sources are normalized:
 ## question 'Owners:' package lists (below) and transient mktemp paths recorded
 ## as substitution variables (see NEW = /tmp/... normalization further down).
-##
-## THE REPRODUCIBILITY BUG THIS FIXES: debconf records, per question, the set of
-## packages that own it, in config.dat 'Owners:' lines. The owner is recorded
-## with the package name AS dpkg spells it when it runs the config script --
-## which is the BARE name ('shim-signed') in one configure phase and the
-## ARCH-QUALIFIED name ('shim-signed:amd64') in another. A build that configures
-## the package across two phases records BOTH ('Owners: shim-signed,
-## shim-signed:amd64'); a build that configures it once records ONE. The two are
-## the SAME system, so the difference is pure build-environment noise -- and it
-## was the last local-vs-CI difference in a Kicksecure image.
-##
-## Observed in a CI image: shim-signed, libc6 and libpam0g all carried the dual
-## spelling. Verified synthetically that debconf SORTS Owners, so the difference
-## is the SET (one spelling vs both), not the order.
-##
-## THE FIX: strip the ':arch' qualifier from every owner and de-duplicate, so
-## 'shim-signed', 'shim-signed:amd64' and 'shim-signed, shim-signed:amd64' all
-## collapse to 'shim-signed'. The arch qualifier is never semantically meaningful
-## for question ownership, and a later 'db_unregister' of an arch-qualified owner
-## that no longer matches simply leaves the question owned by the bare name (a
-## harmless orphan at worst) -- the same trade-off Debian's own reproducible
-## builds work accepts. ONLY config.dat is touched: templates.dat 'Owners:' hold
-## QUESTION names (e.g. 'shim-signed/no-valid-sigs'), not package names.
-##
-## Idempotent: a normalized file is unchanged by a second run.
 
 set -o errexit
 set -o nounset
@@ -44,10 +18,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
-export LC_ALL=C
 
-## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (exported by help-steps/pre
-## for a from-source build); empty falls back to the installed system path.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 
@@ -60,12 +31,8 @@ if [ ! -f "${config_dat}" ]; then
    die 2 "not a file: ${config_dat}"
 fi
 
-## Write the transformed content to a temp file in the SAME directory, then
-## rename it over the original -- a rename within one filesystem is atomic, so an
-## interruption (signal, ENOSPC) leaves the original database wholly intact
-## rather than half-written. The temp inherits the original's mode and owner
-## first, so the rename does not drop debconf's root:root 0600 to the mktemp
-## default.
+## Write the transformed content to a temp file in the same directory, then
+## rename it over the original.
 tmp_out="$( mktemp -- "${config_dat}.normalize.XXXXXX" )"
 # shellcheck disable=SC2317  # reached only via the EXIT trap
 cleanup() {
@@ -74,20 +41,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-## Pure bash, no perl/awk: both transforms are per-line with no cross-line state.
-## Reading the path as a plain file (via '<', never as a command argument) also
-## removes the filename-as-command hazard an @ARGV-style reader would carry -- a
-## name ending in '|' is just a path here.
-##
-## The NEW-key match, factored out so the loop body stays readable. ucf records
-## the temp copy it diffed a conffile against under the "NEW" substitution
-## variable; config.dat serializes each variable on its own continuation line,
-## e.g. " NEW = /tmp/grub.JI3HRI56IT". The mktemp suffix differs every build (it
-## was the last ISO local-vs-CI difference) and the installed system never acts
-## on the stored value. Collapse the >=6-char mktemp suffix to a constant.
-## Anchored to the NEW key specifically -- NOT any "/tmp/*" value -- so an
-## unrelated /tmp path under a different key, or any non-/tmp value, is left
-## intact. Idempotent: the normalized ".XXXXXX" re-matches to itself.
+## ucf records the temp copy it diffed a conffile against under "NEW"
+## substitution variables in config.dat, each one on its own continuation line,
+## e.g. " NEW = /tmp/grub.JI3HRI56IT".
 new_key_regex='^([[:space:]]+NEW = /tmp/[^[:space:]]+)\.[A-Za-z0-9]{6,}([[:space:]]*)$'
 
 while IFS= read -r line || [ -n "${line}" ]; do

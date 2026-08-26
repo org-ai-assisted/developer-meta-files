@@ -20,7 +20,6 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
-export LC_ALL=C
 
 # shellcheck source=../../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
@@ -134,11 +133,10 @@ ghorg_token() {
   fi
 
   ## Verify token.
-  [ "${#token}" -le 255 ] \
-    || {
-      log error "'${token_file}' first line exceeds 255 bytes"
-      return 1
-    }
+  if ! [ "${#token}" -le 255 ]; then
+    log error "'${token_file}' first line exceeds 255 bytes"
+    return 1
+  fi
   ## stderr suppressed: check_is_alpha_numeric prints the value on
   ## failure, which would leak the secret.
   check_is_alpha_numeric token 2>/dev/null \

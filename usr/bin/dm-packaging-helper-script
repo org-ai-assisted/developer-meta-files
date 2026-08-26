@@ -10,7 +10,6 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
-export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
@@ -127,7 +126,8 @@ prepare_system() {
 }
 
 ## Shows debugging information for all non-volatile global variables.
-## REMINDER: keep this list in sync with the non-volatile globals as they change.
+## REMINDER: keep this list in sync with the non-volatile globals as they
+## change.
 show_debug_variable_info() {
    local library_item
 
@@ -168,9 +168,8 @@ commit_filter() {
 
    commit_msg_short="${commit_msg_short,,}"
 
-   ## 'commit_msg_short' is already lowercased above, so a pure-bash case match
-   ## (no grep, no pipe -- R-161) with lowercase literals is equivalent to the
-   ## former case-insensitive greps.
+   ## 'commit_msg_short' is already lowercased above, so we don't need grep for
+   ## this.
    case "${commit_msg_short}" in
       *"merge remote-tracking branch"*|*"merge pull request"*|*"merge branch"*)
          set -x
@@ -1515,18 +1514,8 @@ pkg_git_diff_and_merge_branch_arraybolt3() {
    pkg_git_diff_and_merge_branch "ArrayBolt3/arraybolt3/trixie"
 }
 
-pkg_git_diff_and_merge_branch_bot_master() {
+pkg_git_diff_and_merge_branch_bot() {
    pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/master"
-}
-
-pkg_git_diff_and_merge_branch_bot_ai() {
-   ## TODO: assigned to arraybolt3
-   repo_skip 'derivative-maker' || return 0
-   repo_skip 'security-misc' || return 0
-   repo_skip 'developer-meta-files' || return 0
-   repo_skip 'privleap' || return 0
-
-   pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/ai"
 }
 
 ### }}}
@@ -1597,15 +1586,7 @@ pkg_git_diff_and_merge_branch() {
       ## the drive-by commits below it (sq-git policy).
       dry_run_or_run git merge --no-ff "${origin_ref}"
    elif [ "${origin_branch}" = "${DM_GITHUB_MIRROR}/master" ]; then
-      ## Cannot verify against Claude SSH key: appliable to claude web sessions
-      ## only, which are no longer being used.
-      ## TODO: Create a local signing key for claude?
-      #git verify-commit "${origin_ref}"
-      ## '--no-ff': same sq-git policy rationale as above; maintainer
-      ## merge commit authenticates the AI-generated commits below it.
-      dry_run_or_run git merge --no-ff --no-verify-signature "${origin_ref}"
-   elif [ "${origin_branch}" = "${DM_GITHUB_MIRROR}/ai" ]; then
-      ## TODO: Same as above.
+      ## TODO: Can't we verify against Claude's SSH key?
       #git verify-commit "${origin_ref}"
       ## '--no-ff': same sq-git policy rationale as above; maintainer
       ## merge commit authenticates the AI-generated commits below it.
@@ -2258,9 +2239,7 @@ pkg_git_diff_and_commit() {
    #read -r temp
 
    dry_run_or_run git add -A
-   ## REMINDER: the commit message is hardcoded 'typo' -- this interactive flow
-   ## commits the maintainer's own reviewed changes (typo fixes); adjust the
-   ## message when committing something other than a typo.
+   ## REMINDER: Change the commit message here as appropriate.
    dry_run_or_run git commit -m "typo"
 
    if nothing_to_commit; then
@@ -2727,10 +2706,6 @@ pkg_upstream_and_debian_changelog_bump() {
    fi
 
    ## version_numbers_by_upstream is set by a package's make-helper-overrides.bsh.
-   ## Read it in a SUBSHELL so the OTHER variables that override file may set do
-   ## not leak into this function or the global scope. make_source_overrides_* only
-   ## source the override files; the genmkfile calls below re-source the overrides
-   ## in their own processes, so nothing here needs those variables to survive.
    local version_numbers_by_upstream
    version_numbers_by_upstream="$(
       make_source_overrides_file 1>&2
@@ -3265,7 +3240,7 @@ batch_meta_debian_control_web_link=''
 batch_meta_file_name_without_reponame=''
 batch_meta_file_web_link=''
 batch_meta_gateway_only='false'
-batch_meta_installed_by_default='true' # yes, this defaults to 'y'
+batch_meta_installed_by_default='true' # yes, this defaults to 'true'
 batch_meta_non_qubes_whonix_only='false'
 batch_meta_project_list=()
 batch_meta_qubes_whonix_only='false'
