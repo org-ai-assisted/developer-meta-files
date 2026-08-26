@@ -38,10 +38,9 @@ mount_vdi() {
    VBoxManage controlvm "${VMNAME}" poweroff || true
    ${SUDO_TO_ROOT} sync
 
-   ## Find name of .vdi file. Use an array so multiple matches are
-   ## detected explicitly; the previous single-string capture would
-   ## have produced a path with embedded newlines and quietly fed
-   ## that to guestmount.
+   ## Find name of .vdi file. Use an array: a VM directory can hold
+   ## multiple .vdi files (e.g. snapshots), detected explicitly rather
+   ## than collapsed into one newline-joined string fed to guestmount.
    local vdi_file
    local -a vdi_file_list
    vdi_file_list=( "${HOMEVAR}/VirtualBox VMs/${VMNAME}/"*".vdi" )

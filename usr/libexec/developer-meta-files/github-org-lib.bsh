@@ -150,8 +150,9 @@ ghorg_token() {
 ghorg_require_deps() {
   local cmd
 
-  ## No Git dependency, as none of the github-org-tools use Git.
-  for cmd in curl jq; do
+  ## curl + jq drive the API; git is used by the repo-sync tools
+  ## (github-org-clone / -push / -fork).
+  for cmd in curl jq git; do
     has "${cmd}" || {
       log error "required command not found: '${cmd}'"
       return 1

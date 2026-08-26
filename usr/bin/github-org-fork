@@ -505,9 +505,6 @@ main() {
   local -A target_set=()
   local -a missing=() to_configure=()
 
-  ## sync_one calls 'git check-ref-format'.
-  die_if_not_has git
-
   log notice "source: ${source_owner} -> target: ${target_owner}"
 
   ## If the target is a User, GitHub forks to the authenticated user
