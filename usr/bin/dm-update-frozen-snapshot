@@ -11,6 +11,7 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}/usr/libexec/helper-scripts/strings.bsh"
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
@@ -20,8 +21,8 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 unix_timestamp="$(date '+%s')"
 if ! is_whole_number "${unix_timestamp}"; then
-  printf '%s\n' 'ERROR: 'date +%s' did not output a whole number!'
-  exit 1;
+  printf '%s\n' "ERROR: 'date +%s' did not output a whole number!"
+  exit 1
 fi
 printf '%s\n' "${unix_timestamp}" \
   | tee "${derivative_maker_source_code_dir:-${HOME:-/home/user}/derivative-maker}/build_sources/frozen-snapshot-timestamp" >/dev/null

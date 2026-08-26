@@ -277,8 +277,8 @@ Nothing is emitted, so neither of this rule's failure modes is
 reachable, and the printf's FAILURE on a non-number is the check
 R-141 relies on -- rewriting the format to `%s` would silently turn
 that guard into one that always succeeds. Discarding stdout alone,
-or `2>&1 >/dev/null` (which sends stderr to the original stdout),
-does not qualify: those still emit.
+or `2>&1 >/dev/null`, does not qualify (the latter form is identical
+to the above form but is unusual): those still emit.
 
 **R-031: Multi-line block: ONE quoted string with embedded
 newlines.** Multiple separate lines: one `printf '%s\n'` per line.
@@ -438,6 +438,10 @@ tool on a verified denylist. Verified rejecters:
 Extend the denylist only after confirming against the
 actual binary. NB: `echo` also mishandles `--` (prints it
 literally) but is already banned outright by R-034.
+
+**R-063: When a git command does not accept `--`, use
+`--end-of-options` instead.** This is documented in
+`man 7 gitcli`. Rationale is the same as for R-062.
 
 
 ## Case statements
@@ -985,19 +989,24 @@ two separate strings you own:
 
     me="${0##*/}"
     print_usage() {                 # short: the usage line(s) only
-       printf '%s\n' \
-          "Usage:" \
-          "  ${me} ARG [--opt VALUE]"
+       printf '%s\n' "Usage:
+  ${me} ARG [--opt VALUE]"
     }
     print_help() {                  # full: usage + description + options
        print_usage
-       printf '%s\n' "" "Longer description ..." "" "  --opt VALUE   ..."
+       printf '%s\n' "
+Longer description ...
+
+  --opt VALUE   ..."
     }
     # -h and --help are the SAME: both print the full help.
     #   -h|--help) print_help; exit 0 ;;
     # A tool that REQUIRES arguments prints the short usage when they are
     # missing (like 'mv'); one that runs argless (like 'nano') does not.
-    #   [ -n "${arg}" ] || { print_usage >&2; error "ARG is required"; }
+    #   if [ -n "${arg}" ]; then
+    #     print_usage >&2
+    #     error "ARG is required"
+    #   fi
 
 **R-154: No history in comments.** Comment the CURRENT state and why,
 never how the code got there. Ban change-narrative: "formerly X",
@@ -1012,57 +1021,60 @@ change. The diff and the log are the record.
 
 ## File search
 
-**R-160: Never use the --quiet option of grep.** According to grep's
-manpage, "if the -q or --quiet or --silent is used and a line is
-selected, the exit status is 0 even if an error occurred." Silencing
-errors is not acceptable. To silence grep's *output* (but not exit
-code), append `>/dev/null 2>&1` to the end of the grep command. To
-prevent grep from looking for more than one match, use `--max-count=1`
-(but never on the reading end of a pipe -- see R-161).
+**R-160: Never use the -q, --quiet, or -silent options of grep under
+any circumstances.** According to grep's manpage, "if the -q or --quiet
+or --silent is used and a line is selected, the exit status is 0 even
+if an error occurred." Silencing errors is not acceptable. To silence
+grep's *output* (but not exit code), append `>/dev/null 2>&1` to the
+end of the grep command. To prevent grep from looking for more than one
+match, use `--max-count=1` (but never on the reading end of a pipe --
+see R-161).
 
-**R-161: A `grep` that consumes a pipe must not use a quiet flag, and
-`grep` never takes a SHORT quiet flag.** Two related bans.
+**R-161: A `grep` that consumes a pipe must not use `--max-count` or
+`-m`.**
 
-*Pipe + quiet is a `pipefail` bug.* `-q` / `--quiet` / `--silent` make
-grep exit at the first match. On the reading end of a pipe that closes
-the pipe early, so the writer on the left gets `SIGPIPE` and dies with
-141 -- and our default `set -o pipefail` (R-010) turns that into a
-failed pipeline:
+*Pipe + --max-count is a `pipefail` bug.* `--max-count` makes grep exit
+after the specified number of matches were found. On the reading end of
+a pipe that closes the pipe early, so the writer on the left gets
+`SIGPIPE` and dies with 141 -- and our default `set -o pipefail`
+(R-010) turns that into a failed pipeline:
 
-    seq 1 100000000 | grep --quiet 5     # pipeline exits 141, not 0
+    seq 1 100000000 | grep --max-count=1 5  # pipeline exits 141, not 0
 
-Whether it bites depends on how much the producer still had to write, so
-it passes on small inputs and fails on large ones -- a latent,
+Whether it bites depends on how much the producer still had to write,
+so it passes on small inputs and fails on large ones -- a latent,
 size-dependent flake. Remedies:
 
-- Streaming producer -- drop the quiet flag and send grep's stdout to
-  `/dev/null`. grep then reads to EOF, so nothing is SIGPIPE'd; its exit
-  code, and any real error on stderr, are preserved:
+- Streaming producer -- Capture grep's output to a variable and remove
+  all but the desired number of matches. grep then reads to EOF, so
+  nothing is SIGPIPE'd; its exit code, and any real error on stderr,
+  are preserved:
 
-      producer | grep pattern >/dev/null
+      var="$(producer | grep --max-count=1 pattern)"
 
 - Variable / string input -- use a here-string, which is a temp file,
-  not a pipe, so there is no writer to kill. A quiet flag is fine here:
+  not a pipe, so there is no writer to kill. A --max-count option flag
+  is fine here:
 
-      grep --quiet pattern <<< "${var}"     # not  printf ... | grep -q
+      grep --max-count=1 pattern <<< "${var}"
 
-`--max-count=N` / `-m N` cause the SAME early exit; R-160's
-`--max-count=1` tip is for a non-pipe grep only.
+*Short max-count flag violates R-060.* `grep -m 1`, and any bundled
+cluster carrying it (`grep -im 1`, `grep -Fm 1`), use short options;
+write the long form -- `--max-count=1`, `grep --ignore-case
+--max-count=1`, `grep --fixed-strings --max-count=1`. A long
+--max-count flag reading a file.
 
-*Short quiet flag violates R-060.* `grep -q`, and any bundled cluster
-carrying it (`grep -iq`, `grep -Fq`), use short options; write the long
-form -- `--quiet`, `grep --ignore-case --quiet`, `grep --fixed-strings
---quiet`. A long quiet flag reading a file (`grep --quiet -- PAT FILE`)
-stays the accepted boolean-test idiom; R-160's caveat is about masking a
-real error, not about the flag existing.
+Enforcement: the pre-push gate FAILS a max-count grep on the right of a
+`|` (here-strings and plain file reads are spared) and a short
+max-count flag anywhere; `pre-push-fix` auto-expands a short max-count
+cluster to its long form. The pipe rewrite is left to a human --
+relocating a redirect is not a mechanical single-token edit, the same
+line `pre-push-static` draws for R-172's non-atomic `mkdir`.
 
-Enforcement: the pre-push gate FAILS a quiet grep on the right of a `|`
-(here-strings and plain file reads are spared) and a short quiet flag
-anywhere; `pre-push-fix` auto-expands a short quiet cluster to its long
-form. The pipe rewrite (drop the quiet flag, add the redirect or
-here-string) is left to a human -- relocating a redirect is not a
-mechanical single-token edit, the same line `pre-push-static` draws for
-R-172's non-atomic `mkdir`.
+TODO: Does automatic cluster expansion actually happen in
+`pre-push-fix` for max-count? This rule used to erroneously mention
+`--quiet` all through as if it were sometimes permissible, when it is
+really unconditionally banned from the entire codebase.
 
 
 ## Temporary files
@@ -1139,9 +1151,10 @@ ATOMICALLY with `--mode=`.**
 `mkdir --mode=` applies the permission bits as part of the directory's
 creation. Setting the mode any other way -- dropping it, or splitting it
 into a following `chmod` -- leaves a window in which the directory exists
-with the umask-default (world-traversable) mode. Another process can
-enter that window and race the temp path; for a directory that will hold
-a journal or any private data, that is a TOCTOU disclosure hole.
+with the umask-default (potentially world-traversable) mode. Another
+process can enter that window and race the temp path; for a directory
+that will hold a journal or any private data, that is a TOCTOU
+disclosure hole.
 
 Bad -- the mode is not atomic (a `chmod` follows the create):
 
@@ -1152,7 +1165,7 @@ Bad -- no mode at all:
 
     mkdir --parents -- "${TMPDIR}"
 
-Use the long `--mode`, not the short `-m`: `pre-push-fix` upgrades a
+Use the long `--mode`, not the short `-m`: `pre-push-fix` upgrades an
 `-m 700` / `-m700` to `--mode=700` automatically, and the gate FAILS a
 standalone short `-m` so the long form is what lands. `--mode=700` is the
 canonical spelling; `--mode 700` (space) is equally atomic and accepted.
@@ -1223,7 +1236,7 @@ Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
 script.** An `Exec*=` directive must not carry embedded scripting:
 
     ## Bad -- invisible to shellcheck, no importable home, no coverage:
-    ExecStart=/bin/bash -c 'mkdir -p /run/foo && chown x /run/foo; start'
+    ExecStart=/bin/bash -c 'mkdir -p /run/foo && chown x:y /run/foo; start'
 
     ## Good:
     ExecStart=/usr/libexec/foo/start

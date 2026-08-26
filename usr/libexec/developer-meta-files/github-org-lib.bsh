@@ -133,11 +133,10 @@ ghorg_token() {
   fi
 
   ## Verify token.
-  [ "${#token}" -le 255 ] \
-    || {
-      log error "'${token_file}' first line exceeds 255 bytes"
-      return 1
-    }
+  if ! [ "${#token}" -le 255 ]; then
+    log error "'${token_file}' first line exceeds 255 bytes"
+    return 1
+  fi
   ## stderr suppressed: check_is_alpha_numeric prints the value on
   ## failure, which would leak the secret.
   check_is_alpha_numeric token 2>/dev/null \

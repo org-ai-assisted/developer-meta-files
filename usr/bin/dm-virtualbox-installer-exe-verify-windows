@@ -54,21 +54,19 @@ fi
 
 test -r "${selected_file_name}"
 
-## Verify, and if the tool's OWN CRL retrieval is what failed, retry with the
+## Verify, and if the tool's own CRL retrieval is what failed, retry with the
 ## CRLs fetched here instead.
 ##
-## WHY: osslsigncode downloads each CRL distribution point itself at verify
-## time. That makes an otherwise offline check depend on a live fetch to an
-## external host, and it broke a CI build with
-##   PEM routines:get_name:no start line
-##   Use the "-CRLfile" option to add one or more CRLs in PEM format.
-##   Signature verification: failed
-## while the identical file verified fine elsewhere minutes earlier. CRLs are
-## published in DER; -CRLfile wants PEM.
+## osslsigncode's -CRLfile option wants a file in PEM format.
 ##
-## Revocation checking is NOT skipped -- that would trade a flaky build for a
-## weaker check. The CRLs are fetched with curl (which honours the proxy
-## settings the build already uses), converted, and passed back in.
+## TODO: For offline builds, don't we want the ability to provide the needed
+## files without having to download them afresh? This code seems to assume that
+## running cURL by ourselves will somehow fix a network fetch error, which
+## might be true if we have special proxy settings set (like in a Qubes
+## TemplateVM maybe?), but most of the time a failed verification will probably
+## be because there is no (working) network access, and this will not overcome
+## that. (We might want similar support for verifying Windows stuff offline in
+## derivative-maker/build-steps.d/1400_local-dependencies.)
 verify_output=""
 verify_status=0
 verify_output="$( osslsigncode verify -in "${selected_file_name}" 2>&1 )" || verify_status="$?"
@@ -84,6 +82,7 @@ if [ ! "${verify_status}" = "0" ]; then
    ## certificate rotation.
    while IFS= read -r crl_url; do
       [ -n "${crl_url}" ] || continue
+      ## TODO: Use scurl here instead?
       if ! curl --silent --show-error --location --max-time 60 \
          --output "${crl_der_file}" -- "${crl_url}"; then
          true "$0: could not fetch ${crl_url}"

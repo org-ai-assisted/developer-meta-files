@@ -156,13 +156,12 @@ for org in "${ORGS[@]}"; do
          org_failed=1
          break
       fi
-      result="$(ghorg_api GET "/orgs/${org}/code-scanning/alerts?state=open&per_page=100&page=${page}")" \
-         || {
-            log warn "${org}: api call failed on page '${page}'"
-            policy_warn_seen=1
-            org_failed=1
-            break
-         }
+      if ! result="$(ghorg_api GET "/orgs/${org}/code-scanning/alerts?state=open&per_page=100&page=${page}")"; then
+         log warn "${org}: api call failed on page '${page}'"
+         policy_warn_seen=1
+         org_failed=1
+         break
+      fi
       status="$(ghorg_status_of "${result}")"
       if [ "${status}" != '200' ]; then
          log warn "${org}: HTTP ${status} on page '${page}'"
@@ -171,17 +170,16 @@ for org in "${ORGS[@]}"; do
          break
       fi
       body="$(ghorg_body_of "${result}")"
-      alert_count="$(printf '%s' "${body}" | ghorg_jq_capped -r -- 'length')" \
-         || {
-            log warn "${org}: jq parse failed on page '${page}'"
-            policy_warn_seen=1
-            org_failed=1
-            break
-         }
+      if ! alert_count="$(printf '%s' "${body}" | ghorg_jq_capped -r -- 'length')"; then
+         log warn "${org}: jq parse failed on page '${page}'"
+         policy_warn_seen=1
+         org_failed=1
+         break
+      fi
       [ "${alert_count}" = '0' ] && break
       ## Escape "|" in message text so it does not break the table
       ## column separator.
-      rows="$(printf '%s' "${body}" | ghorg_jq_capped -r -- "
+      if ! rows="$(printf '%s' "${body}" | ghorg_jq_capped -r -- "
          ${filter_jq}
          | [
                .repository.full_name,
@@ -194,13 +192,12 @@ for org in "${ORGS[@]}"; do
                   | gsub(\"\\\\|\"; \"\\\\\\\\|\")
                   | gsub(\"\\n\"; \" \"))
             ]
-         | \"| \" + join(\" | \") + \" |\"
-      ")" || {
+         | \"| \" + join(\" | \") + \" |\"")"; then
          log warn "${org}: jq parse failed on page '${page}'"
          policy_warn_seen=1
          org_failed=1
          break
-      }
+      fi
 
       while IFS= read -r row; do
          [ -z "${row}" ] && continue

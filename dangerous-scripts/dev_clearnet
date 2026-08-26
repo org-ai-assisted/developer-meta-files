@@ -7,16 +7,8 @@
 ## documentation only.
 # shellcheck disable=SC2317
 
-## style-ok: no-strict
-##
-## No strict-mode preamble here, deliberately. The 'exit 0' below is the second
-## executed statement in the file, so a preamble would govern nothing that runs,
-## and everything under it is documentation rather than code. Converting the
-## dead body would assert a correctness it was never exercised for.
-##
-## If the short-circuit is ever lifted, the body needs the R-010 preamble AND a
-## real review: it sets ip_forward, flushes every iptables and ip6tables chain
-## to a default-ACCEPT policy, and chmod -x's the DHCP nodnsupdate hook.
+## style-ok: no-strict -- this is documentation, not code, thus the 'exit 0'
+## below. This would need a strict preamble if it ever becomes a real script.
 
 exit 0
 
