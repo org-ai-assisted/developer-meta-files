@@ -183,6 +183,9 @@ libvirt_compress() {
    if [ "${vm_multiple}" = "" ]; then
       error "Variable vm_multiple is unset!"
    fi
+   if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+      error "SOURCE_DATE_EPOCH is unset; refusing to build a libvirt archive with a non-reproducible member mtime."
+   fi
 
    legal_files_copy
 
@@ -355,33 +358,17 @@ libvirt_compress() {
       test "${test_operator}" "${file_name_item_base_name}"
    done
 
-   ## Progress meter via pv, with a real percentage + ETA. pv can only show those
-   ## if it knows the total size, so it runs on the UNCOMPRESSED tar stream (before
-   ## xz) with the members' size as '-s'; tar's internal '--xz' is therefore split
-   ## into an explicit '| xz'. 'tar -c | xz' is byte-identical to 'tar --create
-   ## --xz', so the archive and its reproducibility are unchanged. The size is disk
-   ## usage (du -B1), which tracks the tar stream for sparse raw images far better
-   ## than apparent size; a rough total only affects the meter, never the archive.
-   ## The meter goes to stderr; the redirect places the archive where '--file
-   ## basename' did (the current directory).
    local -a member_paths=()
    local member_item
    for member_item in "${filelist_base_name[@]}"; do
       member_paths+=( "${dist_binary_build_folder}/${member_item}" )
    done
    local input_size
-   input_size="$(du --summarize --total --block-size=1 -- "${member_paths[@]}" | tail --lines=1 | cut --fields=1)"
-   ## Member mtimes are pinned to SOURCE_DATE_EPOCH -- the build's single source
-   ## of reproducible time (help-steps/variables, from the changelog timestamp or,
-   ## for a frozen build, the snapshot pin) -- so this archive's dates match every
-   ## other artifact instead of a hardcoded constant. strip-nondeterminism below
-   ## only clamps mtimes NEWER than the epoch, so a constant far in the past (the
-   ## former '2015-10-21') would survive and leave these members dated differently
-   ## from the rest of the release. It is exported and set well before the release
-   ## phase; an unset value would silently produce a wrong date, so fail loudly.
-   if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
-      error "SOURCE_DATE_EPOCH is unset; refusing to build a libvirt archive with a non-reproducible member mtime."
-   fi
+   ## Intentionally not using --apparent-size, since tar will not emit as many
+   ## bytes for sparse files as their apparent size would suggest.
+   input_size="$(du --summarize --total --block-size=1 -- "${member_paths[@]}" \
+      | tail --lines=1 \
+      | cut --fields=1)"
    tar \
       --create \
       --owner=0 --group=0 --numeric-owner \
@@ -392,7 +379,7 @@ libvirt_compress() {
       --directory="${dist_binary_build_folder}" \
       --file - \
       "${filelist_base_name[@]}" \
-      | pv -s "${input_size}" \
+      | pv --size="${input_size}" \
       | xz \
       > "$(basename -- "${xz_archive}")"
 

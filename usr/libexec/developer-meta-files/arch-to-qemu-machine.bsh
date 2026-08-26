@@ -3,26 +3,10 @@
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## The Debian-architecture -> qemu machine-name map (uname -m style), used at
-## build time by help-steps/variables (cross emulation / binfmt handler names).
+## The Debian-architecture -> qemu machine-name map.
 ##
-## The headless boot-test board TYPE and serial-console maps are NOT here: only
-## dm-qemu consumes them, and dm-qemu ships in dist-ai's dm-image-boot-tests with
-## its own bundled copy of this fragment (plus those two extra functions), so the
-## build-only map stays free of boot-test-only data. This fragment defines ONLY a
-## function and must stay free of side effects and of any dependency on
-## help-steps/pre. Do not add a 'set'/'shopt' preamble here -- a sourced fragment
-## must not change the caller's shell options.
-##
-## style-ok: no-strict -- sourced-only fragment; a top-level 'set -o errexit'/
-## 'nounset'/'pipefail' would leak into (and could kill) the sourcing shell.
+## style-ok: no-strict -- sourced-only fragment.
 
-## Translate a Debian architecture (dpkg --print-architecture style, e.g. the
-## values in make_cross_build_platform_list / dist_build_target_arch) to the
-## matching qemu-user / kernel machine name (uname -m style). Used for
-## binfmt_misc handler names ('qemu-<machine>'), cross-build emulation, and the
-## 'qemu-system-<machine>' binary that dm-qemu boots. Prints the machine name on
-## stdout. A non-zero exit status signals an unmapped architecture.
 dist_build_arch_to_qemu_machine() {
    case "${1}" in
       amd64)

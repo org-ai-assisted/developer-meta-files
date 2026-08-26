@@ -30,10 +30,7 @@ main() {
 
    ## Fail fast, before any apt work: when 'pkg' is not overridden the meta-package
    ## name is derived from the qubes axis below, and 'dist_build_qubes' is an
-   ## operator-supplied toggle that nothing in the build sets. Validate it to
-   ## 'true' or 'false' here, so an unset/typo value aborts with a clear message
-   ## rather than an unbound-variable error (nounset) AFTER sources.list has been
-   ## rewritten and apt updated.
+   ## operator-supplied toggle that nothing in the build sets.
    if [ "${pkg:-}" = "" ]; then
       case "${dist_build_qubes:-}" in
          true|false)
@@ -63,9 +60,7 @@ main() {
 
    if [ "${pkg:-}" = "" ]; then
       ## Compose the canonical meta-package name from the flavor and qubes-ness:
-      ##   whonix-<gateway|workstation>-<qubes|nonqubes>-<cli|gui-lxqt>
-      ## exactly as it appears in packages/whonix/anon-meta-packages/debian/control.
-      ## The three axes (role, virtualization, UI) are independent, so derive each.
+      ##   whonix-<gateway|workstation>-<qubes|nonqubes>-<cli|gui-lxqt>.
       local whonix_role whonix_ui whonix_virt
       case "${dist_build_flavor}" in
          whonix-gateway-*)
@@ -92,7 +87,15 @@ main() {
       if [ "${dist_build_qubes}" = "true" ]; then
          whonix_virt="qubes"
       else
-         whonix_virt="nonqubes"
+         ## 'vm', not 'nonqubes'. 'nonqubes' is a "partially shared node" in our
+         ## metapackage structure, see
+         ## https://www.kicksecure.com/wiki/Dev/Metapackages. It isn't meant to
+         ## be installed or upgraded directly.
+         ##
+         ## TODO: Once Whonix-Host becomes a thing, or if we start supporting
+         ## Kicksecure in this script, we will need to take "baremetal" into
+         ## account.
+         whonix_virt="vm"
       fi
       pkg="whonix-${whonix_role}-${whonix_virt}-${whonix_ui}"
    fi

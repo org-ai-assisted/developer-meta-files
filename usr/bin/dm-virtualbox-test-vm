@@ -26,12 +26,8 @@ benchmark_start=0
 #   printf "%02d:%02d:%02d\n" "$h" "$m" "$s"
 #}
 
-## Elapsed-time timing using bash's SECONDS, matching derivative-maker's benchmark
-## convention (benchmark_since / benchmark_format in helper-scripts' benchmark.bsh)
-## rather than the old 'date +%s'. Kept local rather than sourcing benchmark.bsh
-## into this standalone VBox test driver: benchmark_since returns a FORMATTED
-## string, while the loops below need the raw integer seconds for their
-## '-ge timeout' comparisons.
+## We need raw seconds as output for some comparisons, so we can't use
+## helper-scripts' benchmark.bsh.
 benchmark_time_start() {
    benchmark_start="${SECONDS}"
 }
@@ -43,9 +39,6 @@ benchmark_time_end() {
 variables() {
    vmname="Whonix-Gateway-LXQt"
    user_name="user"
-   ## The guest account is passwordless (helper-scripts user_create.bsh does
-   ## 'passwd --delete'); guest LOGIN auth is therefore an EMPTY password. sudo
-   ## inside the guest is a separate concern handled by sudo-askpass-wrapper.
    password=""
 
    vboxmanage_cmd="VBoxManage --nologo"
@@ -54,10 +47,7 @@ variables() {
    vm_wait_for_vm_start_timeout=60
    vm_wait_for_vm_shutdown_timeout=20
 
-   ## An ARRAY, not a word-split string: the empty '--password ""' must survive
-   ## as a distinct argument. In a string, an empty '${password}' would collapse
-   ## and the next flag ('--wait-stdout') would be read as the password value.
-   # shellcheck disable=SC2206 # ${vboxmanage_cmd} is meant to word-split into 'VBoxManage --nologo'
+   # shellcheck disable=SC2206 # ${vboxmanage_cmd} is meant to word-split
    vboxmanage_sudo_wrapper=(
       ${vboxmanage_cmd}
       guestcontrol "${vmname}" run
