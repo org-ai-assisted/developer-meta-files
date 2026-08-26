@@ -62,6 +62,75 @@ is not masked by a later command's success.
 `inherit_errexit` makes `$()` subshells respect errexit (bash >= 4.4).
 `shift_verbose` logs when `shift` runs past argv end.
 
+**R-010b: Do not declare a versioned `bash` dependency (`bash (>= 4.4)`
+or similar) in `debian/control` for the strict block.** Supported Debian
+(trixie and later) ships bash >= 4.4, and earlier Debian and bash
+versions are unsupported, so `inherit_errexit` and the rest of the
+preamble are always available. The dependency adds nothing; leave it out,
+with no explanatory comment.
+
+**R-010a: A script a dist-ai test sources shall be source-able:
+`main()` holds the logic, and both the strict-mode block and the
+`main` call are guarded by `was_executed`.**
+
+A test that drives a script's functions must be able to `source` it
+without running it or leaking strict-mode into the test shell. Such a
+script sources `check_runtime.bsh`, keeps its strict-mode block and its
+`main "$@"` call each behind `if was_executed "${BASH_SOURCE[0]}"`, and
+moves its former top-level logic into `main()`:
+
+    source /usr/libexec/helper-scripts/check_runtime.bsh
+
+    if was_executed "${BASH_SOURCE[0]}"; then
+       set -o errexit
+       set -o nounset
+       set -o pipefail
+       set -o errtrace
+       shopt -s inherit_errexit
+       shopt -s shift_verbose
+    fi
+
+    main() {
+       ## former top-level logic; globals may stay global,
+       ## function definitions stay at top level
+    }
+
+    if was_executed "${BASH_SOURCE[0]}"; then
+       main "$@"
+    fi
+
+Scope: a NEW script shall use this form when it has, or is about to
+receive, a dist-ai test that sources it. Existing untested scripts are
+future work - do not churn them into this form without a test reason. A
+pure sourced LIBRARY (only ever sourced, never executed - e.g.
+tb-updater `version-validator`) does NOT use the guard: it defines
+functions only and keeps zero top-level strict-mode (which would leak
+into the sourcing shell).
+
+Why: the gate (R-010) already recognises the guarded form - zero
+column-0 strict directives plus a `was_executed`/`was_sourced` call in
+command position exempts the script from the top-level all-six
+requirement, because enabling strict-mode at top level would leak into
+any sourcing script.
+
+The `shopt` half of the guarded block is the one part the gate DOES
+enforce, and GATE-ENFORCED it is: authors reflexively copy the
+`set -o errexit`/`nounset`/`pipefail`/`errtrace` lines but drop
+`shopt -s inherit_errexit` and `shopt -s shift_verbose`, and nothing
+used to check the indented block. So when a guarded block enables
+`errexit`, the gate requires both `shopt` lines inside the guard (an
+`errexit` guard without `inherit_errexit` leaves `$()` subshells not
+respecting errexit - the very leak the strict block exists to close).
+The `set -o` choice itself stays the script's own: a script may
+deliberately defer `pipefail` (`live-mode.sh`, `get_writable_fs_lists.sh`)
+or omit `nounset` (`onion-time-pre-script`, which carries a
+`## style-ok: no-strict` waiver), and the gate does not second-guess it.
+
+"Is it dist-ai tested" is not gate-knowable, so the gate cannot enforce
+the rest of R-010a directly; that remains a manual pre-push item (see
+[`pre-push-checklist.md`](pre-push-checklist.md)).
+
+
 **R-011: Don't toggle errexit around a command to capture its rc.**
 Use `||`-suffixed assignment.
 
@@ -102,6 +171,27 @@ expression its rc is the assignment's (0), not the computed value. A
 genuine evaluation error (division by zero, a malformed expression)
 still fails and, under `errexit`, still aborts - the fix is about the
 value-zero case, not a claim that arithmetic can never fail.
+
+**R-013: Set shell options by long `-o` name, one per line -- even in
+POSIX `sh`.** `set -eu` -> `set -o errexit` / `set -o nounset`.
+
+    Bad:  set -eu
+          set -euo pipefail
+          set -o errexit -o nounset
+
+    Good: set -o errexit
+          set -o nounset
+          set -o pipefail
+
+Why: `dash` and `busybox sh` both VALIDATE and IMPLEMENT `set -o errexit`
+/ `set -o nounset` / `set -o pipefail` (verified behaviourally, not just
+accepted syntax), so the long form is portable to `#!/bin/sh`, not
+bash-only. Long names self-document, and one option per line makes a
+diff that adds or drops a single option reviewable. GATE-ENFORCED: a
+short-flag enable (`set -e`, `set -eu`, `set -euo pipefail`) OR more than
+one option on a single `set` line fails the gate. `set --` / `set --
+"$@"` (positional parameters) and a lone `set -o <name>` are fine; the
+`set +o <name>` toggle is R-011's concern.
 
 
 ## Variables
@@ -175,6 +265,20 @@ conditional-substitution forms are legitimate and spared.
 **R-030: Always `printf '%s\n' "..."`.** Format string is fixed;
 all data goes in the data string. No `%d`, no `%q` (except where
 shell-escaping is genuinely required), no extra `\n` in the format.
+
+Numeric-probe carve-out (GATE-ENFORCED as an exemption): a `printf`
+with a SINGLE-quoted literal format whose own command discards BOTH
+stdout and stderr is a validator, not output, and keeps its format
+verb. `is_integer` in helper-scripts' `strings.bsh` is the case:
+
+    printf '%d' "$1" >/dev/null 2>&1 || return 1
+
+Nothing is emitted, so neither of this rule's failure modes is
+reachable, and the printf's FAILURE on a non-number is the check
+R-141 relies on -- rewriting the format to `%s` would silently turn
+that guard into one that always succeeds. Discarding stdout alone,
+or `2>&1 >/dev/null`, does not qualify (the latter form is identical
+to the above form but is unusual): those still emit.
 
 **R-031: Multi-line block: ONE quoted string with embedded
 newlines.** Multiple separate lines: one `printf '%s\n'` per line.
@@ -307,13 +411,37 @@ short-flag meanings.
 **R-062: Use `--` end-of-options separator wherever the tool
 supports one and positional args follow.** Verified working in:
 `git`, `grep`, `sed`, `tr`, `jq`, `head`, `tail`, `stat`,
-`mktemp`, `wc`, `sort`, `cat`, `rm`, `safe-rm`, `mkdir`, `find`.
-Verify before extending the list.
+`mktemp`, `wc`, `sort`, `cat`, `rm`, `safe-rm`, `mkdir`, `find`,
+`sudo` (`sudo -- cmd args` ends sudo's OWN options, before the
+command word). Verify before extending the list.
 
 Why: a positional that begins with `-` (legitimate or hostile)
-gets treated as a flag without `--`. NB: `git check-ref-format`
-does NOT support `--`; verify against the actual binary before
-adding `--` to a new tool invocation.
+gets treated as a flag without `--`.
+
+The positive half ("use `--`") is convention, not gate-enforced:
+whether a positional follows and could begin with `-` is
+undecidable by a single grep, so a positive gate would be noisy.
+
+The NEGATIVE half IS gate-enforced. A `--` handed to a tool that
+does NOT accept it is a bug -- the tool takes `--` as a literal
+argument or errors out. The gate FAILS on a `--` passed to any
+tool on a verified denylist. Verified rejecters:
+
+- `git check-ref-format` -- `git check-ref-format -- <ref>` exits 129.
+- `stcat` -- it takes EVERY argument as a path, so `stcat -- <file>`
+  tries to read a file literally named `--` and dies with
+  `FileNotFoundError`. Adding the separator here broke
+  helper-scripts' `read_integer_file`, which then reported
+  "Cannot stcat target file" for a file that was present and
+  readable, and took four of tb-updater's e2e scenarios with it.
+
+Extend the denylist only after confirming against the
+actual binary. NB: `echo` also mishandles `--` (prints it
+literally) but is already banned outright by R-034.
+
+**R-063: When a git command does not accept `--`, use
+`--end-of-options` instead.** This is documented in
+`man 7 gitcli`. Rationale is the same as for R-062.
 
 
 ## Case statements
@@ -583,6 +711,30 @@ Exception: bootstrap that runs before the executable bit is set
 lost +x), or surfaces that don't honor the shebang. State the
 reason inline.
 
+**R-193: Call an in-repo Python script directly, not via `python3 --
+<file>.py`.** R-180 makes every `*.py` executable with a shebang, so
+run it like any other program.
+
+Bad:
+
+    python3 -- "${dir}/report-summary.py" "${report}"
+
+Good:
+
+    "${dir}/report-summary.py" "${report}"
+
+Why: the same contract R-102 states for shell -- the shebang declares
+the interpreter, the caller should not restate it. It matters more
+here: a `python3 -- file` prefix DROPS the shebang's own flags
+(`#!/usr/bin/python3 -Bsu`), so the direct call is not just tidier, it
+runs the interpreter the file asked for. A generic dispatcher passing
+`"$@"` (no literal path) is glue, not a named call, and is fine.
+
+Enforced by R-193 in the pre-push gate: it flags a literal
+`<interpreter> -- <path>.py` at quote depth zero, outside comments.
+Waiver: `## style-ok: allow-python-dashdash` for a script deliberately
+not executable, or an external path you don't control.
+
 **R-103: Don't replace the process with `exec <command>`; run it as
 a child and forward the exit code.** Process-replacement `exec`
 drops the wrapper from the `ps` tree (harder to debug) and skips
@@ -621,6 +773,33 @@ flagged. A surface that genuinely needs to hand off the process
 (a remote-command payload where a lingering wrapper would deadlock
 the transport; a pty/login shim) carries a script-wide `##
 style-ok: allow-exec` waiver stating the reason.
+
+**R-104: Prefer multi-line, multi-step over a long single-line
+pipeline.** A pipeline of five or more stages on one physical line is
+hard to read, debug and diff. Assign an intermediate, or backslash-
+continue one stage per line, so each step is named and inspectable.
+
+Bad:
+
+    top="$(grep pat log | cut -f2 | sort | uniq -c | sort -rn | head)"
+
+Good:
+
+    matches="$(grep pat log | cut -f2)"
+    counts="$(printf '%s\n' "${matches}" | sort | uniq -c)"
+    top="$(printf '%s\n' "${counts}" | sort -rn | head)"
+
+Why: a wedged or wrong stage in a six-stage one-liner leaves you no
+intermediate to inspect, and a diff touching one stage rewrites the
+whole line. Naming the intermediates turns "the pipeline is wrong"
+into "step 2 is wrong."
+
+Guidance only -- there is deliberately NO pre-push gate for this. A
+`|` is too overloaded in shell (pipe operator, `||`, `case`/glob
+alternation, a pipe nested in `$(...)`, a literal inside a string) for
+a static rule to tell a long pipeline from an ordinary multi-line
+`case` pattern without false positives, and the tree already follows
+the convention. Keep it by review, not by gate.
 
 
 ## Errors and logging
@@ -796,11 +975,38 @@ trust in the prose. Match locally; impose org-wide style only
 when it would otherwise conflict.
 
 **R-153: Never extract a comment from the running script to display
-it to the user.** "Help modes" should be implemented as dedicated
-functions that print a string.
+it to the user.** A "help mode" is a dedicated function that PRINTS
+the help; it must not scrape the source. In particular, never turn the
+header comment into `--help` output with `grep '^##' -- "$0" | sed ...`.
 
-Why: Code that expects comments to provide user interface components
-is liable to break if a comment-only change is made.
+Why: code that treats comments as user-interface text breaks the moment
+a comment-only edit is made, and it couples the help wording to comment
+syntax.
+
+Canonical pattern -- a full help (both `-h` and `--help` print it) and
+a short usage shown only when a REQUIRED argument is missing, kept as
+two separate strings you own:
+
+    me="${0##*/}"
+    print_usage() {                 # short: the usage line(s) only
+       printf '%s\n' "Usage:
+  ${me} ARG [--opt VALUE]"
+    }
+    print_help() {                  # full: usage + description + options
+       print_usage
+       printf '%s\n' "
+Longer description ...
+
+  --opt VALUE   ..."
+    }
+    # -h and --help are the SAME: both print the full help.
+    #   -h|--help) print_help; exit 0 ;;
+    # A tool that REQUIRES arguments prints the short usage when they are
+    # missing (like 'mv'); one that runs argless (like 'nano') does not.
+    #   if [ -n "${arg}" ]; then
+    #     print_usage >&2
+    #     error "ARG is required"
+    #   fi
 
 **R-154: No history in comments.** Comment the CURRENT state and why,
 never how the code got there. Ban change-narrative: "formerly X",
@@ -815,12 +1021,60 @@ change. The diff and the log are the record.
 
 ## File search
 
-**R-160: Never use the --quiet option of grep.** According to grep's
-manpage, "if the -q or --quiet or --silent is used and a line is
-selected, the exit status is 0 even if an error occurred." Silencing
-errors is not acceptable. To silence grep's *output* (but not exit
-code), append `>/dev/null 2>&1` to the end of the grep command. To
-prevent grep from looking for more than one match, use `--max-count=1`.
+**R-160: Never use the -q, --quiet, or -silent options of grep under
+any circumstances.** According to grep's manpage, "if the -q or --quiet
+or --silent is used and a line is selected, the exit status is 0 even
+if an error occurred." Silencing errors is not acceptable. To silence
+grep's *output* (but not exit code), append `>/dev/null 2>&1` to the
+end of the grep command. To prevent grep from looking for more than one
+match, use `--max-count=1` (but never on the reading end of a pipe --
+see R-161).
+
+**R-161: A `grep` that consumes a pipe must not use `--max-count` or
+`-m`.**
+
+*Pipe + --max-count is a `pipefail` bug.* `--max-count` makes grep exit
+after the specified number of matches were found. On the reading end of
+a pipe that closes the pipe early, so the writer on the left gets
+`SIGPIPE` and dies with 141 -- and our default `set -o pipefail`
+(R-010) turns that into a failed pipeline:
+
+    seq 1 100000000 | grep --max-count=1 5  # pipeline exits 141, not 0
+
+Whether it bites depends on how much the producer still had to write,
+so it passes on small inputs and fails on large ones -- a latent,
+size-dependent flake. Remedies:
+
+- Streaming producer -- Capture grep's output to a variable and remove
+  all but the desired number of matches. grep then reads to EOF, so
+  nothing is SIGPIPE'd; its exit code, and any real error on stderr,
+  are preserved:
+
+      var="$(producer | grep --max-count=1 pattern)"
+
+- Variable / string input -- use a here-string, which is a temp file,
+  not a pipe, so there is no writer to kill. A --max-count option flag
+  is fine here:
+
+      grep --max-count=1 pattern <<< "${var}"
+
+*Short max-count flag violates R-060.* `grep -m 1`, and any bundled
+cluster carrying it (`grep -im 1`, `grep -Fm 1`), use short options;
+write the long form -- `--max-count=1`, `grep --ignore-case
+--max-count=1`, `grep --fixed-strings --max-count=1`. A long
+--max-count flag reading a file.
+
+Enforcement: the pre-push gate FAILS a max-count grep on the right of a
+`|` (here-strings and plain file reads are spared) and a short
+max-count flag anywhere; `pre-push-fix` auto-expands a short max-count
+cluster to its long form. The pipe rewrite is left to a human --
+relocating a redirect is not a mechanical single-token edit, the same
+line `pre-push-static` draws for R-172's non-atomic `mkdir`.
+
+TODO: Does automatic cluster expansion actually happen in
+`pre-push-fix` for max-count? This rule used to erroneously mention
+`--quiet` all through as if it were sometimes permissible, when it is
+really unconditionally banned from the entire codebase.
 
 
 ## Temporary files
@@ -889,6 +1143,66 @@ starting with it (`/tmpfs`, `/tmp.bak`) is not matched. Comment lines
 are excluded -- prose about `/tmp` is not a path.
 
 
+**R-172: A `mkdir` that creates a temp directory must set the mode
+ATOMICALLY with `--mode=`.**
+
+    mkdir --parents --mode=700 -- "${TMPDIR}"
+
+`mkdir --mode=` applies the permission bits as part of the directory's
+creation. Setting the mode any other way -- dropping it, or splitting it
+into a following `chmod` -- leaves a window in which the directory exists
+with the umask-default (potentially world-traversable) mode. Another
+process can enter that window and race the temp path; for a directory
+that will hold a journal or any private data, that is a TOCTOU
+disclosure hole.
+
+Bad -- the mode is not atomic (a `chmod` follows the create):
+
+    mkdir --parents -- "${TMPDIR}"
+    chmod 700 -- "${TMPDIR}"          # TOCTOU: dir is world-visible first
+
+Bad -- no mode at all:
+
+    mkdir --parents -- "${TMPDIR}"
+
+Use the long `--mode`, not the short `-m`: `pre-push-fix` upgrades an
+`-m 700` / `-m700` to `--mode=700` automatically, and the gate FAILS a
+standalone short `-m` so the long form is what lands. `--mode=700` is the
+canonical spelling; `--mode 700` (space) is equally atomic and accepted.
+This is the same long-option discipline R-013 applies to `set -o`.
+
+The mode is judged on the `mkdir` command itself, not the whole line: a
+`--mode` in a trailing comment or in a second command sharing the line
+does not satisfy the rule, and the fixer never rewrites another command's
+options.
+
+The atomic form pairs with a `# shellcheck disable=SC2174`:
+
+    # shellcheck disable=SC2174
+    mkdir --parents --mode=700 -- "${TMPDIR}"
+
+`--parents` is what makes the create idempotent (re-running is fine when
+the directory already exists); combined with `--mode=`, shellcheck raises
+SC2174 -- "with `-p`, `-m` only applies to the deepest directory." That
+is exactly the intent here: the parents (`/var/cache`, `~/.cache`, ...)
+pre-exist, so only the temp directory itself is created and it gets the
+mode atomically. There is no form that is both idempotent AND atomic
+without the flag combination SC2174 warns about, so the disable is part
+of the pattern -- `pre-push-fix` inserts it for you.
+
+Waiver: `## style-ok: allow-mkdir-no-mode` anywhere in the script (same
+mechanism as R-120's `## style-ok: no-safe-rm`). Reserve it for a temp
+directory whose permissions genuinely do not matter, or a `mkdir` whose
+mode is set by a form the rule cannot read (a symbolic `-m u=rwx`, a
+`--mode="${mode}"` variable).
+
+Enforcement: the gate flags a command-position `mkdir` whose operand is
+a `TMPDIR` / `TMP` / `TEMP` / `TEMPDIR` variable and that carries no
+`--mode=`, on a non-comment line of a changed shell file. A `mkdir` that
+does not create one of those temp variables, and a name that merely
+starts with the prefix (`${TMPFILE}`), are not matched.
+
+
 **R-190: A substantial interpreter program does not belong in a
 shell heredoc.** If the embedded body is more than ~5 lines, put it
 in its own file with a shebang and call it.
@@ -917,6 +1231,26 @@ silent fallback to a stale installed copy is worse than no fallback.
 Short glue stays inline: a one-line `python3 -c` is not a program.
 
 Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
+
+**R-191: A systemd unit does not embed a multi-statement shell
+script.** An `Exec*=` directive must not carry embedded scripting:
+
+    ## Bad -- invisible to shellcheck, no importable home, no coverage:
+    ExecStart=/bin/bash -c 'mkdir -p /run/foo && chown x:y /run/foo; start'
+
+    ## Good:
+    ExecStart=/usr/libexec/foo/start
+
+Why: the same defect R-100 catches in workflow YAML and R-190 in a
+heredoc. The `-c` body is hidden from shellcheck, has no importable
+home a unit test can reach, and no coverage tool can see it. Move the
+logic into a script with a shebang and call that. A single-command
+wrapper (`ExecStart=/bin/bash -c 'touch /run/foo'`) is glue, not a
+program, and is allowed; only a `sh -c` / `bash -c` value carrying a
+`;`, `&&`, `||`, a pipe, a shell control keyword (`for while if case
+until do then`), or a `\` line-continuation is flagged.
+
+Waiver: `# style-ok: allow-embedded-script` anywhere in the unit.
 
 ## Python files
 

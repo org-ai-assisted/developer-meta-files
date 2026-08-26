@@ -5,28 +5,12 @@
 
 ## AI-Assisted
 
-## style-ok: no-strict -- sourced function library; the strict 'set'/'shopt'
-## preamble belongs to the executables that source this, not here.
+## style-ok: no-strict -- sourced function library.
 
-## Single source of truth for the RELEASED-artifact naming per build target,
-## shared by dm-reproducible-fetch (constructs the download URL) and
-## dm-reproducible-compare-artifacts (locates the released image to diff) so the
-## two can never drift.
-##
-## raw and qcow2 are released COMPRESSED, so their extension carries the
-## '.libvirt.xz' suffix: comparing '*.raw' / '*.qcow2' would pick the uncompressed
-## build INTERMEDIATE, not the artifact users actually download (and would miss any
-## non-determinism the xz step introduces). The extension is therefore matched
-## with its full compound suffix.
-##
-## Both functions take the caller's OUTPUT variable name as $1 and the build
-## target as $2, and return 1 on an unknown target. We check $1 with
-## check_variable_name despite the fact that currently all calls to it provide
-## a trusted variable name, so that future development doesn't introduce a
-## security hole.
+## Single source of truth for the RELEASED-artifact naming per build target.
 
 # shellcheck source=../../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source "${HELPER_SCRIPTS_PATH}"/usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
 ## Set $1 to the released-image filename extension for target $2.
 dm_reproducible_target_ext() {
@@ -47,8 +31,7 @@ dm_reproducible_target_ext() {
          ext_ref="qcow2.libvirt.xz"
          ;;
       utm)
-         ## FIXME: The extension we use is .utm.tar.gz, not just .utm.
-         ext_ref="utm"
+         ext_ref="utm.tar.gz"
          ;;
       *)
          return 1
@@ -69,12 +52,37 @@ dm_reproducible_target_url_part() {
       virtualbox)
          url_part_ref="ova"
          ;;
-      ## TODO: raw isn't published for download, should this be here?
+      ## raw is not a published download, but the case is kept for manual /
+      ## future / debugging use.
       raw)
          url_part_ref="raw"
          ;;
       qcow2)
          url_part_ref="libvirt"
+         ;;
+      *)
+         return 1
+         ;;
+   esac
+}
+
+## Inverse of dm_reproducible_target_url_part.
+dm_reproducible_url_part_to_target() {
+   check_variable_name "${1:-}" || return 1
+
+   local -n target_ref="$1"
+   case "${2:-}" in
+      iso)
+         target_ref="iso"
+         ;;
+      ova)
+         target_ref="virtualbox"
+         ;;
+      raw)
+         target_ref="raw"
+         ;;
+      libvirt)
+         target_ref="qcow2"
          ;;
       *)
          return 1
