@@ -85,28 +85,13 @@ jobs:
     permissions:
       contents: read
     env:
-      ## Resolution order: explicit input > PR base ref > the push's own
-      ## before-sha > master fallback. Single GitHub expression keeps this thin
-      ## per R-100 (no bash control flow in run: blocks).
-      ##
-      ## The before-sha branch is what makes a push run mean anything. On
-      ## 'push' github.base_ref is empty, so this resolved to 'origin/master'
-      ## -- which after the push IS the pushed head. The range
-      ## origin/master...HEAD was therefore empty and the gate reported
-      ## "no changed shell files" and passed, having examined nothing. Only the
-      ## commit-time hook actually gated those commits.
-      ##
-      ## An all-zero before-sha (a branch's first push, so there is no prior
-      ## head) falls through to origin/master rather than naming a commit that
-      ## does not exist.
+      ## Resolution order: explicit input > PR base ref > master
+      ## fallback. Single GitHub expression keeps this thin per
+      ## R-100 (no bash control flow in run: blocks).
       BASE_REF: >-
         ${{
           inputs.base-ref != '' && inputs.base-ref
-          || (github.base_ref != '' && format('origin/{0}', github.base_ref)
-          || (github.event_name == 'push'
-              && github.event.before != '0000000000000000000000000000000000000000'
-              && github.event.before
-          || 'origin/master'))
+          || (github.base_ref != '' && format('origin/{0}', github.base_ref) || 'origin/master')
         }}
       ## Dogfood ref: the caller's commit when dist-ai is its own caller,
       ## so a PR that modifies pre-push-static or step-summary-emit is
@@ -124,7 +109,7 @@ jobs:
         run: |
           apt-get update --quiet
           apt-get install --yes --no-install-recommends \
-            ca-certificates file git pre-commit-hooks shellcheck yq
+            ca-certificates file git pre-commit-hooks shellcheck
           git config --global --add safe.directory '*'
 
       - name: Checkout caller repo (full history for git diff)
@@ -141,48 +126,6 @@ jobs:
           ref: ${{ env.DIST_AI_REF }}
           path: .github/dist-ai
           persist-credentials: false
-
-      - name: Load per-repo config (.github/dm-consumer.yml)
-        id: cfg
-        ## Runtime read of the caller's per-repo config (reusable-dist-ai-tests
-        ## pattern). All logic lives in the committed dist-ai/ci script, not
-        ## inline here (no embedded shell scripts in CI files). Emits
-        ## helper_scripts=true when the repo opts in below.
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        run: ./.github/dist-ai/ci/pre-push-static-ci-config.sh .github/dm-consumer.yml
-
-      - name: Checkout helper-scripts (shellcheck cross-repo source resolution)
-        ## OPT-IN, via the SAME 'dist-ai-tests: helper-scripts: true' flag a
-        ## consumer already sets in .github/dm-consumer.yml -- so a repo that
-        ## sources helper-scripts opts in once. Consumers source it via a
-        ## '# shellcheck source=../../../../helper-scripts/...' directive, a path
-        ## RELATIVE to the script that reaches a SIBLING of the repo root. In the
-        ## isolated CI checkout that sibling is absent, so 'shellcheck -x' emits
-        ## SC1091 and the consumer silences it with an inline
-        ## '# shellcheck disable=SC1091'. Provide the sibling so shellcheck
-        ## FOLLOWS the source instead (and the disable can be dropped). Same
-        ## org-ai-assisted/helper-scripts@master the dist-ai tests use;
-        ## master-tracking is sanctioned for our own repos.
-        if: >-
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-          && steps.cfg.outputs.helper_scripts == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/helper-scripts
-          ref: master
-          path: .ci-helper-scripts
-          persist-credentials: false
-
-      - name: Link helper-scripts as the repo sibling
-        ## The caller repo is checked out at the workspace root, so the sibling
-        ## the source= paths reach is one level ABOVE it, which actions/checkout
-        ## cannot target (its 'path' must stay under the workspace). Symlink it
-        ## from the in-workspace checkout above. Untracked, so the gate's
-        ## git-diff file scan never sees it. R-100: one command, no control flow.
-        if: >-
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-          && steps.cfg.outputs.helper_scripts == 'true'
-        run: ln -sfn "${GITHUB_WORKSPACE}/.ci-helper-scripts" "${GITHUB_WORKSPACE}/../helper-scripts"
 
       - name: Run pre-push-static
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

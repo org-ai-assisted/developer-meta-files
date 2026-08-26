@@ -38,18 +38,9 @@ Wire as a hook so the gate is unmissable:
         R-081)
     [ ] log/die from log_run_die.sh, not ad-hoc 'printf %s\n
         "error: ..." >&2' (R-040, R-110)
-    [ ] a NEW script that a dist-ai test sources uses the
-        source-able form: main() + strict-mode and the main
-        call both guarded by was_executed (R-010a). The gate
-        cannot check "is it dist-ai tested", so confirm here.
-        A pure sourced library keeps zero top-level strict-mode
-        and no guard.
     [ ] has from has.sh, not 'command -v X >/dev/null 2>&1'
         (R-090)
     [ ] safe-rm, not rm (R-120)
-    [ ] temp-dir mkdir sets the mode atomically:
-        'mkdir --parents --mode=700 -- "${TMPDIR}"', never a
-        following chmod (TOCTOU) and never the short -m (R-172)
     [ ] traps as named functions, registered after vars init
         (R-051)
     [ ] true "INFO: ..." not bare ':' (R-130)

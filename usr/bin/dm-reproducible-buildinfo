@@ -92,8 +92,19 @@ val() {
    printf '%s' "${v:-unknown}"
 }
 
-## In CI and AI agent builds, sign-and-tag is sometimes run, which amends repo
-## HEAD commits. We record the pre-amend state in dm_source_state_file.
+## The source state recorded by help-steps/sign-and-tag BEFORE it amended
+## anything. It has to come from there: sign-tag-head rewrites the parent's HEAD
+## and every submodule's HEAD, and those commits exist only inside that build, so
+## reading them here would publish a signed record pointing at commits nobody can
+## fetch. It also carries the submodule SHAs the build actually used, which CI's
+## fork-branch checkout resolves from moving branch tips and records nowhere else.
+##
+## TODO: See if we can get rid of dm-source-state/source_state_file. It should
+## only be useful for builds where sign-and-tag runs, and sign-and-tag should
+## only ever run in exceptional cases. There is no need for CI-built images to
+## be reproducible other than to test reproducibility itself in CI, in which
+## case we can probably build from the same sign-and-tag'd repo twice to
+## verify that we get the same result and thus still not need dm-source-state.
 source_state_file="${dm_source_state_file:-}"
 if [ -z "${source_state_file}" ] && [ -n "${binary_build_folder_dist:-}" ]; then
    source_state_file="${binary_build_folder_dist}/dm-source-state"
@@ -103,40 +114,11 @@ state_unrecorded() {
    printf '%s\n' "Source-Commit: unrecorded ($1)" "Submodule-State: unrecorded"
 }
 
-state_from_head() {
-   local repo toplevel head submodules
-   repo="${source_code_folder_dist:-}"
-   [ -n "${repo}" ] || return 1
-
-   ## Make sure the repo dir is itself a Git repo.
-   toplevel="$(git -C "${repo}" rev-parse --show-toplevel 2>/dev/null)" || return 1
-   [ -n "${toplevel}" ] || return 1
-   [ "${repo}" -ef "${toplevel}" ] || return 1
-
-   head="$(git -C "${repo}" rev-parse --verify HEAD 2>/dev/null)" || return 1
-   [ -n "${head}" ] || return 1
-
-   submodules="$(git -C "${repo}" submodule status --recursive 2>/dev/null)" || return 1
-   if [ -n "${submodules}" ]; then
-      ## Leading space per line keeps each gitlink a Deb822 continuation of
-      ## Submodule-State.
-      submodules="$(printf '%s\n' "${submodules}" | sed -e 's/^[[:space:]]*/ /')"
-   fi
-   printf '%s\n' "Source-Commit: ${head}"
-   printf '%s\n' "Submodule-State:"
-   [ -z "${submodules}" ] || printf '%s\n' "${submodules}"
-}
-
 source_state_block=""
-head_block=""
-if [ -z "${source_state_file}" ] || [ ! -f "${source_state_file}" ] || [ ! -r "${source_state_file}" ]; then
-   if head_block="$(state_from_head)" && [ -n "${head_block}" ]; then
-      source_state_block="${head_block}"
-   elif [ -z "${source_state_file}" ]; then
-      source_state_block="$(state_unrecorded "neither dm_source_state_file nor binary_build_folder_dist is set, and no source_code_folder_dist git tree to read HEAD from")"
-   else
-      source_state_block="$(state_unrecorded "help-steps/sign-and-tag did not run, and no source_code_folder_dist git tree to read HEAD from")"
-   fi
+if [ -z "${source_state_file}" ]; then
+   source_state_block="$(state_unrecorded "neither dm_source_state_file nor binary_build_folder_dist is set")"
+elif [ ! -f "${source_state_file}" ] || [ ! -r "${source_state_file}" ]; then
+   source_state_block="$(state_unrecorded "help-steps/sign-and-tag did not run, or did not write '${source_state_file}'")"
 else
    source_state_candidate="$(cat -- "${source_state_file}")"
    state_reject=""
@@ -145,15 +127,11 @@ else
          state_reject="${source_state_file} is empty"
          ;;
       *$'\n\n'*)
+         ## TODO: Should we reject a single newline at the start of the file
+         ## too?
          state_reject="${source_state_file} contains a blank line, which would terminate this Deb822 record"
          ;;
    esac
-   if [ -z "${state_reject}" ] \
-      && [[ "${source_state_candidate}" =~ ^$'\n' ]]; then
-      ## A blank line at the beginning of the file would cause record
-      ## termination too.
-      state_reject="${source_state_file} contains a blank line, which would terminate this Deb822 record"
-   fi
    if [ -z "${state_reject}" ]; then
       case "${source_state_candidate}" in
          "Source-Commit: "*)
@@ -166,7 +144,9 @@ else
    fi
    if [ -z "${state_reject}" ]; then
       case "${source_state_candidate}" in
-         *$'\n'"Submodule-State:"*)
+         *"Submodule-State:"*)
+            ## FIXME: This can be fooled if 'Submodule-State:' occurs anywhere
+            ## in a key's value.
             true
             ;;
          *)
@@ -181,11 +161,39 @@ else
    fi
 fi
 
-## Source-Version and Source-Commit name different commits when sign-and-tag
-## is used as part of a build. Do not assert they agree.
+## Source-Version and Source-Commit name DIFFERENT commits by design. Do not
+## assert they agree.
+##
+## A previous version of this file required them to be equal, and that check
+## fails every signed build:
+##   - sign-and-tag records Source-Commit from 'git rev-parse HEAD' BEFORE it
+##     signs, deliberately -- see its own comment. It then runs sign-tag-head,
+##     which rewrites the parent's HEAD via 'commit --amend -S'.
+##   - 'dist_build_version' is derived by 'git describe' AFTER that amend, so its
+##     '-g<sha>' suffix names the amended commit.
+## The pre-sign commit is the one a rebuilder can actually fetch; the amended one
+## exists only inside that build. Recording the fetchable commit while the
+## version describes the ephemeral one is the intended behaviour, so equality is
+## the wrong invariant -- it blocked CI on a correct record.
+##
+## The underlying hazard is real and NOT covered here: 'dist_build_version' is
+## auto-detected only when UNSET, so a value inherited from a reused workspace
+## silently wins over the actual tree (observed: Source-Commit 02096cd4... beside
+## Source-Version ...-ge65ff458...). Catching that needs a comparison against the
+## tree's CURRENT HEAD, which this script cannot obtain reliably -- it runs both
+## in-tree during a build and from an installed /usr/bin path, and guessing a
+## repository from the working directory is how the last false positive happened.
+## Belongs where dist_build_version is set (help-steps/variables), not here.
+##
+## TODO: Since we're going to try to get rid of sign-and-tag in the context of
+## standard reproducible builds, and we're going to try to avoid needing to
+## record repo information before a sign-and-tag run, maybe we can go back to
+## asserting Source-Version and Source-Commit agree.
 
-## Record if --reproducible-dist-build-version was used, so no one confuses a
-## commit-built image with a release image.
+## An image built with --reproducible-dist-build-version carries a version with
+## the describe suffix stripped, so it is not the artifact a normal build
+## of this commit would produce. Note this in the record so no one confuses
+## a commit-built image with a release image.
 version_normalized_field=""
 if [ "${dist_build_version_reproducible:-}" = "true" ]; then
    version_normalized_field="

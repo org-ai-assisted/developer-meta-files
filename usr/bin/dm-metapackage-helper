@@ -421,7 +421,6 @@ Vcs-Browser: https://github.com/Kicksecure/kicksecure-meta-packages
 Vcs-Git: https://github.com/Kicksecure/kicksecure-meta-packages.git
 Standards-Version: 4.7.2
 Rules-Requires-Root: no
-X-Private-Trivially-Cross-Buildable: yes
 """
 
 whonix_metapackage_source_header: str = """\

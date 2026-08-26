@@ -73,6 +73,8 @@ get_wiki_page_cached () {
    wiki_content="${wiki_cache["${cache_id}"]}"
 }
 
+# TODO: It might be more lightweight to use release-monitoring.org to detect
+#   the latest VirtualBox release.
 # get_latest_version-virtualbox () {
 #    get_url_cached 'https://release-monitoring.org/api/v2/packages/?name=Virtualbox'
 #    jq '.items[] | select ( contains({distribution: "Windows"}) ) | .version' <<< "${url_content}"
@@ -159,6 +161,23 @@ replace_wiki_string () {
    ## can inspect it after a failure.
    printf '%s\n' "INFO: replace_wiki_string tmp file kept for review: ${tmpfile}"
 }
+
+# TODO: Templates for future work
+# get_latest_version-tor-browser () {
+#    true
+# }
+#
+# get_latest_version-tor-browser-alpha () {
+#    true
+# }
+#
+# get_current_version-tor-browser () {
+#    true
+# }
+#
+# get_current_version-tor-browser-alpha () {
+#    true
+# }
 
 save_cached_page_to_wiki () {
    local wiki_page tmpfile
