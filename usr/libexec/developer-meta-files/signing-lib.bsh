@@ -5,7 +5,10 @@
 
 ## AI-Assisted
 
-## Sourceable release signing + verification helpers.
+## Sourceable release signing + verification helpers, factored out of
+## 'dm-prepare-release' so the reproducibility verifier
+## ('dm-reproducible-verify') reuses the SAME sign/verify code instead of
+## hand-rolling 'sq'/'signify' invocations.
 ##
 ## Callers set these (help-steps/variables already resolves them):
 ##   DEBEMAIL              OpenPGP signer email
@@ -13,12 +16,14 @@
 ##   signify_private_key   signify secret key path (sign)
 ## and provide 'safe-rm', 'sq', 'signify-openbsd', 'bc' on PATH.
 ##
-## The signify functions intentionally SKIP files >= 1000 MB, as signify cannot
-## handle big files. Such files are covered an OpenPGP '.asc' plus the
-## signed '.sha512sums'. 'file_size_mb' is set by sign_and_verify /
+## The signify functions intentionally SKIP files >= 1000 MB (signify cannot
+## handle big files); such an image is covered by its OpenPGP '.asc' plus the
+## signed (small) '.sha512sums'. 'file_size_mb' is set by sign_and_verify /
 ## verify_signature before the per-scheme helpers run.
 
-## style-ok: no-strict -- a sourced library.
+## style-ok: no-strict -- a sourced library; a strict-mode preamble would leak
+## 'set -o errexit' and friends into the caller. Its callers
+## (dm-reproducible-verify, dm-prepare-release) already run strict mode.
 
 sign_cmd_openpgp() {
    local base_name
@@ -81,7 +86,7 @@ sign_and_verify() {
 
 ## Verify-only counterpart for a downstream verifier: check an already-published
 ## file against its sibling '.asc' (+ '.sig' when the file is small enough to
-## have been signify-signed).
+## have been signify-signed). Mirrors the verification half of sign_and_verify.
 verify_signature() {
    signing_lib_set_file_size_mb "$1"
 

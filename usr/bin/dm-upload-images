@@ -31,7 +31,10 @@ cd -- "${MYDIR}"
 
 ## help-steps/pre sets and exports HELPER_SCRIPTS_PATH (to the sibling
 ## helper-scripts in the derivative-maker source tree) and uses no strings.bsh
-## function, so source it first.
+## function, so source it FIRST; strings.bsh then resolves via that variable
+## (including its own sibling libraries such as wc-test.sh). This script only ever
+## runs from a source tree -- it sources help-steps/pre by source-tree path -- so
+## pre is always present to set the variable, and no manual export is needed.
 source "${derivative_maker_source_code_dir}/help-steps/pre"
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/strings.bsh"
@@ -137,7 +140,7 @@ upload_files() {
       local dns_probe_item dns_probe_host
       local -a dns_probed_host_list
       dns_probed_host_list=()
-      for dns_probe_item in "${dist_build_upload_locations[@]}"; do
+      for dns_probe_item in ${dist_server_with_upload_location_list}; do
          dns_probe_host="$(dns_probe_host_from_target "${dns_probe_item}")"
          if [ -z "${dns_probe_host}" ]; then
             continue
@@ -201,8 +204,8 @@ main() {
       error "Variable dist_build_version is empty."
    fi
 
-   if [ "${#dist_build_upload_locations[@]}" -eq 0 ]; then
-      error "Variable dist_build_upload_locations is empty."
+   if [ "${dist_server_with_upload_location_list}" = "" ]; then
+      error "Variable dist_server_with_upload_location_list is empty."
    fi
 
    ## Upload each image to its OWN destination via the parallel arrays
