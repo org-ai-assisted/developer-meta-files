@@ -39,6 +39,11 @@ mkdir -- "${target_folder}"
 
 ## Use 'cd', 'basename', 'dirname' to avoid the target folder to contain sub folders such as '/home/user/source-folder'.
 
-qvm-run --no-gui --pass-io -- "${vmname}" "set -x && cd -- $(dirname -- "${source_folder}") && tar -cf - -C $(dirname -- "${source_folder}") -- $(basename -- "${source_folder}")" | tar -x --touch --strip-components=1 -C "${target_folder}"
+## dirname/basename are expanded HERE and interpolated into the remote command,
+## so shell-quote them with printf '%q' -- otherwise a source_folder containing a
+## space (or any shell metacharacter) breaks the remote 'cd'/'tar' word-split.
+source_dir_q="$(printf '%q' "$(dirname -- "${source_folder}")")"
+source_base_q="$(printf '%q' "$(basename -- "${source_folder}")")"
+qvm-run --no-gui --pass-io -- "${vmname}" "set -x && cd -- ${source_dir_q} && tar -cf - -C ${source_dir_q} -- ${source_base_q}" | tar -x --touch --strip-components=1 -C "${target_folder}"
 
 true "$0: END"

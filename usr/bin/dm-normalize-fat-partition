@@ -158,20 +158,18 @@ mkfs.fat -F 32 \
 ## that dd overwrites the ESP with -- the same silent-strip failure mode as the
 ## extraction listing above. The '[ -n ]' guard keeps an empty set to zero
 ## iterations (a flat FAT legitimately has no subdirectories).
-dir_listing="$( cd -- "${staging}" && find . -mindepth 1 -type d | LC_ALL=C sort )"
-if [ -n "${dir_listing}" ]; then
-   while read -r directory; do
-      mmd -i "${fresh_image}" "::${directory#./}"
-   done <<< "${dir_listing}"
-fi
+## NUL-delimited: a file/dir name with a leading/trailing space or a newline must
+## survive verbatim into mmd/mcopy, or the ESP is re-imaged with the wrong path
+## -- the silent-strip failure mode this function exists to avoid. An empty tree
+## runs the loop zero times.
+while IFS= read -r -d '' directory; do
+   mmd -i "${fresh_image}" "::${directory#./}"
+done < <( cd -- "${staging}" && find . -mindepth 1 -type d -print0 | LC_ALL=C sort -z )
 
-file_listing="$( cd -- "${staging}" && find . -mindepth 1 -type f | LC_ALL=C sort )"
-if [ -n "${file_listing}" ]; then
-   while read -r file; do
-      touch --date="@${SOURCE_DATE_EPOCH}" -- "${staging}/${file#./}"
-      mcopy -i "${fresh_image}" -m "${staging}/${file#./}" "::${file#./}"
-   done <<< "${file_listing}"
-fi
+while IFS= read -r -d '' file; do
+   touch --date="@${SOURCE_DATE_EPOCH}" -- "${staging}/${file#./}"
+   mcopy -i "${fresh_image}" -m "${staging}/${file#./}" "::${file#./}"
+done < <( cd -- "${staging}" && find . -mindepth 1 -type f -print0 | LC_ALL=C sort -z )
 
 ## Overwrite the partition with the deterministic image. conv=notrunc so a file
 ## target keeps its size; the image is exactly the partition size regardless.

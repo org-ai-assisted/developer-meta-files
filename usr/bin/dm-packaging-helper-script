@@ -1122,7 +1122,7 @@ pkg_descr_creator() {
 
       in_meta_section='false'
       description_found='false'
-      while read -r line; do
+      while IFS= read -r line; do
          true "line: ${line}"
          read -r first_word second_word third_word _ <<< "${line}" || true
 

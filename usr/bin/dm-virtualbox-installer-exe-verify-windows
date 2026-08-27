@@ -84,7 +84,10 @@ if [ ! "${verify_status}" = "0" ]; then
    while IFS= read -r crl_url; do
       [ -n "${crl_url}" ] || continue
       ## TODO: Use scurl here instead?
-      if ! curl --silent --show-error --location --max-time 60 \
+      ## --max-filesize: crl_url comes from the UNTRUSTED installer's signature
+      ## (external data), so a hostile URL must not stream an unbounded file. Real
+      ## CRLs are a few MB; 100 MiB is generous but bounded.
+      if ! curl --silent --show-error --location --max-time 60 --max-filesize 104857600 \
          --output "${crl_der_file}" -- "${crl_url}"; then
          true "$0: could not fetch ${crl_url}"
          continue
