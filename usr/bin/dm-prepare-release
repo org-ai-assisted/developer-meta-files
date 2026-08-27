@@ -376,6 +376,7 @@ libvirt_compress() {
       --sort=name \
       --sparse \
       --mtime="@${SOURCE_DATE_EPOCH}" \
+      --exclude='.git' \
       --directory="${dist_binary_build_folder}" \
       --file - \
       "${filelist_base_name[@]}" \
