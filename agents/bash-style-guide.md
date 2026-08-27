@@ -14,6 +14,20 @@ Rules that cite a helper script include the source path so a reader
 can confirm intent against implementation.
 
 
+## Waivers
+
+Any rule can be suppressed for a single file with a per-rule override
+comment keyed on its id: `## style-ok: R-NNN` (one or two `#`, or
+`//` in slash-comment syntax). It is honored file-wide, wherever it
+sits. Some rules ALSO carry a named waiver (`allow-echo`,
+`no-safe-rm`, `printf-format`, ...) documented at the rule itself; the
+named tag and the id override are interchangeable escape hatches for
+that rule. A waiver must be a real COMMENT: a `## style-ok:` line
+inside a heredoc body or a quoted string is data, not a waiver, and
+does not suppress anything. A waiver is a deliberate, reviewed
+exception, not a default -- prefer complying over waiving.
+
+
 ## File-level
 
 **R-001: ASCII only.** Source code and commit messages are ASCII
@@ -410,6 +424,11 @@ newline baked into the format string) and a bare `printf '%s\n'`
 and GATE-ENFORCED -- they fail the static gate. Whether the blank
 line should exist at all is R-042's separate call; this rule only
 fixes its form once you decide to write one.
+
+Waiver: `## style-ok: printf-format` (file-wide) suppresses BOTH the
+printf format rules -- R-030's format-injection check and R-031's
+bare-newline check. Reserve it for a file whose printf usage is
+deliberately non-standard; prefer the compliant `printf '%s\n' ""`.
 
 **R-032: Quote choice.** Double quotes preferred. Single quotes
 acceptable when the body has many doubles to escape:
