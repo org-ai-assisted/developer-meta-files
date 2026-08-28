@@ -395,9 +395,10 @@ not dereference). Reserve `${var:-}` for genuinely-optional variables.
 
 ## printf
 
-**R-030: Always `printf '%s\n' "..."`.** Format string is fixed;
-all data goes in the data string. No `%d`, no `%q` (except where
-shell-escaping is genuinely required), no extra `\n` in the format.
+**R-030: Always `printf '%s\n' "..."`, unless doing complex table-like
+formatting.** Format string is otherwise fixed; all data goes in the
+data string. No `%d`, no `%q` (except where shell-escaping is genuinely
+required), no extra `\n` in the format.
 
 Numeric-probe carve-out (GATE-ENFORCED as an exemption): a `printf`
 with a SINGLE-quoted literal format whose own command discards BOTH
@@ -412,6 +413,12 @@ R-141 relies on -- rewriting the format to `%s` would silently turn
 that guard into one that always succeeds. Discarding stdout alone,
 or `2>&1 >/dev/null`, does not qualify (the latter form is identical
 to the above form but is unusual): those still emit.
+
+TODO: Add to dist-ai's shell rule checker a way to override this rule
+for specific lines of code. We need more complex printf format strings
+for things like formatting tables, and while we could theoretically
+reimplement the formatting logic, that would increase the code we need
+to understand and maintain.
 
 **R-031: Multi-line block: ONE quoted string with embedded
 newlines.** Multiple separate lines: one `printf '%s\n'` per line.
