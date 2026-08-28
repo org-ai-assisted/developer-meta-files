@@ -22,6 +22,9 @@ MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
 ## variables (sourced below) reassigns MYDIR; capture the dirs we need first.
 dmf_libexec_dir="${MYDIR}/../libexec/developer-meta-files"
+## Sibling binaries (e.g. dm-reproducible-buildinfo) -- must use this, NOT the
+## reassigned MYDIR, or the call resolves against help-steps and fails.
+dmf_bin_dir="${MYDIR}"
 
 # shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
 source "${dmf_libexec_dir}/source-tree-lib.bsh"
@@ -653,7 +656,7 @@ signatures_create() {
       local dm_target_item
       dm_target_item="${target_names[i]}"
       if [ -n "${dm_target_item}" ]; then
-         "${MYDIR}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
+         "${dmf_bin_dir}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
          sign_and_verify "${file_item}.dm-buildinfo"
       fi
    done
