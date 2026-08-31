@@ -1,0 +1,102 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+# shellcheck shell=bash
+
+## Decides whether a package needs a rebuild, from a manifest of source-content
+## hashes.
+
+## style-ok: no-strict -- sourced library.
+
+## Deterministic content hash of a package source tree. Detects an edit even
+## if it did not bump debian/changelog.
+dm_package_source_hash() {
+   local package_source_dir="$1"
+   ( cd -- "${package_source_dir}" 2>/dev/null || exit 1
+     {
+        ## Type, permission bits and path of every entry, sorted for
+        ## determinism.
+        find . -path './.git' -prune -o -printf '%y %m %p\0' | LC_ALL=C sort -z
+        ## Symlink targets.
+        find . -path './.git' -prune -o -type l -printf '%p -> %l\0' | LC_ALL=C sort -z
+        ## Regular-file content.
+        find . -path './.git' -prune -o -type f -print0 \
+           | LC_ALL=C sort -z \
+           | xargs -0 -r sha256sum
+     } | sha256sum | cut -d ' ' -f 1
+   ) || printf '%s\n' "nohash"
+}
+
+## Generate a per-codename source-hash manifest. Not shared across build slots.
+dm_source_hash_manifest_path() {
+   printf '%s\n' "${binary_build_folder_dist}/packages-build-status/source-hashes.${1}.txt"
+}
+
+## Manifest lines are written by dm_source_hash_record below as '<source_pkg> <hash>', one
+## space, never any other whitespace.
+
+## Look up the recorded source hash for a source package (empty if none).
+dm_source_hash_lookup() {
+   local manifest="$1" source_pkg="$2" line manifest_pkg manifest_hash
+   [ -f "${manifest}" ] || return 0
+   ## '|| [ -n "${line}" ]' so a final line with no trailing newline is still examined.
+   while IFS= read -r line || [ -n "${line}" ]; do
+      manifest_pkg="${line%% *}"
+      if [ "${manifest_pkg}" = "${source_pkg}" ]; then
+         printf '%s\n' "${line#* }"
+         return 0
+      fi
+   done < "${manifest}"
+   return 0
+}
+
+## Record/replace a source package's hash in the manifest (call after publishing).
+dm_source_hash_record() {
+   local manifest="$1" source_pkg="$2" hash="$3" tmp line manifest_pkg
+   mkdir --parents -- "$(dirname -- "${manifest}")"
+   tmp="$(mktemp)"
+   if [ -f "${manifest}" ]; then
+      while IFS= read -r line || [ -n "${line}" ]; do
+         manifest_pkg="${line%% *}"
+         if [ "${manifest_pkg}" = "${source_pkg}" ]; then
+            continue
+         fi
+         ## Echo the line VERBATIM rather than reassembling it from fields, so an entry this
+         ## function does not own is never reformatted.
+         printf '%s\n' "${line}"
+      done < "${manifest}" > "${tmp}"
+   fi
+   printf '%s\n' "${source_pkg} ${hash}" >> "${tmp}"
+   mv -- "${tmp}" "${manifest}"
+}
+
+## Decide whether a package source tree needs (re)building.
+##   dm_package_needs_rebuild <package_source_dir> <apt_codename>
+## Returns 0 (needs rebuild) when the source content differs from what was last
+## built or when nothing was ever recorded for it. Returns 1 (skip) only when
+## the recorded hash matches the current source hash.
+dm_package_needs_rebuild() {
+   local package_source_dir apt_codename
+   local source_pkg manifest current_hash stored_hash
+   package_source_dir="$1"
+   apt_codename="$2"
+
+   source_pkg="$(dpkg-parsechangelog --show-field Source --file "${package_source_dir}/debian/changelog")"
+
+   manifest="$(dm_source_hash_manifest_path "${apt_codename}")"
+   current_hash="$(dm_package_source_hash "${package_source_dir}")"
+   stored_hash="$(dm_source_hash_lookup "${manifest}" "${source_pkg}")"
+   ## 'nohash' is dm_package_source_hash's failure sentinel, which forces a
+   ## rebuild.
+   if [ "${current_hash}" = "nohash" ] || [ -z "${stored_hash}" ] || [ "${stored_hash}" != "${current_hash}" ]; then
+      true "INFO: rebuild ${source_pkg}: source content changed since last build (or first build, or hash failure)."
+      return 0
+   fi
+
+   true "INFO: skip ${source_pkg}: source unchanged since last build."
+   return 1
+}

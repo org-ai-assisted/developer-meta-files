@@ -7,6 +7,9 @@
 ## documentation only.
 # shellcheck disable=SC2317
 
+## style-ok: no-strict -- this is documentation, not code, thus the 'exit 0'
+## below. This would need a strict preamble if it ever becomes a real script.
+
 exit 0
 
 ###########################
@@ -45,9 +48,9 @@ TOR_USER="$(id -u debian-tor)"
 CLEARNET_USER="$(id -u clearnet)"
 ROOT_USER="$(id -u root)"
 
-printf '%s\n' "OK: TOR_USER: $TOR_USER"
-printf '%s\n' "OK: CLEARNET_USER: $CLEARNET_USER"
-printf '%s\n' "OK: ROOT_USER: $ROOT_USER"
+printf '%s\n' "OK: TOR_USER: ${TOR_USER}"
+printf '%s\n' "OK: CLEARNET_USER: ${CLEARNET_USER}"
+printf '%s\n' "OK: ROOT_USER: ${ROOT_USER}"
 
 ###########################
 ## interfaces
@@ -93,9 +96,9 @@ chmod -x /etc/dhcp/dhclient-enter-hooks.d/nodnsupdate
 ###########################
 
 printf '%s\n' 1 > /proc/sys/net/ipv4/ip_forward
-iptables -t nat -A POSTROUTING -o "$EXT_IF" -j MASQUERADE
-iptables -A FORWARD -i "$EXT_IF" -o "$INT_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -A FORWARD -i "$INT_IF" -o "$EXT_IF" -j ACCEPT
+iptables -t nat -A POSTROUTING -o "${EXT_IF}" -j MASQUERADE
+iptables -A FORWARD -i "${EXT_IF}" -o "${INT_IF}" -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i "${INT_IF}" -o "${EXT_IF}" -j ACCEPT
 
 systemctl --no-pager networking restart
 

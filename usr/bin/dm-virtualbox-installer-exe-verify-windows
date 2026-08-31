@@ -54,7 +54,62 @@ fi
 
 test -r "${selected_file_name}"
 
-osslsigncode verify -in "${selected_file_name}"
+## Verify, and if the tool's own CRL retrieval is what failed, retry with the
+## CRLs fetched here instead.
+##
+## osslsigncode's -CRLfile option wants a file in PEM format.
+##
+## TODO: For offline builds, don't we want the ability to provide the needed
+## files without having to download them afresh? This code seems to assume that
+## running cURL by ourselves will somehow fix a network fetch error, which
+## might be true if we have special proxy settings set (like in a Qubes
+## TemplateVM maybe?), but most of the time a failed verification will probably
+## be because there is no (working) network access, and this will not overcome
+## that. (We might want similar support for verifying Windows stuff offline in
+## derivative-maker/build-steps.d/1400_local-dependencies.)
+verify_output=""
+verify_status=0
+verify_output="$( osslsigncode verify -in "${selected_file_name}" 2>&1 )" || verify_status="$?"
+printf '%s\n' "${verify_output}"
+
+if [ ! "${verify_status}" = "0" ]; then
+   true "$0: first verify failed; retrying with explicitly fetched CRLs."
+   crl_pem_file="$(mktemp)"
+   crl_der_file="$(mktemp)"
+   crl_fetched=0
+   ## The failed run PRINTS every distribution point it tried, so the URLs come
+   ## from the file under test rather than being hardcoded -- they survive
+   ## certificate rotation.
+   while IFS= read -r crl_url; do
+      [ -n "${crl_url}" ] || continue
+      ## TODO: Use scurl here instead?
+      if ! curl --silent --show-error --location --max-time 60 \
+         --output "${crl_der_file}" -- "${crl_url}"; then
+         true "$0: could not fetch ${crl_url}"
+         continue
+      fi
+      ## Published as DER; -CRLfile requires PEM.
+      if openssl crl -inform DER -in "${crl_der_file}" -outform PEM \
+         >> "${crl_pem_file}" 2>/dev/null; then
+         crl_fetched=$(( crl_fetched + 1 ))
+      elif openssl crl -inform PEM -in "${crl_der_file}" -outform PEM \
+         >> "${crl_pem_file}" 2>/dev/null; then
+         crl_fetched=$(( crl_fetched + 1 ))
+      else
+         true "$0: ${crl_url} is neither DER nor PEM"
+      fi
+   done < <( printf '%s\n' "${verify_output}" \
+      | sed -n 's/^.*CRL distribution point: \(http[^ ]*\)$/\1/p' | sort -u )
+
+   if [ "${crl_fetched}" -eq 0 ]; then
+      safe-rm --force -- "${crl_pem_file}" "${crl_der_file}"
+      true "$0: ERROR: signature verification failed and no CRL could be retrieved."
+      exit 1
+   fi
+   true "$0: retrying verification with ${crl_fetched} CRL(s)."
+   osslsigncode verify -CRLfile "${crl_pem_file}" -in "${selected_file_name}"
+   safe-rm --force -- "${crl_pem_file}" "${crl_der_file}"
+fi
 
 sha256sum --ignore-missing --strict --check SHA256SUMS
 

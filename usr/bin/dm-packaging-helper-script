@@ -19,17 +19,17 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
-if [ "$MYDIR" = "/usr/bin" ]; then
+if [ "${MYDIR}" = "/usr/bin" ]; then
    true "INFO: Run from: /usr/bin"
    ## XXX: hardcoded path
-   derivative_maker_source_code_dir="$HOME/derivative-maker"
+   derivative_maker_source_code_dir="${HOME}/derivative-maker"
 else
    true "INFO: Run from: source code folder"
-   derivative_maker_source_code_dir="$(cd -- "$MYDIR" && cd -- "../../../../../" && pwd)"
+   derivative_maker_source_code_dir="$(cd -- "${MYDIR}" && cd -- "../../../../../" && pwd)"
 fi
 
 ## required by: make-helper-one.bsh
-cd -- "$derivative_maker_source_code_dir"
+cd -- "${derivative_maker_source_code_dir}"
 
 source "${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts/usr/libexec/helper-scripts/get_colors.sh"
 source "${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts/usr/libexec/helper-scripts/has.sh"
@@ -105,8 +105,8 @@ check_prerequisites() {
       exit 1
    fi
 
-   [ "${derivative_maker_source_code_dir}" = "$HOME/derivative-maker" ] || {
-      printf '%s\n' "WARNING: derivative_maker_source_code_dir '${derivative_maker_source_code_dir}' is not located at '$HOME/derivative-maker'. The script may break."
+   [ "${derivative_maker_source_code_dir}" = "${HOME}/derivative-maker" ] || {
+      printf '%s\n' "WARNING: derivative_maker_source_code_dir '${derivative_maker_source_code_dir}' is not located at '${HOME}/derivative-maker'. The script may break."
    }
 
    [ -d "${derivative_binary_dir}" ] || {
@@ -126,7 +126,8 @@ prepare_system() {
 }
 
 ## Shows debugging information for all non-volatile global variables.
-## TODO Make sure this is up-to-date!
+## REMINDER: keep this list in sync with the non-volatile globals as they
+## change.
 show_debug_variable_info() {
    local library_item
 
@@ -167,18 +168,14 @@ commit_filter() {
 
    commit_msg_short="${commit_msg_short,,}"
 
-   if printf '%s\n' "${commit_msg_short}" | grep --ignore-case --quiet -- 'Merge remote-tracking branch' ; then
-      set -x
-      return 1
-   fi
-   if printf '%s\n' "${commit_msg_short}" | grep --ignore-case --quiet -- 'Merge pull request' ; then
-      set -x
-      return 1
-   fi
-   if printf '%s\n' "${commit_msg_short}" | grep --ignore-case --quiet -- 'Merge branch' ; then
-      set -x
-      return 1
-   fi
+   ## 'commit_msg_short' is already lowercased above, so we don't need grep for
+   ## this.
+   case "${commit_msg_short}" in
+      *"merge remote-tracking branch"*|*"merge pull request"*|*"merge branch"*)
+         set -x
+         return 1
+         ;;
+   esac
 
    for text_any_case in \
       'add debian install file (generated using "genmkfile debinstfile")' \
@@ -495,14 +492,14 @@ reset_batch_meta_globals() {
    batch_meta_debian_control_web_link=''
    batch_meta_file_name_without_reponame=''
    batch_meta_file_web_link=''
-   batch_meta_gateway_only='n'
-   batch_meta_installed_by_default='y'
-   batch_meta_non_qubes_whonix_only='n'
+   batch_meta_gateway_only='false'
+   batch_meta_installed_by_default='true'
+   batch_meta_non_qubes_whonix_only='false'
    batch_meta_project_list=()
-   batch_meta_qubes_whonix_only='n'
+   batch_meta_qubes_whonix_only='false'
    batch_meta_relative_file_name=''
    batch_meta_repo_web_link=''
-   batch_meta_workstation_only='n'
+   batch_meta_workstation_only='false'
    unset batch_meta_file_header_done_list
    ## `=()` keeps the array marked "set" for set -o nounset; bare
    ## `declare -A -g name` would leave it unset and any `${name[@]}`
@@ -519,7 +516,7 @@ is_changelog_bump_commit() {
 }
 
 dry_run_or_run() {
-   if [ "${batch_meta_dry_run}" = "y" ]; then
+   if [ "${batch_meta_dry_run}" = "true" ]; then
       ## WOULD goes to stderr so it survives `>/dev/null` on the
       ## caller (needed when wrapping commands like `tee` that echo
       ## their input on stdout in live mode).
@@ -560,22 +557,22 @@ extract_description_from_debian_control() {
       exit 1
    fi
 
-   description_found='n'
-   headline_written='n'
+   description_found='false'
+   headline_written='false'
 
    while IFS= read -r line; do
       read -r first_word _ <<< "${line}"
       if [ "${first_word}" = 'Description:' ]; then
-         description_found='y'
-      elif [ "${line:0:1}" != ' ' ] && [ "${description_found}" = 'y' ]; then
+         description_found='true'
+      elif [ "${line:0:1}" != ' ' ] && [ "${description_found}" = 'true' ]; then
          break
       fi
 
-      if [ "${description_found}" = 'y' ]; then
+      if [ "${description_found}" = 'true' ]; then
          if [ -z "${line}" ]; then
             break;
          fi
-         if [ "${headline_written}" = 'n' ]; then
+         if [ "${headline_written}" = 'false' ]; then
             headline="$(awk -F':' '{ print $2 }' <<< "${line}")"
             ## Debian policy 5.6.13 mandates exactly one space between
             ## 'Description:' and the synopsis, so the strip below is
@@ -588,7 +585,7 @@ extract_description_from_debian_control() {
             headline_template="${headline_template//'XXX_REPLACE_ME_XXX'/"${headline}"}"
             dry_run_or_run append "${target_file}" "${headline_template}" >/dev/null
             dry_run_or_run append "${target_file}" "" >/dev/null
-            headline_written='y'
+            headline_written='true'
             continue
          fi
          if [ "${line}" = ' .' ]; then
@@ -725,18 +722,18 @@ internal_descr_writer() {
             exit 1
          fi
 
-         if ! [ "${batch_meta_file_header_done_list["${batch_meta_relative_file_name}_${batch_current_package_reponame}_${category}_${project}"]:-}" = 'y' ]; then
+         if ! [ "${batch_meta_file_header_done_list["${batch_meta_relative_file_name}_${batch_current_package_reponame}_${category}_${project}"]:-}" = 'true' ]; then
             dry_run_or_run append "${description_file}" "=== ${batch_meta_file_name_without_reponame} ===" >/dev/null
             dry_run_or_run append "${description_file}" "" >/dev/null
             dry_run_or_run append "${description_file}" "* [${batch_meta_file_web_link} ${batch_meta_file_name_without_reponame}]" >/dev/null
-            [ "${batch_meta_gateway_only}" = 'y' ] && dry_run_or_run append "${description_file}" '* gateway only<!--gateway-only-->' >/dev/null
-            [ "${batch_meta_workstation_only}" = 'y' ] && dry_run_or_run append "${description_file}" '* workstation only<!--workstation-only-->' >/dev/null
-            [ "${batch_meta_non_qubes_whonix_only}" = 'y' ] && dry_run_or_run append "${description_file}" '* Non-Qubes-Whonix only' >/dev/null
-            [ "${batch_meta_qubes_whonix_only}" = 'y' ] && dry_run_or_run append "${description_file}" '* Qubes-Whonix only' >/dev/null
-            [ "${batch_meta_installed_by_default}" = 'n' ] && dry_run_or_run append "${description_file}" '* Not installed by default.' >/dev/null
+            [ "${batch_meta_gateway_only}" = 'true' ] && dry_run_or_run append "${description_file}" '* gateway only<!--gateway-only-->' >/dev/null
+            [ "${batch_meta_workstation_only}" = 'true' ] && dry_run_or_run append "${description_file}" '* workstation only<!--workstation-only-->' >/dev/null
+            [ "${batch_meta_non_qubes_whonix_only}" = 'true' ] && dry_run_or_run append "${description_file}" '* Non-Qubes-Whonix only' >/dev/null
+            [ "${batch_meta_qubes_whonix_only}" = 'true' ] && dry_run_or_run append "${description_file}" '* Qubes-Whonix only' >/dev/null
+            [ "${batch_meta_installed_by_default}" = 'false' ] && dry_run_or_run append "${description_file}" '* Not installed by default.' >/dev/null
             dry_run_or_run append "${description_file}" "" >/dev/null
 
-            batch_meta_file_header_done_list["${batch_meta_relative_file_name}_${batch_current_package_reponame}_${category}_${project}"]='y'
+            batch_meta_file_header_done_list["${batch_meta_relative_file_name}_${batch_current_package_reponame}_${category}_${project}"]='true'
          fi
 
          dry_run_or_run append "${description_file}" "$*" >/dev/null
@@ -773,14 +770,14 @@ get_package_documentation_info_list() {
          continue
       fi
       file_info="$(str_replace '.mediawiki' '' <<< "${file_info}")"
-      info_match_found='n'
+      info_match_found='false'
       for info_from_list in "${info_list[@]}"; do
          if [ "${file_info}" = "${info_from_list}" ]; then
-            info_match_found='y'
+            info_match_found='true'
             break
          fi
       done
-      if [ "${info_match_found}" = 'n' ]; then
+      if [ "${info_match_found}" = 'false' ]; then
          info_list+=( "${file_info}" )
          printf '%s\n' "${file_info}"
       fi
@@ -1022,8 +1019,8 @@ pkg_readme_creator_do() {
       readme_file='README.md'
    fi
 
-   description_found='n'
-   headline_written='n'
+   description_found='false'
+   headline_written='false'
 
    dry_run_or_run safe-rm --force -- "${readme_file}"
 
@@ -1083,9 +1080,9 @@ pkg_descr_creator() {
       'README.md'
    )
 
-   if [ "${batch_func_init_done}" = 'n' ]; then
+   if [ "${batch_func_init_done}" = 'false' ]; then
       dry_run_or_run safe-rm -f -- "${package_documentation_dir}"/*.mediawiki
-      batch_func_init_done='y'
+      batch_func_init_done='true'
    fi
 
    readarray -t file_list < <(find "${batch_current_package_path}" -type f -not -iwholename '*.git*')
@@ -1098,14 +1095,14 @@ pkg_descr_creator() {
       true "file_name: ${file_name}"
 
       base_name="${file_name##*/}"
-      do_skip_file='n'
+      do_skip_file='false'
       for skip_file_name in "${skip_file_list[@]}"; do
          if [ "${skip_file_name}" = "${base_name}" ]; then
-            do_skip_file='y'
+            do_skip_file='true'
             break
          fi
       done
-      if [ "${do_skip_file}" = 'y' ]; then
+      if [ "${do_skip_file}" = 'true' ]; then
          continue
       fi
 
@@ -1122,8 +1119,8 @@ pkg_descr_creator() {
       batch_meta_debian_control_web_link="https://github.com/${batch_current_project_name}/${batch_current_package_reponame}/blob/master/debian/control"
       batch_meta_file_web_link="https://github.com/${batch_current_project_name}/${batch_current_package_reponame}/blob/master${batch_meta_file_name_without_reponame}"
 
-      in_meta_section='n'
-      description_found='n'
+      in_meta_section='false'
+      description_found='false'
       while read -r line; do
          true "line: ${line}"
          read -r first_word second_word third_word _ <<< "${line}" || true
@@ -1132,12 +1129,12 @@ pkg_descr_creator() {
             true "second_word: '${second_word}'"
             if [ "${second_word}" = 'meta' ]; then
                if [ "${third_word}" = 'start' ]; then
-                  in_meta_section='y'
+                  in_meta_section='true'
                   printf '%s\n' '##################################################'
                   printf '%s\n' "${file_name}"
                   continue
                elif [ "${third_word}" = 'end' ]; then
-                  in_meta_section='n'
+                  in_meta_section='false'
                   break
                else
                   printf '%s\n' "${red}${bold}FATAL ERROR: Unexpected meta subcommand third_word '${third_word}'!${reset}"
@@ -1145,7 +1142,7 @@ pkg_descr_creator() {
                fi
             fi
 
-            if [ "${in_meta_section}" = 'y' ]; then
+            if [ "${in_meta_section}" = 'true' ]; then
                if [ "${second_word}" = 'project' ]; then
                   ## TODO: Consider rewriting this to handle a comma-separated
                   ## list of projects
@@ -1158,27 +1155,27 @@ pkg_descr_creator() {
                   continue
                elif [ "${second_word}" = 'non_qubes_whonix_only' ]; then
                   if [ "${third_word}" = 'yes' ]; then
-                     batch_meta_non_qubes_whonix_only='y'
+                     batch_meta_non_qubes_whonix_only='true'
                      continue
                   fi
                elif [ "${second_word}" = 'qubes_whonix_only' ]; then
                   if [ "${third_word}" = 'yes' ]; then
-                     batch_meta_qubes_whonix_only='y'
+                     batch_meta_qubes_whonix_only='true'
                      continue
                   fi
                elif [ "${second_word}" = 'gateway_only' ]; then
                   if [ "${third_word}" = 'yes' ]; then
-                     batch_meta_gateway_only='y'
+                     batch_meta_gateway_only='true'
                      continue
                   fi
                elif [ "${second_word}" = 'workstation_only' ]; then
                   if [ "${third_word}" = 'yes' ]; then
-                     batch_meta_workstation_only='y'
+                     batch_meta_workstation_only='true'
                      continue
                   fi
                elif [ "${second_word}" = 'installed_by_default' ]; then
                   if [ "${third_word}" = 'no' ]; then
-                     batch_meta_installed_by_default='n'
+                     batch_meta_installed_by_default='false'
                      continue
                   fi
                elif [ "${second_word}" = 'category' ]; then
@@ -1192,7 +1189,7 @@ pkg_descr_creator() {
                   printf '%s\n' "batch_meta_category_list: '${batch_meta_category_list[*]}'"
                   continue
                elif [ "${second_word}" = 'description' ]; then
-                  description_found='y'
+                  description_found='true'
                   continue
                else
                   ## this looks like a metadata field line and we're in the
@@ -1206,11 +1203,11 @@ pkg_descr_creator() {
             fi
          fi
 
-         if [ "${in_meta_section}" = 'y' ]; then
+         if [ "${in_meta_section}" = 'true' ]; then
             ## At this point, we're in the meta section, but the current line
             ## doesn't look like a metadata field line. Usually this means
             ## that we're in a description zone.
-            if [ "${description_found}" = 'y' ]; then
+            if [ "${description_found}" = 'true' ]; then
                if [ "${line}" = '' ]; then
                   internal_descr_writer ''
                   continue
@@ -1289,9 +1286,9 @@ pkg_descr_merger() {
 
             merged_file="${package_documentation_dir}/${machine}_${category}_${project}.merged.mediawiki"
 
-            if ! [ "${merge_file_reset_list["${merged_file}"]:-}" = 'y' ] ; then
+            if ! [ "${merge_file_reset_list["${merged_file}"]:-}" = 'true' ] ; then
                dry_run_or_run safe-rm -f -- "${merged_file}"
-               merge_file_reset_list["${merged_file}"]='y'
+               merge_file_reset_list["${merged_file}"]='true'
             fi
 
             cat -- "${file_name_full_path}" | dry_run_or_run tee --append -- "${merged_file}" >/dev/null
@@ -1388,9 +1385,6 @@ pkg_git_remotes_add() {
    dry_run_or_run git remote set-url "${DM_GITHUB_MIRROR}" \
       "git@github.com:${DM_GITHUB_MIRROR}/${batch_current_package_reponame}.git" || true
 
-   ## TODO: remove
-   dry_run_or_run git remote rm     adrelanos || true
-
    dry_run_or_run git remote add     github-adrelanos         "git@github.com:adrelanos/${batch_current_package_reponame}.git" || true
    dry_run_or_run git remote set-url github-adrelanos         "git@github.com:adrelanos/${batch_current_package_reponame}.git" || true
 
@@ -1429,11 +1423,11 @@ pkg_git_check_current_branch() {
    local current_branch
    current_branch="$(git branch --show-current)"
 
-   if [ "$current_branch" = "master" ]; then
+   if [ "${current_branch}" = "master" ]; then
       return 0
    fi
 
-   printf '%s\n' "unexpected branch! batch_current_package_reponame: '$batch_current_package_reponame' | current_branch: '$current_branch' | expected: 'master'"
+   printf '%s\n' "unexpected branch! batch_current_package_reponame: '${batch_current_package_reponame}' | current_branch: '${current_branch}' | expected: 'master'"
    return 1
 }
 
@@ -1525,12 +1519,6 @@ pkg_git_diff_and_merge_branch_bot_master() {
 }
 
 pkg_git_diff_and_merge_branch_bot_ai() {
-   ## TODO: assigned to arraybolt3
-   repo_skip 'derivative-maker' || return 0
-   repo_skip 'security-misc' || return 0
-   repo_skip 'developer-meta-files' || return 0
-   repo_skip 'privleap' || return 0
-
    pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/ai"
 }
 
@@ -1663,7 +1651,7 @@ pkg_profile_d_zsh_creator() {
       basename_symlink_without_file_extension="${basename_symlink_with_file_extension%.*}"
       package_links_file="debian/${batch_current_package_reponame}.links"
       z_profile_d_symlink="/etc/zprofile.d/${basename_symlink_without_file_extension}.zsh"
-      symlink_config_entry="$profile_d_symlink $z_profile_d_symlink"
+      symlink_config_entry="${profile_d_symlink} ${z_profile_d_symlink}"
       if [ -f "${package_links_file}" ]; then
          if grep --quiet "${symlink_config_entry}" "${package_links_file}" ; then
             true 'already exists.'
@@ -1915,12 +1903,12 @@ pkg_packaging_files_diff() {
 
    compare_with_full_path="$(realpath "../../${packaging_files_diff_template_package_relative_path}")"
 
-   if [ "${batch_func_init_done}" = 'n' ]; then
+   if [ "${batch_func_init_done}" = 'false' ]; then
       if ! [ -f "${compare_with_full_path}/COPYING" ]; then
          printf '%s\n' "${red}${bold}FATAL ERROR: '${compare_with_full_path}/COPYING' does not exist!"
          exit 1
       fi
-      batch_func_init_done='y'
+      batch_func_init_done='true'
    fi
 
    ## Don't bother looking for CONTRIBUTING.md for the following list of
@@ -1932,14 +1920,14 @@ pkg_packaging_files_diff() {
       'kloak'
    )
 
-   package_lacks_contributing_md='n'
+   package_lacks_contributing_md='false'
    for contributing_md_absent_package in "${contributing_md_absent_package_list[@]}"; do
       if [ "${batch_current_package_reponame}" = "${contributing_md_absent_package}" ]; then
-         package_lacks_contributing_md='y'
+         package_lacks_contributing_md='true'
          break
       fi
    done
-   if ! [ "${package_lacks_contributing_md}" = 'y' ]; then
+   if ! [ "${package_lacks_contributing_md}" = 'true' ]; then
       if ! [ -f "${batch_current_package_path}/CONTRIBUTING.md" ]; then
          printf '%s\n' "${red}${bold}FATAL ERROR: Package '${batch_current_package_reponame}' is missing a CONTRIBUTING.md file!${reset}"
          exit 1
@@ -2183,7 +2171,7 @@ pkg_git_debinstfile() {
    dry_run_or_run genmkfile debinstfile
 
    msg='add debian install file (generated using "genmkfile debinstfile")'
-   printf '%s\n' "PWD: '$PWD'"
+   printf '%s\n' "PWD: '${PWD}'"
    dry_run_or_run git add -- "debian/${batch_current_package_reponame}.install" || true
    dry_run_or_run git commit -m "${msg}" || true
    dry_run_or_run git status
@@ -2263,7 +2251,7 @@ pkg_git_diff_and_commit() {
    #read -r temp
 
    dry_run_or_run git add -A
-   ## TODO
+   ## REMINDER: Change the commit message here as appropriate.
    dry_run_or_run git commit -m "typo"
 
    if nothing_to_commit; then
@@ -2321,9 +2309,9 @@ pkg_git_submodule_file_writer() {
 
    repo_skip 'derivative-maker' || return 0
 
-   if [ "${batch_func_init_done}" = 'n' ]; then
+   if [ "${batch_func_init_done}" = 'false' ]; then
       dry_run_or_run safe-rm -- "${derivative_maker_source_code_dir}/.gitmodules"
-      batch_func_init_done='y'
+      batch_func_init_done='true'
       dry_run_or_run append "${derivative_maker_source_code_dir}/.gitmodules" '## This file is autogenerated by:
 ## autogenerated by dm-packaging-helper-script function pkg_git_submodule_file_writer
 
@@ -2374,7 +2362,7 @@ pkg_git_submodule_file_writer() {
    dry_run_or_run append "${derivative_maker_source_code_dir}/.gitmodules" "\
 [submodule \"${batch_current_package_reponame}\"]
         path = packages/${batch_current_project_name,,}/${batch_current_package_reponame}
-$url" >/dev/null
+${url}" >/dev/null
 
    dry_run_or_run append "${derivative_maker_source_code_dir}/.gitmodules" "" >/dev/null
 }
@@ -2386,12 +2374,12 @@ pkg_git_packages_git_log_writer() {
       committer_person commit_msg_full credit_msg commit_msg_line \
       commit_first_line temp_folder_path
 
-   if [ "${batch_func_init_done}" = 'n' ]; then
+   if [ "${batch_func_init_done}" = 'false' ]; then
       post_run_hook_list+=( 'generate_announcement' )
       dry_run_or_run safe-rm -f -- "${announcements_drafts_dir}/derivative-maker_giant_git_log.txt"
       dry_run_or_run safe-rm -f -- "${announcements_drafts_dir}/kicksecure_giant_git_log.txt"
       dry_run_or_run safe-rm -f -- "${announcements_drafts_dir}/whonix_giant_git_log.txt"
-      batch_func_init_done='y'
+      batch_func_init_done='true'
    fi
 
    ## Strip the source-code directory prefix from $PWD so we get a
@@ -2404,19 +2392,19 @@ pkg_git_packages_git_log_writer() {
       pushd -- .. >/dev/null
       ## Use refs/tags/ to avoid name collision with same-named branches.
       if package_version_old="$(git rev-parse "refs/tags/${derivative_version_old_main}:${temp_folder_path}")" ; then
-         new_package='n'
+         new_package='false'
       else
-         new_package='y'
+         new_package='true'
       fi
       package_version_new="$(git rev-parse "refs/tags/${derivative_version_new_main}:${temp_folder_path}")"
       popd >/dev/null
    else
-      new_package='n'
+      new_package='false'
       package_version_old="${derivative_version_old_main}"
       package_version_new="${derivative_version_new_main}"
    fi
 
-   if [ "${new_package}" = 'n' ]; then
+   if [ "${new_package}" = 'false' ]; then
       if [ "${package_version_old}" = "${package_version_new}" ]; then
          true "skipping because package_version_old = package_version_new"
          return 0
@@ -2427,16 +2415,16 @@ pkg_git_packages_git_log_writer() {
       commit_msg_short_list="$(git --no-pager log --pretty='%H %s')"
    fi
 
-   if [ "$commit_msg_short_list" = "" ]; then
+   if [ "${commit_msg_short_list}" = "" ]; then
       true "${batch_current_package_reponame}: commit_msg_short_list empty?"
       exit 1
    fi
 
-   package_header_written='n'
+   package_header_written='false'
 
    while read -r commit_hash commit_msg_short ; do
-      if [ "$commit_msg_short" = "" ]; then
-         true "${batch_current_package_reponame}: commit_hash: $commit_hash | commit_msg_short empty"
+      if [ "${commit_msg_short}" = "" ]; then
+         true "${batch_current_package_reponame}: commit_hash: ${commit_hash} | commit_msg_short empty"
          continue
       fi
       if ! commit_filter "${commit_msg_short}" ; then
@@ -2490,27 +2478,27 @@ pkg_git_packages_git_log_writer() {
          credit_msg=" (Thanks to ${committer_person}!)"
       fi
 
-      if [ "${package_header_written}" = 'n' ]; then
+      if [ "${package_header_written}" = 'false' ]; then
          dry_run_or_run append "${batch_current_package_changelog}" "* ${batch_current_package_reponame}:" >/dev/null
-         package_header_written='y'
+         package_header_written='true'
       fi
 
       ## Emit the commit subject (first line) as the bullet, carrying the
       ## contributor credit, then each remaining body line indented beneath it
       ## so the message keeps its original line breaks. IFS= keeps leading
       ## indentation of body lines (e.g. code blocks) intact.
-      commit_first_line='y'
+      commit_first_line='true'
       while IFS= read -r commit_msg_line ; do
-         if [ "${commit_first_line}" = 'y' ]; then
+         if [ "${commit_first_line}" = 'true' ]; then
             dry_run_or_run append "${batch_current_package_changelog}" "  * ${commit_msg_line}${credit_msg}" >/dev/null
-            commit_first_line='n'
+            commit_first_line='false'
          else
             dry_run_or_run append "${batch_current_package_changelog}" "    ${commit_msg_line}" >/dev/null
          fi
       done <<< "${commit_msg_full}"
    done <<< "${commit_msg_short_list}"
 
-   if [ "${package_header_written}" = 'y' ]; then
+   if [ "${package_header_written}" = 'true' ]; then
       ## Add newline but only if there were actually changelog lines.
       dry_run_or_run append "${batch_current_package_changelog}" "" >/dev/null
    fi
@@ -2586,7 +2574,7 @@ pkg_git_qubes_template_sync_trixie() {
    ## live 'genmkfile git-tag-verify' below running against master HEAD
    ## (because the switch above was dry-runned) and reporting a
    ## misleading "trixie" state. Print one WOULD line instead.
-   if [ "${batch_meta_dry_run}" = "y" ]; then
+   if [ "${batch_meta_dry_run}" = "true" ]; then
       log notice "${prefix} [DRY-RUN] WOULD: switch to trixie, ff-merge ${master_head}, sign tag if absent, switch back"
       return 0
    fi
@@ -2611,7 +2599,7 @@ pkg_git_qubes_template_sync_trixie() {
 pkg_need_version_bump_show() {
    local changelog_version source_pkg reprepro_version reprepro_version_source repo_query_output
 
-   batch_current_package_needs_version_bump='n'
+   batch_current_package_needs_version_bump='false'
 
    repo_skip 'derivative-maker' || return 0
 
@@ -2633,7 +2621,7 @@ pkg_need_version_bump_show() {
       if genmkfile git-verify &>/dev/null; then
          return 0
       fi
-      batch_current_package_needs_version_bump='y'
+      batch_current_package_needs_version_bump='true'
       printf '%s\n' "${bold}${batch_current_package_reponame}${reset}"
       return 0
    fi
@@ -2643,7 +2631,7 @@ pkg_need_version_bump_show() {
    ## in pkg_upstream_and_debian_changelog_bump is also force-aware,
    ## so a forced run with last commit == "bumped changelog version"
    ## bumps to the next version as expected.
-   if [ "${batch_meta_force_version_bump:-n}" = "y" ]; then
+   if [ "${batch_meta_force_version_bump:-false}" = "true" ]; then
       true "${batch_current_package_reponame}: forced version bump - skipping reprepro version check."
    else
       changelog_version="$(dpkg-parsechangelog --show-field Version)"
@@ -2657,7 +2645,7 @@ pkg_need_version_bump_show() {
       ## local|main|source: sdwdate 1.2.3-1
 
       if [ -z "${repo_query_output}" ]; then
-         true "${red}${bold}ERROR:${reset} changelog ${changelog_version} vs repo_query_output $repo_query_output is empty"
+         true "${red}${bold}ERROR:${reset} changelog ${changelog_version} vs repo_query_output ${repo_query_output} is empty"
          return 1
       fi
 
@@ -2694,7 +2682,7 @@ pkg_need_version_bump_show() {
    ## Verify that the commit prior the next changelog commit is signed.
    genmkfile git-commit-verify >/dev/null
 
-   batch_current_package_needs_version_bump='y'
+   batch_current_package_needs_version_bump='true'
 
    printf '%s\n' "${batch_current_package_reponame}"
    return 0
@@ -2716,7 +2704,7 @@ pkg_upstream_and_debian_changelog_bump() {
    ## Forced re-bump bypasses the idempotency guard below: a forced
    ## run with last commit == "bumped changelog version" should bump
    ## to the next version, not skip.
-   if [ "${batch_meta_force_version_bump:-n}" = "y" ]; then
+   if [ "${batch_meta_force_version_bump:-false}" = "true" ]; then
       true "${batch_current_package_reponame}: forced version bump - bumping regardless of last commit."
    elif is_changelog_bump_commit; then
       ## Idempotency for resumed interrupted builds: if the last
@@ -2729,19 +2717,14 @@ pkg_upstream_and_debian_changelog_bump() {
       return 0
    fi
 
-   ## version_numbers_by_upstream is set by make-helper-overrides.bsh by
-   ## individual packages.
-   printf '%s\n' "version_numbers_by_upstream: '${version_numbers_by_upstream:-}'"
-
-   ## TODO:
-   ## Not the cleanest way. Other variables might be unwanted.
+   ## version_numbers_by_upstream is set by a package's make-helper-overrides.bsh.
    local version_numbers_by_upstream
-
-   ## Complex, slow.
-   #make_init ## includes make_get_variables
-   ## sets maybe: version_numbers_by_upstream
-   make_source_overrides_file
-   make_source_overrides_folder
+   version_numbers_by_upstream="$(
+      make_source_overrides_file 1>&2
+      make_source_overrides_folder 1>&2
+      printf '%s' "${version_numbers_by_upstream:-}"
+   )"
+   printf '%s\n' "version_numbers_by_upstream: '${version_numbers_by_upstream:-}'"
 
    ## If version_numbers_by_upstream=true then 'genmkfile deb-uachl-bumpup-major'
    ## would be bumping only the package revision number. Not the version number.
@@ -2770,7 +2753,7 @@ pkg_need_version_bump_do() {
    ## sets: batch_current_package_needs_version_bump
    pkg_need_version_bump_show
 
-   if [ ! "${batch_current_package_needs_version_bump}" = 'y' ]; then
+   if [ ! "${batch_current_package_needs_version_bump}" = 'true' ]; then
       return 0
    fi
 
@@ -2824,7 +2807,7 @@ pkg_need_version_bump_and_pkg_build_and_reprepro_add() {
    ## sets: batch_current_package_needs_version_bump
    pkg_need_version_bump_show
 
-   if [ ! "${batch_current_package_needs_version_bump}" = 'y' ]; then
+   if [ ! "${batch_current_package_needs_version_bump}" = 'true' ]; then
       return 0
    fi
 
@@ -2839,7 +2822,7 @@ pkg_need_version_bump_and_pkg_build_and_reprepro_add() {
    ## sets: needs_version_bump
    pkg_need_version_bump_do
 
-   if [ ! "${batch_current_package_needs_version_bump}" = 'y' ]; then
+   if [ ! "${batch_current_package_needs_version_bump}" = 'true' ]; then
       printf '%s\n' "${red}${bold}FATAL ERROR: batch_current_package_needs_version_bump before true but now not!?${reset}"
       exit 1
    fi
@@ -2967,7 +2950,7 @@ generate_announcement() {
       temp="$(str_replace "-testers-only" "" <<< "${temp}")"
       temp="$(str_replace "-stable-only" "" <<< "${temp}")"
 
-      derivative_version_new_main_short="$temp"
+      derivative_version_new_main_short="${temp}"
 
       if [ "${derivative_release_type}" = 'testers' ]; then
          release_type_long='Testers Wanted'
@@ -3111,12 +3094,12 @@ parse_args() {
    parsed_repo=''
    parsed_target=''
    parsed_args=()
-   parsed_dry_run='n'
+   parsed_dry_run='false'
 
    while [ $# -gt 0 ]; do
       case "${1}" in
          --dry-run)
-            parsed_dry_run='y'
+            parsed_dry_run='true'
             shift
             ;;
          --batch|--no-batch)
@@ -3162,7 +3145,7 @@ main() {
 
    parse_args "$@"
    batch_meta_dry_run="${parsed_dry_run}"
-   if [ "${batch_meta_dry_run}" = "y" ]; then
+   if [ "${batch_meta_dry_run}" = "true" ]; then
       ## function 'log_run' honors variable '$dry_run'
       dry_run=1
       export dry_run
@@ -3238,7 +3221,7 @@ main() {
 ## . END Main logic }
 
 ## Global tunables, adjust these as necessary
-derivative_binary_dir="$HOME/derivative-binary"
+derivative_binary_dir="${HOME}/derivative-binary"
 export make_git_tag_push_cache_dir="${derivative_binary_dir}/git-tag-push-cache"
 
 derivative_name_list=( 'kicksecure' 'whonix' )
@@ -3256,30 +3239,28 @@ make_cowbuilder_dist_dir="${derivative_maker_source_code_dir}/genmkfile-packages
 package_documentation_dir="${derivative_binary_dir}/package_documentation"
 
 ## Global state variables, do not adjust
-## FIXME: All of these 'y' and 'n' booleans should be replaced with
-## standard 'true' and 'false' string booleans.
 batch_current_package_changelog=''
-batch_current_package_needs_version_bump='n'
+batch_current_package_needs_version_bump='false'
 batch_current_package_path=''
 batch_current_package_reponame=''
 batch_current_project_name=''
 batch_current_project_website=''
 batch_current_package_remote_list=()
-batch_func_init_done='n'
+batch_func_init_done='false'
 batch_meta_category_list=()
 batch_meta_debian_control_web_link=''
 batch_meta_file_name_without_reponame=''
 batch_meta_file_web_link=''
-batch_meta_gateway_only='n'
-batch_meta_installed_by_default='y' # yes, this defaults to 'y'
-batch_meta_non_qubes_whonix_only='n'
+batch_meta_gateway_only='false'
+batch_meta_installed_by_default='true' # yes, this defaults to 'true'
+batch_meta_non_qubes_whonix_only='false'
 batch_meta_project_list=()
-batch_meta_qubes_whonix_only='n'
+batch_meta_qubes_whonix_only='false'
 batch_meta_relative_file_name=''
 batch_meta_repo_web_link=''
-batch_meta_workstation_only='n'
-batch_meta_force_version_bump='n'
-batch_meta_dry_run='n'
+batch_meta_workstation_only='false'
+batch_meta_force_version_bump='false'
+batch_meta_dry_run='false'
 
 declare -A -g batch_meta_file_header_done_list=()
 batch_run_counter=0

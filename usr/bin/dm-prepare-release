@@ -182,6 +182,9 @@ libvirt_compress() {
    if [ "${vm_multiple}" = "" ]; then
       error "Variable vm_multiple is unset!"
    fi
+   if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+      error "SOURCE_DATE_EPOCH is unset; refusing to build a libvirt archive with a non-reproducible member mtime."
+   fi
 
    legal_files_copy
 
@@ -255,7 +258,8 @@ libvirt_compress() {
    #pv "${dist_binary_build_folder}/Whonix-Gateway-${dist_build_version}.qcow2" | gzip -n - > "${dist_binary_build_folder}/Whonix-Gateway-${dist_build_version}.libvirt.tar.gz"
    #pv "${dist_binary_build_folder}/Whonix-Workstation-${dist_build_version}.qcow2" | gzip -n - > "${dist_binary_build_folder}/Whonix-Workstation-${dist_build_version}.libvirt.tar.gz"
 
-   ## Using `tar` with `--xz` and `--mtime="2014-05-06 00:00:00"`:
+   ## Using `tar` with a normalized owner/mode/order and a pinned mtime
+   ## (SOURCE_DATE_EPOCH, see the tar call below):
    ## - will result in a deterministic archive. We do not have deterministic
    ##   images yet in the first place (but at least verifiable ones), but
    ##   hopefully some day. Does not hurt to already use tar options that do
@@ -353,18 +357,30 @@ libvirt_compress() {
       test "${test_operator}" "${file_name_item_base_name}"
    done
 
-   ## TODO: add progress meter (using `pv`?)
+   local -a member_paths=()
+   local member_item
+   for member_item in "${filelist_base_name[@]}"; do
+      member_paths+=( "${dist_binary_build_folder}/${member_item}" )
+   done
+   local input_size
+   ## Intentionally not using --apparent-size, since tar will not emit as many
+   ## bytes for sparse files as their apparent size would suggest.
+   input_size="$(du --summarize --total --block-size=1 -- "${member_paths[@]}" \
+      | tail --lines=1 \
+      | cut --fields=1)"
    tar \
       --create \
       --owner=0 --group=0 --numeric-owner \
       --mode=go=rX,u+rw,a-s \
       --sort=name \
       --sparse \
-      --mtime='2015-10-21 00:00Z' \
-      --xz \
+      --mtime="@${SOURCE_DATE_EPOCH}" \
       --directory="${dist_binary_build_folder}" \
-      --file "$(basename -- "${xz_archive}")" \
-      "${filelist_base_name[@]}"
+      --file - \
+      "${filelist_base_name[@]}" \
+      | pv --size="${input_size}" \
+      | xz \
+      > "$(basename -- "${xz_archive}")"
 
    strip-nondeterminism "${xz_archive}"
 

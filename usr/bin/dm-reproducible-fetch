@@ -5,54 +5,13 @@
 
 ## AI-Assisted
 
-## Download a PUBLISHED image plus its reproducibility sidecars (the signed
-## '.dm-buildinfo' and '.sha512sums' and their signatures), all siblings in the
-## same remote folder, into a local directory. The image is UNTRUSTED here --
-## it is only fetched; nothing is executed, booted, or verified. Verification +
-## rebuild + compare is the job of the separate 'dm-reproducible-verify', which
-## operates on the LOCAL file this leaves behind (or on a file copied by hand).
-##
-## Usage:
-##   dm-reproducible-fetch VERSION|URL [--output-dir DIR]
-##   dm-reproducible-fetch --version VER --arch ARCH --target TARGET --flavor FLAVOR [--project DOMAIN] [--output-dir DIR]
-##   dm-reproducible-fetch --url IMAGE_URL [--output-dir DIR]
-##
-## Pass EITHER a published version OR a full download URL: as a single positional
-## argument (auto-detected -- a URL contains '://'), or explicitly with --version
-## / --url. Exactly one is required.
-##
-## With a VERSION the tool builds the Kicksecure download URL; --arch, --target
-## and --flavor are then required (--arch is NOT defaulted, so you never fetch the
-## wrong architecture by accident). With a URL the version, arch, project and
-## target are auto-detected from it and printed.
-##
-##   --version VER      published version, e.g. 18.2.1.7.
-##   --url IMAGE_URL    full download URL (same as the positional URL form).
-##   --arch ARCH        amd64 | arm64 (MANDATORY with --version).
-##   --target TARGET    iso | virtualbox | raw | qcow2 (with --version).
-##   --flavor FLAVOR    kicksecure-lxqt | kicksecure-cli | kicksecure-xfce (with --version).
-##   --project DOMAIN   download domain (default: kicksecure.com).
-##   --output-dir DIR   where to place the downloads (default: current dir).
-##
-## Then:
-##   dm-reproducible-verify DIR/<image>
-##
-## Exit codes: 0 all sidecars fetched; 2 usage / download error.
+## Download a published image plus its reproducibility metadata into a local
+## directory. The image is untrusted, 'dm-reproducible-verify' handles
+## verification.
 
-## TODO: Support for Whonix images?
-
-## TODO: The documentation above is confusing; if passing VERSION as a bare
-## argument rather than via --version, arguments like --arch, --target, etc.
-## will still need to be passed, but the first line of the documentation does
-## not mention this.
-
-## TODO: We should not offer kicksecure-xfce in the list of images we can work
-## with. XFCE was offered in <= Kicksecure 17, and no <= Kicksecure 17 image
-## is reproducible.
-
-## TODO: Should we enforce a minimum version to check reproducibility of? That
-## way no one accidentally attempts to reproducibly rebuild an image that
-## predated reproducible build support.
+## No minimum-version check: images predating reproducible-build support are
+## non-reproducible, but someone can still investigate a historical image if
+## they want to.
 
 set -o errexit
 set -o nounset
@@ -64,15 +23,39 @@ shopt -s shift_verbose
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-## Shared target->released-{url_part,extension} map (also used by
-## dm-reproducible-compare-artifacts) so the download URL and the comparison
-## never disagree on the artifact name.
-# shellcheck source=../libexec/developer-meta-files/reproducible-target-map.bsh
-source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
 
 ## style-ok: no-has
 ## Self-contained downloader (runs outside a build tree); probes for scurl/curl
-## with 'command -v' rather than sourcing the 'has' helper.
+## with 'command -v'.
+
+me="${0##*/}"
+
+print_usage() {
+   printf '%s\n' "Usage:
+  ${me} URL [--output-dir DIR]
+  ${me} --url IMAGE_URL [--output-dir DIR]
+  ${me} --version VER --arch ARCH --target TARGET --flavor FLAVOR [--project DOMAIN] [--output-dir DIR]"
+}
+
+print_help() {
+   print_usage
+   printf '%s\n' "
+Pass EITHER a published version OR a full download URL. A URL contains all
+needed data on its own, while a version requires additional arch/target/flavor
+information.
+
+  --version VER      published version, e.g. 18.2.1.7
+  --url IMAGE_URL    full download URL
+  --arch ARCH        amd64 | arm64
+  --target TARGET    iso | virtualbox | raw | qcow2
+  --flavor FLAVOR    kicksecure-{lxqt,cli,debug} | whonix-{cli,lxqt}
+  --project DOMAIN   download domain (default: kicksecure.com for kicksecure-*,
+                     whonix.org for whonix-*)
+  --output-dir DIR   where to place the downloads (default: current dir)
+
+Verify downloaded images with: dm-reproducible-verify DIR/<image>
+Exit codes: 0 all files fetched; 2 usage / download error."
+}
 
 error() {
    printf '%s\n' "ERROR: $*" >&2
@@ -85,7 +68,7 @@ version=""
 target=""
 flavor=""
 arch=""
-project="kicksecure.com"
+project=""
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
@@ -125,28 +108,20 @@ while [ "$#" -gt 0 ]; do
          shift 2
          ;;
       -h|--help)
-         ## FIXME: Violation of Bash Style Guide R-153 (do not extract help
-         ## from comments
-         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+         print_help
          exit 0
-         ;;
-      --)
-         shift
-         break
          ;;
       -*)
          error "unknown option: '$1' (run with --help)."
          ;;
       *)
-         ## A single positional VERSION|URL, auto-detected: a URL contains '://'.
          case "$1" in
             *://*)
                [ -z "${url}" ] || error "URL given more than once."
                url="$1"
                ;;
             *)
-               [ -z "${version}" ] || error "version given more than once."
-               version="$1"
+               error "unexpected argument '$1'. Note that only a URL is accepted as a positional argument (see --help)."
                ;;
          esac
          shift
@@ -154,54 +129,63 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
-## After '--', remaining args are the positional VERSION|URL (same auto-detection).
-## TODO: Maybe we should assume positionals are given after options always so
-## we can simplify this?
-while [ "$#" -gt 0 ]; do
-   case "$1" in
-      *://*)
-         [ -z "${url}" ] || error "URL given more than once."
-         url="$1"
-         ;;
-      *)
-         [ -z "${version}" ] || error "version given more than once."
-         version="$1"
-         ;;
-   esac
-   shift
-done
+if [ -n "${url}" ] && [ -n "${version}" ]; then
+   print_usage >&2
+   error "pass EITHER --version OR --url, not both."
+fi
+if [ -z "${url}" ] && [ -z "${version}" ]; then
+   print_usage >&2
+   error "pass a published version (--version) or a URL."
+fi
 
-[ -z "${url}" ] || [ -z "${version}" ] || error "pass EITHER a version OR a URL, not both."
-## FIXME: The below error is confusing because it doesn't mention what needs
-## passed with --version. Maybe *just* point to --help?
-[ -n "${url}" ] || [ -n "${version}" ] || error "pass a version or a URL: dm-reproducible-fetch VERSION|URL (see --help)."
+# shellcheck source=../libexec/developer-meta-files/reproducible-target-map.bsh
+source "${MYDIR}/../libexec/developer-meta-files/reproducible-target-map.bsh"
 
 ## VERSION mode: build the download URL. Mirrors the image naming in
 ## help-steps/variables:
-##   https://download.<domain>/<url_part>/<version>/Kicksecure-<desktop>-<version>.<arch_pretty>.<ext>
+##   https://download.<domain>/<url_part>/<version>/<flavor>-<version>.<arch_pretty>.<ext>
 ## A naming drift here just yields a 404, never a wrong download.
-##
-## FIXME: The error messages here contain redundant usage information that can
-## go out-of-date.
 if [ -n "${version}" ]; then
-   [ -n "${arch}" ]   || error "--version requires --arch (amd64|arm64); it is not defaulted."
-   [ -n "${target}" ] || error "--version requires --target (iso|virtualbox|raw|qcow2)."
-   [ -n "${flavor}" ] || error "--version requires --flavor (e.g. kicksecure-lxqt)."
+   [ -n "${arch}" ]   || error "--version requires --arch (see --help)."
+   [ -n "${target}" ] || error "--version requires --target (see --help)."
+   [ -n "${flavor}" ] || error "--version requires --flavor (see --help)."
 
    case "${flavor}" in
       kicksecure-lxqt)
-         desktop="LXQt"
-         ;;
-      kicksecure-xfce)
-         desktop="Xfce"
+         image_name_base="Kicksecure-LXQt"
          ;;
       kicksecure-cli)
-         desktop="CLI"
+         image_name_base="Kicksecure-CLI"
+         ;;
+      kicksecure-ci-tiny-do-not-use)
+         image_name_base="Kicksecure-CI-Tiny-Do-Not-Use"
+         ;;
+      whonix-cli)
+         image_name_base="Whonix-CLI"
+         ;;
+      whonix-lxqt)
+         image_name_base="Whonix-LXQt"
          ;;
       *)
-         error "unsupported --flavor '${flavor}' (Kicksecure flavors only)."
+         error "unsupported --flavor '${flavor}' (see --help)."
          ;;
    esac
+
+   ## Default the download domain from the flavor's project when not given.
+   if [ -z "${project}" ]; then
+      case "${flavor}" in
+         whonix-*)
+            project="whonix.org"
+            ;;
+         kicksecure-*)
+            project="kicksecure.com"
+            ;;
+         *)
+            ## Probably unreachable code.
+            error "Could not determine download domain from flavor, pass --project explicitly (see --help)."
+            ;;
+      esac
+   fi
 
    case "${arch}" in
       amd64)
@@ -221,16 +205,49 @@ if [ -n "${version}" ]; then
       || error "unsupported --target '${target}' (iso|virtualbox|raw|qcow2)."
    dm_reproducible_target_ext ext "${target}"
 
-   url="https://download.${project}/${url_part}/${version}/Kicksecure-${desktop}-${version}.${arch_pretty}.${ext}"
+   url="https://download.${project}/${url_part}/${version}/${image_name_base}-${version}.${arch_pretty}.${ext}"
    printf '%s\n' "INFO: built download URL from --version: ${url}" >&2
 fi
 
 ## URL mode: auto-detect version, project, target and arch from the link, but
 ## only when the URL actually matches the published layout
-## (.../<url_part>/<version>/Kicksecure-...). Otherwise report nothing detected
-## rather than manufacture misleading values. The download always uses the URL
+## (.../<url_part>/<version>/Kicksecure-...). The download always uses the URL
 ## verbatim, so detection is purely informational.
 if [ -n "${url}" ] && [ -z "${version}" ]; then
+   ## The parsing below splits up a URL as follows:
+   ##
+   ##                                          url
+   ##                                           v
+   ##  ___________________________________________________________________________________
+   ## /                                    det_hostpath                                   \
+   ## |                                         v                                         |
+   ## |        ___________________________________________________________________________|
+   ## |       /                                                                           \
+   ## |       |                                                                           |
+   ## https://download.kicksecure.com/ova/18.2.1.9/Kicksecure-LXQt-18.2.1.9.Intel_AMD64.ova
+   ##         |        |            | | | |      | |             |          |         |   |
+   ##         |        \____________/ | | |      | \_____________/          \_________/   |
+   ##         |              ^      | | | |      | |      ^                 |    ^        |
+   ##         |         det_project | | | |      | |  det_flavor            |det_arch_pretty
+   ##         \_____________________/ | | |      | |                        \_____________/
+   ##                    ^            | | |      | |                                ^     |
+   ##                 det_host        | | |      | |                            det_after |
+   ##                                 | | \______/ \______________________________________/
+   ##                                 | | |   ^                      ^                    |
+   ##                                 | | | det_version           det_file                |
+   ##                                 \_/ \_______________________________________________/
+   ##                                 |^                           ^                      |
+   ##                                 |det_url_part          det_afterpart                |
+   ##                                 \___________________________________________________/
+   ##                                                           ^
+   ##                                                     det_pathonly
+   ##
+   ## det_target is derived from det_url_part.
+   ##
+   ## NOTE: Please maintain this diagram as this code changes. Too much time
+   ## has been wasted re-analyzing this every time code review comes up, the
+   ## diagram above answers "what does each variable contain" at a glance.
+
    det_hostpath="${url#*://}"
    det_host="${det_hostpath%%/*}"
    det_project="${det_host#download.}"
@@ -239,29 +256,10 @@ if [ -n "${url}" ] && [ -z "${version}" ]; then
    det_afterpart="${det_pathonly#*/}"
    det_version="${det_afterpart%%/*}"
    det_file="$(basename -- "${url%%\?*}")"
+   det_flavor="${det_file%%-"${det_version}".*}"
    det_after="${det_file#*-"${det_version}".}"
    det_arch_pretty="${det_after%%.*}"
-   ## FIXME: This is just the inverse of the lookup logic in
-   ## dm_reproducible_target_url_part. Any way to deduplicate this, or can the
-   ## logic at least be moved closer to its counterpart in
-   ## reproducible-target-map.bsh?
-   case "${det_url_part}" in
-      iso)
-         det_target="iso"
-         ;;
-      ova)
-         det_target="virtualbox"
-         ;;
-      raw)
-         det_target="raw"
-         ;;
-      libvirt)
-         det_target="qcow2"
-         ;;
-      *)
-         det_target=""
-         ;;
-   esac
+   dm_reproducible_url_part_to_target det_target "${det_url_part}" || det_target=""
    case "${det_arch_pretty}" in
       Intel_AMD64)
          det_arch="amd64"
@@ -270,8 +268,11 @@ if [ -n "${url}" ] && [ -z "${version}" ]; then
          det_arch="${det_arch_pretty}"
          ;;
    esac
-   if [ -n "${det_target}" ] && [ "${det_file#Kicksecure-}" != "${det_file}" ]; then
-      printf '%s\n' "INFO: detected from URL: project=${det_project} target=${det_target} version=${det_version} arch=${det_arch}" >&2
+   if [ -n "${det_target}" ]; then
+      if [ "${det_file#Kicksecure-}" != "${det_file}" ] \
+         || [ "${det_file#Whonix-}" != "${det_file}" ]; then
+         printf '%s\n' "INFO: detected from URL: project=${det_project} flavor=${det_flavor} target=${det_target} version=${det_version} arch=${det_arch}" >&2
+      fi
    else
       printf '%s\n' "INFO: URL not in the recognized download layout; fetching verbatim (no metadata detected)." >&2
    fi

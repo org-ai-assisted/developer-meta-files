@@ -1,8 +1,63 @@
+commit 5d08c10cfa3324df45b239bde932ce34917d56c0
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Mon Aug 31 04:02:24 2026 -0400
+
+    .
+
+commit 766ecba46227ef4ca89c047104ca17d91a52e647
+Merge: de884dc6 a0f3931e
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 30 09:33:02 2026 -0400
+
+    Merge remote-tracking branch 'ArrayBolt3/arraybolt3/trixie'
+
+commit a0f3931e289e6cb0c0c59f50592692f4cfada781
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Wed Aug 26 20:29:57 2026 -0400
+
+    Create a new exception for Bash style rule R-030 for AI agents, leave a TODO for creating an override mechanism
+
+commit 3775a0d4bd60b8872c0b71ca6c620c80a149b33c
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Tue Aug 25 22:52:16 2026 -0400
+
+    kicksecure-debug -> kicksecure-ci-tiny-do-not-use
+
+commit aa10b4ea59b4b5839a5b40f5e04795f4a483cf58
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Tue Aug 25 22:32:59 2026 -0400
+
+    Fix Kicksecure metapackage header
+
+commit a3c7125277de8701ffd3ae114b22c19c970a0b23
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Tue Aug 25 22:23:18 2026 -0400
+
+    remove trailing whitespace
+
+commit 10f5575112bfee51de165e7a96cf888c2e02eb3c
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Tue Aug 25 22:19:33 2026 -0400
+
+    Fixups, TODOs, shorten lots of overly long comments
+
+commit de884dc699086747d7e4c9fc94af4bdb7210b5b2
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Mon Aug 24 07:23:55 2026 +0000
+
+    bumped changelog version
+
 commit bc48388db2d9d0823527f460707bff6072cd960f
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Mon Aug 24 03:21:30 2026 -0400
 
     .
+
+commit edb6156d45dd7da88ac360ca48fa5a4e6fc9a0c2
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Aug 23 16:29:42 2026 -0400
+
+    Changes that go with refactoring of derivative-maker, not all merged code has been reviewed yet
 
 commit 25fc8cf5a24cdea70c32cb8200eba58c40a45ef1
 Author: Patrick Schleizer <adrelanos@whonix.org>
@@ -15,6 +70,69 @@ Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Fri Aug 21 04:48:56 2026 -0400
 
     .
+
+commit b3f1f8f3b320956f756c10cb183fe67224eae48f
+Merge: 50177838 dfdd5152
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Wed Aug 19 22:47:23 2026 -0400
+
+    Merge branch 'ai' into arraybolt3/trixie
+
+commit dfdd515245a5617fb2a0d019285c80d5cd392498
+Author: claude (dev239 bb173064-ae6e-4b1d-b192-d14a54f1b77d) <noreply@anthropic.com>
+Date:   Wed Aug 19 05:14:40 2026 -0400
+
+    dm-packaging-helper-script: R-161 -- drop quiet-grep-in-pipe merge detection
+
+    The three "printf | grep --ignore-case --quiet -- Merge..." pipes fail the
+    static gate (R-161: a quiet grep on the reading end of a pipe can SIGPIPE the
+    producer under pipefail). commit_msg_short is already lowercased, so a pure-bash
+    case with lowercase literals is equivalent -- no grep, no pipe, and collapses the
+    three identical if-blocks into one. Pre-existing; exposed by R-161.
+
+commit 29e8dfb5469516ff4c68c7e543c83909fea9b35e
+Author: claude (dev239 bb173064-ae6e-4b1d-b192-d14a54f1b77d) <noreply@anthropic.com>
+Date:   Wed Aug 19 03:55:13 2026 -0400
+
+    dm-prepare-release: long option names for du/tail/cut
+
+    du -scB1 -> --summarize --total --block-size=1; tail -1 -> --lines=1;
+    cut -f1 -> --fields=1. Behavior-identical (verified); R-060.
+
+commit b8253e7b72eabb17414202e89d85526f40f745f4
+Author: claude (dev239 bb173064-ae6e-4b1d-b192-d14a54f1b77d) <noreply@anthropic.com>
+Date:   Wed Aug 19 03:52:26 2026 -0400
+
+    dm-nbd-cleanup: snapshot /proc/mounts before unmounting
+
+    Unmounting inside the live "while read ... < /proc/mounts" loop reads a
+    kernel file that shrinks under it: the read offset lands in regenerated
+    content and later nbd mounts are silently skipped, so the device loop
+    disconnects a device that still has a skipped mount -- the stale EIO
+    state this tool clears. Collect all nbd mount points into an array first
+    (no subshell), then unmount from the snapshot.
+
+    Measured in a user+mount namespace (200 mounts): unmount-in-loop
+    processed 101 (99 skipped); snapshot processed all 200.
+    Found by ai-review (codex).
+
+commit 2e3c3adac6f53f4218879d804b4aa1587d9e65fe
+Author: claude (dev239 bb173064-ae6e-4b1d-b192-d14a54f1b77d) <noreply@anthropic.com>
+Date:   Wed Aug 19 01:32:45 2026 -0400
+
+    dm scripts: drop perl, remove subshells, guard dist_build_qubes
+
+    - dm-debconf-normalize-owners: replace perl filter with pure bash
+      (per-line Owners dedup + ucf NEW mktemp-path collapse); reading the
+      path as a file removes the @ARGV filename-as-command hazard.
+    - dm-nbd-cleanup: drop the process-substitution feeding the mount loop
+      (read /proc/mounts directly, decode \040 via printf -v) and the
+      cat(1) subshell reading the sysfs size.
+    - dm-install-from-local-repository: validate dist_build_qubes to
+      true/false at the top of main() before any apt work, so an unset
+      value (nothing in the build sets it) fails fast with a clear message
+      instead of an unbound-variable abort under nounset after sources.list
+      has been rewritten and apt updated.
 
 commit bea4721108572ed08cac81e6096791020dc46729
 Author: Patrick Schleizer <adrelanos@whonix.org>
@@ -34,6 +152,46 @@ Date:   Wed Aug 19 00:00:03 2026 -0400
 
     .
 
+commit 5c157383c5811ac8ab50cdaa5aade02637679024
+Author: claude (dev225 2870d279-db91-4375-b016-e625d2dec9b6) <noreply@anthropic.com>
+Date:   Tue Aug 18 01:19:01 2026 -0400
+
+    bash-style-guide: R-161 -- no grep quiet flag in a pipe, no short quiet flag
+
+    - A quiet grep (-q/--quiet/--silent) on the reading end of a pipe exits at
+      the first match, SIGPIPEs the writer, and our default 'set -o pipefail'
+      fails the pipeline (141) -- size-dependent, so it flakes on large inputs.
+      Remedy: drop the quiet flag and redirect grep's stdout, or use a
+      here-string (not a pipe).
+    - A SHORT quiet flag (grep -q / -iq) violates R-060; write the long form.
+    - Enforced by pre-push-static; pre-push-fix expands a short quiet cluster.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 98ad728c6b612cfa77f92bbfea89b39f8f3b6f2e
+Author: claude (dev223 642b8e71-085e-46dd-8e7c-4819b537c0c2) <noreply@anthropic.com>
+Date:   Sat Aug 15 12:28:43 2026 -0400
+
+    bash-style-guide R-172: mode judged per mkdir command; both --mode spellings
+
+    - The mode is checked on the mkdir command itself, not the whole line.
+    - --mode 700 (space) is equally atomic and accepted; --mode=700 canonical.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 9ec3dc8682870294950f80ce952f08978cd5cb69
+Author: claude (dev223 642b8e71-085e-46dd-8e7c-4819b537c0c2) <noreply@anthropic.com>
+Date:   Sat Aug 15 12:06:38 2026 -0400
+
+    Document R-172: atomic --mode on temp-dir mkdir
+
+    - bash-style-guide.md: R-172 rationale (TOCTOU), the canonical
+      '# shellcheck disable=SC2174' + '--parents --mode=' pattern and why
+      SC2174 is intrinsic, short -m upgraded to long, waiver.
+    - pre-push-checklist.md: one-line R-172 entry.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 commit 73126f50856d5086cf991b45f3b5a022b6d5c646
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Sat Aug 15 14:24:50 2026 +0000
@@ -47,11 +205,62 @@ Date:   Sat Aug 15 10:24:38 2026 -0400
 
     Merge remote-tracking branch 'refs/remotes/ArrayBolt3/arraybolt3/trixie'
 
+commit 4a639bc48c9b3d2904de5315326f263549de1b0b
+Author: claude (dev208 bef7da7e-fcbc-4b8d-a002-c5de755d7169) <noreply@anthropic.com>
+Date:   Fri Aug 14 06:12:31 2026 -0400
+
+    bash-style-guide: R-193 direct Python call; R-104 long-pipeline convention
+
+    - R-193: call an in-repo *.py directly (R-180 makes it +x with a shebang),
+      not via 'python3 -- file.py' -- the prefix restates the interpreter and
+      drops shebang flags (-Bsu). Enforced by R-193 in the pre-push gate.
+    - R-104: prefer multi-line, multi-step over a long single-line pipeline;
+      guidance only, deliberately no gate ('|' is too overloaded -- pipe, '||',
+      case/glob alternation, nested '$(...)', string literal -- to flag long
+      pipelines without false positives).
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 commit 50177838f4be0bd94e507d0dfeb3c24213e0fd1e
 Author: Aaron Rainbolt <arraybolt3@gmail.com>
 Date:   Wed Aug 12 21:52:37 2026 -0400
 
     Make packages with Guest Additions dependencies into arch-any packages
+
+commit 78c0e637f10d9edf39f9cb69dad082b4ff002c1a
+Author: claude (dev189 b0788c60-b349-4240-810b-f51b0043a12f) <noreply@anthropic.com>
+Date:   Wed Aug 12 05:22:40 2026 -0400
+
+    bash-style-guide: R-010b -- no versioned bash dependency
+
+    The strict-mode preamble uses shopt -s inherit_errexit (bash 4.4+).
+    Supported Debian (trixie+) ships bash >= 4.4 and earlier Debian / bash
+    versions are unsupported, so a bash (>= 4.4) dependency in debian/control
+    adds nothing. Ban it, no explanatory comment.
+
+commit 2402a90aeffbe13e2d04874e8a5b62e7cc3f4fb5
+Author: claude (dev182 e09ec5cf-4ebf-4e1b-88e5-55fbac6ef1d3) <noreply@anthropic.com>
+Date:   Tue Aug 11 09:11:44 2026 -0400
+
+    bash-style-guide: R-191 no embedded script in a systemd unit
+
+    Documents the new pre-push-static R-191 rule, sibling of R-100 (workflow YAML)
+    and R-190 (heredoc interpreter): an Exec*= directive must not embed a
+    multi-statement shell script; a single-command wrapper is allowed. Waiver
+    '# style-ok: allow-embedded-script'.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 6e754833b1ed893412f76d97713397b9d78220d8
+Author: claude (dev182 e09ec5cf-4ebf-4e1b-88e5-55fbac6ef1d3) <noreply@anthropic.com>
+Date:   Mon Aug 10 13:56:58 2026 -0400
+
+    dm-nbd-cleanup: brace positional in unknown-argument message
+
+    - Consistency with the codebase's braced-expansion convention (R-020);
+      '$1' is the lone unbraced positional in the script.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 
 commit a3454ac2dbec0d7419dc49042b7f9b212ce376f7
 Author: Patrick Schleizer <adrelanos@whonix.org>
@@ -59,11 +268,838 @@ Date:   Mon Aug 10 17:05:22 2026 +0000
 
     bumped changelog version
 
+commit 7d0fea8ea3bc48fb989360d9eb0a794aa2d42a52
+Author: claude (dev179 34adc465-191d-4a9b-857a-2b62c4467b43) <noreply@anthropic.com>
+Date:   Mon Aug 10 12:47:56 2026 -0400
+
+    bash-style-guide: R-013 set options by long -o name, one per line (even sh)
+
+    dash and busybox sh both validate AND implement 'set -o errexit' /
+    'nounset' / 'pipefail' (verified behaviourally), so the long multi-line
+    form is portable to #!/bin/sh, not bash-only. 'set -eu' short form and
+    >1 option on one 'set' line are gate-enforced (R-013 in pre-push-static).
+
+commit ddc14f02c5a4da98652206b610b21625a1885e41
+Author: claude (dev178 ef0a4b88-92fa-4271-9479-a3273c15f53e) <noreply@anthropic.com>
+Date:   Mon Aug 10 12:12:49 2026 -0400
+
+    dm-normalize-fat-partition, dm-debconf-normalize-owners: log/die validation errors (R-110)
+
+    Replace ad-hoc 'printf >&2; exit N' with die from log_run_die.sh so validation
+    failures carry the standard command + severity context. Both run in build-steps
+    3600/4350 where helper-scripts is present (dm-normalize-fat-partition already
+    sources it); dm-debconf-normalize-owners gains the log_run_die.sh source. Exit
+    codes preserved; the dist-ai tests declare helper-scripts and stay green.
+
+    dm-nbd-cleanup left as-is: a manual recovery tool with no automated caller, so a
+    hard helper-scripts source could abort exactly when it is needed on a bare host.
+
+commit 3d7eff0df907304acc6a55722de6506bcf8b0cf3
+Author: claude (dev179 34adc465-191d-4a9b-857a-2b62c4467b43) <noreply@anthropic.com>
+Date:   Mon Aug 10 12:06:26 2026 -0400
+
+    bash-style-guide: R-010a documents the gate-enforced shopt half
+
+    The gate now enforces that a source-able was_executed-guarded block
+    which enables errexit carries both shopt directives (inherit_errexit,
+    shift_verbose); the set -o choice stays the script's own. Update the
+    R-010a Why to reflect this.
+
+commit 9960001c96cdb0a70b11e6bc10147cc50bd21160
+Author: claude (dev178 ef0a4b88-92fa-4271-9479-a3273c15f53e) <noreply@anthropic.com>
+Date:   Mon Aug 10 11:54:43 2026 -0400
+
+    dm-normalize-fat-partition: capture the rebuild find listings too
+
+    Same silent-strip class as the extraction listing: '< <( cd && find ... )' hides
+    a find/cd failure from errexit, and the loop would rebuild an EMPTY image that dd
+    writes over the ESP. Capture with command substitution; '[ -n ]' guards keep an
+    empty set (a flat FAT) to zero iterations.
+
+commit bddaf195b91e067309b73cdba717c2ea16a65b54
+Author: claude (dev178 ef0a4b88-92fa-4271-9479-a3273c15f53e) <noreply@anthropic.com>
+Date:   Mon Aug 10 11:39:03 2026 -0400
+
+    dm-normalize-fat-partition: capture the mdir listing, not '< <( ... )'
+
+    A process substitution runs mdir in a subshell whose non-zero exit errexit
+    cannot see, so an unreadable device silently listed nothing, normalized to an
+    EMPTY root and dropped every file while exiting 0. Capture via command
+    substitution (mdir -b exits 0 on an empty root, non-zero only on error) so a
+    failed listing aborts. Regression test in dist-ai (case 10).
+
+commit 059b39f73fba96c8d616a409076857d33ed6c56b
+Author: claude (dev178 ef0a4b88-92fa-4271-9479-a3273c15f53e) <noreply@anthropic.com>
+Date:   Mon Aug 10 11:19:45 2026 -0400
+
+    dm-nbd-cleanup: explicit --help, not scraped comments (R-153)
+
+    Replace 'grep ^## | sed' help with print_usage/print_help owned strings, per the
+    R-153 canonical pattern. Fixes the pre-push static gate failure on the branch.
+
+commit 4057ceba00c72b08b25c331e1330f5aa94bb3865
+Author: claude (dev178 ef0a4b88-92fa-4271-9479-a3273c15f53e) <noreply@anthropic.com>
+Date:   Mon Aug 10 11:03:11 2026 -0400
+
+    reusable-pre-push-static: make the helper-scripts sibling opt-in
+
+    Gate the helper-scripts checkout on the consumer's dm-consumer.yml rather than
+    imposing it on every repo. A new "Load per-repo config" step runs
+    dist-ai/ci/pre-push-static-ci-config.sh, which reads the SAME 'dist-ai-tests:
+    helper-scripts: true' flag consumers already set and emits helper_scripts; the
+    checkout + symlink run only when it is true. Adds apt 'yq' for the read.
+
+    A repo that sources helper-scripts opts in once (the flag it already has for the
+    test runtime); repos that do not pay no checkout.
+
+commit 314e8e374fd34bf8ab992599b45f1770b2f201a4
+Author: claude (dev178 ef0a4b88-92fa-4271-9479-a3273c15f53e) <noreply@anthropic.com>
+Date:   Mon Aug 10 10:55:33 2026 -0400
+
+    reusable-pre-push-static: provide helper-scripts sibling for shellcheck source resolution
+
+    Consumers source helper-scripts via a '# shellcheck source=../../../../helper-scripts/
+    ...' directive (relative, reaching a repo sibling). The isolated CI checkout lacks that
+    sibling, so 'shellcheck -x' emits SC1091 and consumers silence it with an inline
+    '# shellcheck disable=SC1091'. Check out org-ai-assisted/helper-scripts@master and
+    symlink it to the repo sibling so shellcheck FOLLOWS the source -- letting consumers
+    drop the disable and get the sourced symbols resolved.
+
+    Additive: two steps, same fork-PR guard as the run step; the checkout is untracked, so
+    the gate's git-diff file scan never sees it. Verified locally that the sibling (real
+    and symlinked) resolves the directive and SC1091 stops firing.
+
+    A reusable-workflow change cannot run in CI until it is on master (consumers pin
+    @master), so validate via a test consumer after merge, before any consumer drops its
+    SC1091 disable.
+
+commit 64ba7e0d81a3404d0121a258eb2d006b8d792497
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 04:49:58 2026 -0400
+
+    dm-reproducible-fetch: Whonix download image is Whonix-<desktop>, no role
+
+    Correction verified against download.whonix.org: the published VM images are a
+    COMBINED gateway+workstation image named Whonix-CLI-<v> / Whonix-LXQt-<v> (HTTP
+    200), NOT the per-role Whonix-Gateway-CLI-<v> (HTTP 404) an earlier commit built
+    from the intermediate per-VM qcow2 name in help-steps/variables. Flavors are now
+    whonix-cli / whonix-lxqt. The per-role split stays where it belongs -- the
+    meta-packages and dm-install-from-local-repository.
+
+commit 31b882be76ad0ad49d846d0856dce285e3267c5a
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 04:23:34 2026 -0400
+
+    dm-update-frozen-snapshot: server clock via sdwdate url_to_unixtime over Tor
+
+    Replace the hand-rolled HTTP Date parse with sdwdate's existing url_to_unixtime
+    (127.0.0.1:9050 SOCKS): it fetches the server time over Tor and already hardens
+    the Date->unixtime conversion with length / numeric / range sanity checks, so we
+    do not reimplement (and mis-implement) that. The suite-availability probes stay on
+    clearnet scurl -- only the trusted CLOCK goes over Tor. Preflight now also probes
+    url_to_unixtime. Still not the local clock (a fast clock would pin a future,
+    silently non-reproducible snapshot).
+
+    Covered by the dist-ai test (url_to_unixtime stubbed to a fixed instant) with a
+    structural guard that the clock comes from url_to_unixtime.
+
+commit e9c2e729baa8b383cbab11e8a96fa9805d62395b
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 02:56:29 2026 -0400
+
+    dm-update-frozen-snapshot: take 'now' from the server clock, not the local one
+
+    A fast local clock would pin a FUTURE timestamp: it resolves to the current newest
+    snapshot now, but once a snapshot with a timestamp between the two is published it
+    becomes the nearer predecessor, so the same committed pin later resolves to
+    DIFFERENT content -- silently non-reproducible, and the rollback guard (backwards
+    only) cannot catch it. Derive the instant from snapshot.debian.org's own HTTP Date
+    header (its now is <= real now, so no future snapshot falls at or before it);
+    refuse to pin if the server time is unavailable. (ai-review: codex P2.)
+
+commit 403c99dc64784f6507496c9fbba166270181b733
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 02:56:28 2026 -0400
+
+    package-build-freshness: a hash failure forces a rebuild, never a skip
+
+    dm_package_source_hash returns the 'nohash' sentinel on failure. dm_package_needs_rebuild
+    compared it like a real digest, so a source tree that failed to hash twice (stored
+    == current == nohash) read as 'unchanged' and was skipped -- amplified by dropping
+    the reprepro published-version fallback. Guard current_hash == nohash as a rebuild.
+    (ai-review: coderabbit major / codex P1.)
+
+commit 977a21f2ce0d7243718083cd00eda11fe7bf9f1d
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 02:56:05 2026 -0400
+
+    dm-reproducible-verify: treat compare-artifacts exit 4 as 'NOT reproducible'
+
+    Follow-up to the dedicated exit-4 differ code: dm-reproducible-verify is a direct
+    consumer that mapped only exit 1 to 'NOT reproducible', so a differing image now
+    fell through to 'verification could not complete (exit 4)'. Map 4 -> NOT
+    reproducible, 2 -> setup/not-found, else -> could not complete; help text updated.
+    (ai-review: codex P1.)
+
+commit 4687d4e544c0d68fceca46e0b6e0d3c2145750d0
+Author: claude (dev175 c2ca3e38-6ad5-4018-9e09-853679b2ef0a) <noreply@anthropic.com>
+Date:   Mon Aug 10 02:17:33 2026 -0400
+
+    bash-style-guide: R-010a source-able form for dist-ai-tested scripts
+
+    Document the source-able shape (main() + strict-mode and the main call
+    guarded by was_executed) that lets a dist-ai test source a script and
+    drive its functions without running it or leaking strict-mode. Scope:
+    NEW scripts adopt it when they have (or will have) a dist-ai test;
+    existing untested scripts are future work; a pure sourced library keeps
+    zero top-level strict-mode and no guard. "Is it dist-ai tested" is not
+    gate-knowable, so it is a manual pre-push-checklist item, not an
+    automated gate rule (the gate's R-010 already recognises the guarded
+    form).
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 71f7035b2d51c5daa56eb0dac72849710adc2556
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 02:12:59 2026 -0400
+
+    dm-reproducible-buildinfo: document that dm-source-state must stay
+
+    Replaces the speculative 'can we drop dm-source-state?' TODO with the verified
+    conclusion. sign-tag-head amends any UNSIGNED HEAD (parent + every submodule) via
+    'commit --amend -S', changing the commit SHA. The signature is commit metadata,
+    outside the source tree, so it does NOT leak into the image -- image
+    reproducibility is unaffected by signing. What the amend changes is the commit
+    IDENTITY: the amended SHA is local-only, so the pre-amend upstream-FETCHABLE SHA
+    must be recorded (before the amend) for a verifier to fetch that source and
+    rebuild-to-compare. That is provenance, not reproducibility. The 'build twice
+    from a signed repo' shortcut only holds from an already-signed input, which
+    cannot bootstrap itself. Behaviour unchanged (comment only); the file's dual path
+    (recorded pre-amend state, or read HEAD when absent) already covers both cases.
+
+commit 629c1d48b5c26db48d52e3e7d1d41c300756d9d4
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 01:57:56 2026 -0400
+
+    dm-reproducible-fetch: support Whonix images
+
+    Resolves the TODO. --version mode now accepts the four whonix flavors
+    (whonix-{gateway,workstation}-{cli,lxqt}) and builds the download URL from the
+    build's own image naming (help-steps/variables): Whonix ships gateway and
+    workstation as separate images, so the name is Whonix-<role>-<desktop>-<version>
+    (Kicksecure stays Kicksecure-<desktop>-<version>). The download domain defaults
+    from the flavor (whonix.org for whonix-*, kicksecure.com otherwise) and --project
+    still overrides. A naming drift only ever yields a 404, never a wrong download.
+    dm-reproducible-verify already rebuilds with the buildinfo's Flavor field, so it
+    needs no change.
+
+    Covered by dist-ai test_reproducible_fetch_whonix_url (real tool, stubbed scurl):
+    kicksecure (regression) + whonix URL construction + --project override.
+
+commit 6ba9406c8ac73ce38b75169f37bcf85a01828a05
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 01:22:21 2026 -0400
+
+    dm-install-from-local-repository: current Whonix meta-package naming
+
+    The Whonix branch mapped flavors to meta-package names that no longer exist
+    ('non-qubes-whonix-gateway', 'qubes-whonix-gateway-kde', ...) and recognised only
+    '-kde' flavors, so a cli/lxqt build hit the catch-all error and a -kde build asked
+    apt for a package with no Package: stanza. Derive the canonical name from the
+    three independent axes: role (gateway/workstation) from the flavor, UI
+    (cli / gui-lxqt) from the flavor suffix, virtualization (qubes/nonqubes) from
+    dist_build_qubes -- as whonix-<role>-<virt>-<ui>, matching
+    packages/whonix/anon-meta-packages/debian/control. Also braces the file's
+    pre-existing unbraced variables (SC2250).
+
+    Covered by dist-ai test_install_from_local_repository_whonix_pkg: the tool uses
+    the canonical composition, drops the retired names, and every name the mapping can
+    produce is a real Package: stanza. End-to-end apt install in a chroot needs a real
+    Whonix build.
+
+commit b0d63abcd2d4d9296fbc480ef0a5cba850c67f45
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 01:14:39 2026 -0400
+
+    package-build-freshness: drop the reprepro path, content-hash only
+
+    Resolves the TODO. dm_package_needs_rebuild no longer queries the local reprepro
+    repo for a published version; it decides purely from the source-content hash
+    manifest. That is accurate by construction -- a change to any source byte moves
+    the hash, and debian/changelog is part of the hashed tree, so a version bump
+    forces a rebuild exactly as the old version check did -- whereas reprepro could
+    report a version no longer matching what is on disk. Removes
+    dm_reprepro_published_source_version and the repository_name argument.
+
+    Covered by dist-ai test_package_needs_rebuild (real functions): first sight ->
+    rebuild; unchanged -> skip; source edit without a bump -> rebuild; changelog
+    bump -> rebuild.
+
+commit 96d49a24a86c70914acea0210da0a290c2969a30
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 01:10:17 2026 -0400
+
+    dm-packaging-helper-script: y/n booleans -> true/false
+
+    Resolves the FIXME. The internal flag variables (batch_meta_gateway_only,
+    description_found, headline_written, batch_meta_dry_run, ... 19 vars plus two
+    sentinel arrays) used single-char 'y'/'n' strings. Convert every assignment,
+    comparison and ':-n' default to standard 'true'/'false'. Verified that every
+    single-quoted/double-quoted 'y'/'n' in the file was one of these booleans (the
+    only other was the FIXME itself), and that no external consumer reads these
+    vars, so a uniform swap cannot desync a set from its compare.
+
+    Covered by dist-ai test_dm_packaging_boolean_style (no boolean-shaped y/n token
+    remains; true/false in use). Canary-verified against the pre-conversion file.
+
+commit 45090961b7b3712dc3bc588f0ebef6ac1cb580dc
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 01:02:36 2026 -0400
+
+    dm-update-frozen-snapshot: pin 'now', verify it serves the suites
+
+    Radical simplification (resolves the FIXME). Instead of querying the
+    machine-readable api, merging archives and iterating the newest 20 timestamps,
+    pin the CURRENT UTC instant and prove snapshot.debian.org serves every pinned
+    suite at it. The service resolves any pin to the newest snapshot at or before it
+    PER ARCHIVE, so 'now' resolves to the newest main + security snapshots -- exactly
+    what a bump wants -- and, snapshots being immutable, that resolution is stable
+    forever (reproducible). A briefly-absent suite (mid-sync) 404s and the tool
+    ERRORS rather than guessing an older snapshot; the operator reruns later.
+
+    Removes ~150 lines: latest_valid_snapshot, the /mr api + jq parsing, the
+    candidate/shape machinery, and the now-dead strings.bsh + sanitize-string/jq
+    preflights (the timestamp is local 'date', not server-supplied). Keeps the
+    rollback guard (refuses a backwards pin -> downgrade protection), the atomic
+    rewrite, and all pin-file drift checks.
+
+    Also converts every diagnostic printf to the fixed '%s\n' form (R-030): the file
+    had been bypass-committed while pending review and never cleared the rule.
+
+    Covered by dist-ai test_update_frozen_snapshot (real tool, stubbed scurl):
+    served -> lockstep bump; suite absent -> error/no-write; future pin -> refused;
+    429 -> abort. Also smoke-tested live against snapshot.debian.org.
+
+commit 197f2a11f7edb940bedd01c9fc65aad38d342212
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 00:21:52 2026 -0400
+
+    rename reprepro-freshness.bsh -> package-build-freshness.bsh
+
+    The library does more than track reprepro state: it also manages a manifest of
+    custom-built package hashes and decides whether a package needs a rebuild. Name
+    it for that. Pure rename (functions unchanged); the caller's source path is
+    updated in the superproject. Resolves the naming FIXME.
+
+commit 40aa45fdeaecf0aa99dc7235d57402282c039788
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Mon Aug 10 00:10:56 2026 -0400
+
+    dm-reproducible-compare-artifacts: dedicated exit 4 for 'artifacts differ'
+
+    exit 1 was BOTH the intentional 'artifacts differ' verdict AND what errexit
+    produces on any unhandled failure -- so a script bug read as a reproducibility
+    difference. Give 'differ' a dedicated code (4) and reserve 1 for an
+    errexit-caught internal error; 0 identical and 2 setup/not-found are unchanged.
+    Resolves the FIXME in the identical-branch comment.
+
+    Covered by dist-ai test_compare_artifacts_differ (differing iso/qcow2 pairs ->
+    exit 4; setup errors -> exit 2).
+
+commit d98a16a7e3444f7830c4c3316b2f60c452228d67
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 23:56:40 2026 -0400
+
+    dm-virtualbox-test-vm: passwordless guest login (empty password)
+
+    The guest account is passwordless (helper-scripts user_create.bsh does
+    'passwd --delete'); guest LOGIN auth is therefore an empty password, not the
+    retired 'changeme'. sudo inside the guest is separate (sudo-askpass-wrapper).
+
+    The sudo wrapper was a word-split STRING with an unquoted '--password ${password}';
+    an empty value there collapses and the next flag ('--wait-stdout') is read as the
+    password. Make it an ARRAY so '--password ""' survives as a distinct empty
+    argument, and expand it as "${wrapper[@]}" at every call site.
+
+    Covered by dist-ai test_virtualbox_test_vm_empty_password (drives the real
+    variables(), inspects the VBoxManage argv via a stub: --password is followed by a
+    distinct empty arg and --wait-stdout survives). End-to-end guestcontrol login
+    still needs a real VM.
+
+commit 32cf10d4dcc92b96aa2bbf3a0c36c2de9dced614
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 23:50:14 2026 -0400
+
+    arch-to-qemu-machine.bsh: keep only the build-time machine-name map
+
+    dist_build_arch_to_qemu_machine_type and dist_build_arch_to_serial_console are
+    consumed ONLY by dm-qemu, which ships in dist-ai's dm-image-boot-tests with its
+    own bundled copy of this fragment (that copy keeps all three). In the build tree
+    they were dead weight -- an audit found no help-steps/build-steps caller -- so
+    drop them here and keep just dist_build_arch_to_qemu_machine, which
+    help-steps/variables sources for cross emulation / binfmt handler names. Header
+    updated to describe the split.
+
+    Covered by dist-ai test_arch_to_qemu_machine_split (build copy = base only,
+    boot-test copy = all three; base map resolves amd64->x86_64 etc.).
+
+commit 3f09a34ffb29e8f36d1fd3f923f1ade4515baa56
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 23:00:55 2026 -0400
+
+    dm-prepare-release: pin libvirt archive mtime to SOURCE_DATE_EPOCH
+
+    libvirt_compress() hardcoded '--mtime=2015-10-21', so the .libvirt.xz members
+    were dated 2015 while every other build artifact uses SOURCE_DATE_EPOCH (the
+    changelog timestamp, or the snapshot pin for a frozen build). strip-nondeterminism
+    runs right after but only clamps mtimes NEWER than the epoch, so a constant far
+    in the past survived untouched -- leaving this archive desynced from the rest of
+    the release.
+
+    Use '--mtime=@${SOURCE_DATE_EPOCH}' instead: deterministic per source (byte-
+    identical across rebuilds) and consistent with every other artifact. SOURCE_DATE_
+    EPOCH is sourced via help-steps/variables and set well before the release phase;
+    guard against an unset value (error out) so a wrong/empty mtime can never slip
+    through silently.
+
+    Covered by dist-ai test_prepare_release_libvirt_compress_reproducible (structural
+    + before/after byte-identity + compression + lossless round-trip).
+
+commit ab0fcd691c18e0507beed15767f6b352c437102d
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:47:45 2026 -0400
+
+    dm-consumer: add pv + xz-utils for the libvirt_compress reproducibility test
+
+    test_prepare_release_libvirt_compress_reproducible (dist-ai) drives the real
+    'tar | pv -s | xz' pipeline and asserts byte-identity with the old 'tar --xz'.
+    A present subject with an absent prerequisite FATALs rather than skips, so pv
+    and xz-utils are hard test requirements (they are also runtime Depends of the
+    tool).
+
+commit b5b4d74c279759204154f81b5926994fea883aee
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:36:54 2026 -0400
+
+    dm-virtualbox-test-vm: SECONDS-based benchmark timing (align with derivative-maker)
+
+    Replace the local 'date +%s' benchmark timing with bash's SECONDS, matching
+    derivative-maker's benchmark convention (benchmark_since / benchmark_format in
+    helper-scripts' benchmark.bsh). Kept local -- not sourcing benchmark.bsh into
+    this standalone VBox driver -- because benchmark_since returns a formatted string
+    while the wait loops need the raw integer seconds for their '-ge timeout'
+    comparisons. Also brace the file's pre-existing unbraced variables (SC2250) and
+    complete the strict-mode block (shift_verbose).
+
+    Tested: benchmark_time_start/end compute elapsed seconds correctly via SECONDS
+    (7s -> 7, 0s -> 0).
+
+commit 117878540bd96b059f0d8b6725f88adab9a9ac3e
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:30:13 2026 -0400
+
+    dm-prepare-release: give the pv meter a real percentage + ETA
+
+    pv after xz reads a pipe of unknown size, so it showed only throughput, no %.
+    Run pv on the UNCOMPRESSED tar stream with '-s <size>' (disk usage via du -B1,
+    which tracks the tar --sparse stream for raw images far better than apparent
+    size), splitting tar's internal '--xz' into an explicit '| xz'. Verified
+    byte-identical: 'tar -c | xz' == 'tar --create --xz', so reproducibility is
+    unchanged.
+
+    Tested: the split-with-pv pipeline produces a byte-identical archive to the
+    original --xz (incl. a sparse raw member), and pv now shows a real percentage.
+
+commit a77d6e4354bb9c03216ee28d3b22eaec21fb7de0
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:24:20 2026 -0400
+
+    dm-packaging-helper-script: isolate the version_numbers_by_upstream read
+
+    pkg_upstream_and_debian_changelog_bump sourced a package's
+    make-helper-overrides.bsh directly to read version_numbers_by_upstream, leaking
+    every OTHER variable that file sets into the function/global scope (the "other
+    variables might be unwanted" smell). Read it in a subshell instead and extract
+    only that one value; make_source_overrides_* only source the override files, and
+    the genmkfile calls re-source the overrides in their own processes, so nothing
+    here needs those variables to survive.
+
+    Tested (synthetic): the subshell reads version_numbers_by_upstream correctly with
+    no stdout-INFO pollution, and stub "unwanted" variables set by the override do
+    not leak into the caller or global scope.
+
+commit 8fa8dbcded83a098c4bf3e3199302e789b90926d
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:21:17 2026 -0400
+
+    dm-prepare-release: pv is a hard dependency, not optional
+
+    Use pv directly (drop the cat fallback); pv is already a derivative-maker build
+    dependency (buildconfig.d/30_dependencies.conf) and is now also a developer-meta-
+    files package Depends, alongside the existing bc/jq/dctrl-tools its scripts use.
+    The archive stays byte-identical (pv is a pass-through; meter to stderr).
+
+commit 564fa09cf6426f13e21b6dfd88380c29d38eea77
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:15:48 2026 -0400
+
+    compare-artifacts: capture find status without a sort pipe
+
+    The qcow2 member finds used 'find | LC_ALL=C sort' + PIPESTATUS inside a process
+    substitution. Under inherit_errexit + pipefail, a failing find kills the subshell
+    before the status line is written, so the guard reads an empty status -- exactly
+    the fragility the FIXME flagged. Switch to find_artifact's safe pattern: run find
+    WITHOUT a pipe, capture its status with '|| find_exit_status=$?', then sort the
+    captured array separately (guarding the empty set so empty stays empty). Document
+    in find_artifact why its sort is likewise NOT folded into the find (same reason).
+
+    Tested: with a failing find under errexit+pipefail+inherit_errexit, the old
+    'find|sort;PIPESTATUS' pattern loses the status (empty) while the new pattern
+    captures it (1); an empty dir still yields status 0 and an empty array.
+
+commit 44e1db021368d7291622aa5e12772b1676f758db
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:11:56 2026 -0400
+
+    dm-prepare-release: add a pv progress meter to the libvirt_compress tar
+
+    Pipe the reproducible xz archive through pv (or cat when pv is absent) so long
+    archiving shows progress. pv/cat is a byte-exact pass-through on stdout, so the
+    archive -- and its reproducibility -- is unchanged; the meter goes to stderr.
+
+    Tested: tar '--file -' | pv (and | cat) produce a byte-identical archive to the
+    original '--file basename' write (same sha256), so reproducibility is preserved.
+
+commit db3bfa438a34df86984db8fed48d28b8527b7967
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:09:32 2026 -0400
+
+    reproducible-target-map + fetch: add reverse url_part->target lookup
+
+    Add dm_reproducible_url_part_to_target (the inverse of
+    dm_reproducible_target_url_part) to the shared map, and use it from
+    dm-reproducible-fetch's URL-mode detection, removing the hand-rolled inverse
+    case (resolves the fetch:215 FIXME). Source the map once after the -h/--help and
+    usage-error exits (rather than lazily in VERSION mode only) so URL mode can use
+    it too; -h/--help and bare usage errors still need no helper-scripts.
+
+    Tested: reverse mapping (iso/ova/raw/libvirt) + round-trip forward<->reverse for
+    every target; -h and bare-invocation still work with HELPER_SCRIPTS_PATH unset.
+
+commit c97392f3e77f5ff31ef534d1d0e18108a7683331
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 22:02:31 2026 -0400
+
+    dm-virtualbox-update-local-and-wiki-links: drop two dead TODO templates
+
+    - Remove the release-monitoring.org VirtualBox-version-detection TODO note
+      (keeping the commented reference impl).
+    - Remove the four commented-out tor-browser getter stubs ("Templates for future
+      work") -- dead placeholder code.
+
+commit fbec7fdba7396cb78dd194d764aca12e0f50df0b
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 21:46:57 2026 -0400
+
+    dm-packaging-helper-script: REMINDER on the hardcoded 'typo' commit message
+
+    Rewrite the content-free '## TODO' above pkg_git_diff_and_commit's
+    git commit -m "typo" to a REMINDER: the message is hardcoded because this
+    interactive flow commits the maintainer's own reviewed changes (typo fixes);
+    adjust it when committing something other than a typo.
+
+commit 8c6b1c239f0b5b5f34d6e23b31bf21530c365f2f
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 21:19:50 2026 -0400
+
+    dm-packaging-helper-script: REMINDER convention; drop stale adrelanos remote-rm
+
+    - show_debug_variable_info: mark the "keep up to date" note a REMINDER, not a
+      TODO -- it is a perpetual keep-in-sync note, not a discrete task.
+    - Drop the transitional 'git remote rm adrelanos' (the adrelanos ->
+      github-adrelanos remote migration is complete) and its 'TODO: remove'.
+    - Brace the file's pre-existing unbraced variables (SC2250) so the gate stays
+      green for the touched file.
+
+commit f55069f933a952816c408c45752cc4abb68836dd
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 20:45:33 2026 -0400
+
+    arch-to-qemu-machine + source-tree-lib: resolve two library markers
+
+    - arch-to-qemu-machine: record the usage-audit finding in the TODO --
+      dist_build_arch_to_qemu_machine_type and dist_build_arch_to_serial_console are
+      used ONLY by dist-ai, so they should move there (tracked); the shared
+      dist_build_arch_to_qemu_machine stays for derivative-maker build-steps.
+    - source-tree-lib: the resolver's point-1 rule is upheld, not violated -- it
+      binds "final" only in the branch where help-steps/pre is VERIFIED five levels
+      up (a real tree); a standalone checkout with the same shape fails that check
+      and correctly falls through. Clarify point 1 (in-tree means VERIFIED tree) and
+      drop the FIXME that misread the directory shape as being in-tree.
+
+commit 092acf7297d764106e2e2c0e795f6a41162677a7
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 20:36:25 2026 -0400
+
+    dm-reproducible-fetch: document the no-minimum-version decision
+
+    Replace the "enforce a minimum version?" TODO with the decision: no
+    minimum-version check. Images predating reproducible-build support are
+    non-reproducible, but there is no hard block, so a historical image can still be
+    investigated if wanted.
+
+commit 24cac71a109f5bb49a1d63ae29a15198e617fbf0
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 20:28:32 2026 -0400
+
+    compare-artifacts: mark the kernel/initrd-compare TODO as a future idea
+
+    Rewrite the "compare kernels/initrds if nothing else differs" TODO to a NOTE:
+    it is unclear this is needed, since the direct artifact comparison below already
+    surfaces those differences (and diffoscope may cover it). Not tracked as a task.
+
+commit 870b8c63ed2c723b4d4c20e12456f24c045d0382
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 12:15:24 2026 -0400
+
+    dm-reproducible-{fetch,verify}: -h and --help both print the full help
+
+    Follow the proverbial convention: -h and --help are the SAME (both print the full
+    help); a SHORT usage is shown only when a required argument is missing (both tools
+    require input -- like 'mv', unlike an argless 'nano'). Corrects the earlier
+    -h-short / --help-long split, and updates the bash-style-guide R-153 canonical
+    pattern to match.
+
+commit cdefeb84eb46d68603bbf4c27c759ccf00b19eaa
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 12:11:31 2026 -0400
+
+    dm-reproducible-verify: real -h/--help; harden R-153 in the style guide
+
+    Replace the 'grep ^## | sed' help-from-comments extraction (the R-153 violation)
+    with print_usage() (short, -h) and print_help() (long, --help), matching
+    dm-reproducible-fetch. Trim the header comment to a brief description; the usage,
+    steps, options and exit codes now live in print_help.
+
+    Also strengthen bash-style-guide R-153 so this stops recurring: name the exact
+    anti-pattern (grep '^##' | sed) and give the canonical print_usage/print_help
+    (-h short / --help long) pattern to copy. Gate-enforcement is tracked as a task.
+
+commit 914d0ec6fde974c84172f33f00f0bbfffd167dd9
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 12:02:45 2026 -0400
+
+    dm-upload-images: source help-steps/pre before strings.bsh; drop the manual export
+
+    help-steps/pre already sets and exports HELPER_SCRIPTS_PATH (to the sibling
+    helper-scripts in the source tree) and uses no strings.bsh function, so sourcing
+    it first lets strings.bsh resolve via that variable -- no need to set and export
+    HELPER_SCRIPTS_PATH by hand or run the preflight. This script only runs from a
+    source tree (it sources help-steps/pre by source-tree path), so pre is always
+    present. Resolves the "import strings.bsh after help-steps/pre?" TODO.
+
+    Verified by inspection (pre sets+exports the var, sources xtrace/colors/benchmark/
+    trace but not strings, and calls no strings.bsh function); not runtime-tested, as
+    this is a release-time upload script.
+
+commit 5c8f43cb0b5875729ccc48c6a1dde9df0978b342
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:57:19 2026 -0400
+
+    dm-reproducible-*: resolve three documentation markers
+
+    - buildinfo: remove the "reject a single newline at the start?" TODO -- a leading
+      newline is already rejected by the 'Source-Commit: '* prefix check.
+    - compare-artifacts: reword the diffoscope-rc-0 FIXME to a NOTE. rc 0 is a
+      diffoscope shortcoming, not a verdict change: diffoscope's exit is ignored by
+      design and this path exits 1 unconditionally, so a diff-less explanation can
+      never soften the sha256 verdict to 0 (reproducible).
+    - reproducible-target-map: document that the 'raw' url_part is kept for manual /
+      future / debugging use though raw is not a published download.
+
+commit 674d77bfec0f5545b50f66fb21c4f885c19c87ce
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:57:18 2026 -0400
+
+    signing-lib: drop the strict-mode header from the sourced library
+
+    A sourced library must not run 'set -o errexit' and friends: strict mode leaks
+    into the caller. Match the sibling libs (source-tree-lib, reprepro-freshness)
+    with the 'style-ok: no-strict' waiver. Both callers (dm-reproducible-verify,
+    dm-prepare-release) already run strict mode, so the functions keep their
+    fail-fast behavior. Resolves the "should a library have the strict header?" TODO.
+
+commit 79e261a1d8ae903d697159a5dd8cfa7a5582b6fa
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:43:05 2026 -0400
+
+    reproducible-target-map: the utm artifact extension is utm.tar.gz
+
+    dm_reproducible_target_ext returned 'utm' for the utm target, but the published
+    artifact is '.utm.tar.gz' (consistent with siblings like raw's '.libvirt.xz').
+    No consumer currently reaches the utm ext path -- dm-reproducible-fetch rejects
+    --target utm at url_part first -- so this is a latent correctness fix.
+
+commit cede5b0be1c189c1d57b6a09e14a7ff5a77b5b0d
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:42:54 2026 -0400
+
+    signing-lib + dm-resign-canary: fix the signinfy -> signify misspelling
+
+    Rename verify_cmd_signinfy (it verifies a signify-openbsd signature) to
+    verify_cmd_signify in both independent copies -- signing-lib.bsh (def + 2 calls)
+    and dm-resign-canary (def + call).
+
+    Also bring dm-resign-canary up to the gate for the touched file: brace its
+    pre-existing unbraced variables (SC2250), add the missing 'shopt -s
+    shift_verbose' strict directive (R-010), and use 'has' instead of 'command -v'
+    for the signify-openbsd / rsstail probes (R-090; 'has' comes in via the sourced
+    help-steps/pre).
+
+commit 61eada7aec3af735329fa3bc243b7d419272cec4
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:35:44 2026 -0400
+
+    reprepro-freshness.bsh: trust the strict manifest format in the hash lookup
+
+    The manifest is written '<source_pkg> <hash>' with a single space and no trailing
+    content (see the header comment), so the recorded hash is exactly the remainder
+    after the first space. Drop the defensive '%% *' strip in the lookup that coped
+    with a malformed shape the writer never produces, and write the record with the
+    canonical 'printf %s\n' form (R-030).
+
+commit 8516db84dc921ce48a2dd1788550eb5327bdd629
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:35:30 2026 -0400
+
+    dm-reproducible-verify + signing-lib: rename verify_and_check -> verify_signature
+
+    The name paired two near-synonyms (verify/check). Rename to verify_signature at
+    its definition (signing-lib.bsh) and both call sites (dm-reproducible-verify).
+
+    Also reconcile the dm_source_root comment in dm-reproducible-verify: it is the
+    derivative-maker SOURCE tree, needed only by the default rebuild path (unused
+    with --skip-build), not the "build tree" the verifier itself runs outside of.
+
+    Brace the pre-existing unbraced variables in signing-lib.bsh touched here
+    (SC2250), keeping the gate green for the file.
+
+commit 28eb44078cca18381ba64fc2e6731d521908f980
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:32:21 2026 -0400
+
+    dm-reproducible-fetch: -h/--help + kicksecure-debug; drop the comment-help hack
+
+    - Accept a bare positional again, but ONLY as a URL (self-contained: version,
+      arch, project and target are parsed from it). A published version still needs
+      --version plus --arch/--target/--flavor, so it is never a bare positional.
+    - Add the kicksecure-debug flavor (image name Kicksecure-Debug, per
+      help-steps/variables VMNAME).
+    - Replace the giant '##' doc block + the R-153 'grep ^## | sed' help extraction
+      with real print_usage()/print_help(): '-h' prints the short usage, '--help' the
+      full help. Resolves the R-153 FIXME.
+    - Trim the drifting value-lists from the '--version requires --X' errors; point
+      to --help.
+    - Source reproducible-target-map.bsh lazily (only VERSION mode needs it) with a
+      defaulted HELPER_SCRIPTS_PATH, so -h/--help and URL mode need no helper-scripts
+      and an installed --version run no longer aborts on the unbound var.
+
+    No caller invokes this tool (only docs mention it), so the CLI change is safe.
+
+commit bfe4f8868e29c4e9c7180b1cf924cef482094880
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:17:45 2026 -0400
+
+    dm-reproducible-{buildinfo,compare-artifacts}: resolve small FIXMEs/TODOs
+
+    - buildinfo: anchor the Submodule-State check to line start, so a field value
+      that merely contains 'Submodule-State:' cannot be mistaken for the field.
+    - compare-artifacts: rename filesystem_mounts_setup ->
+      qcow2_filesystem_mounts_setup (it is qcow2-only; broader ISO/OVA support is
+      tracked separately); correct the nbd preflight comment ('[ -b /dev/nbd0 ]'
+      ACCEPTS a busy nbd0 -- block-device-ness -- it does not reject it); drop the
+      stale 'ARRAYBOLT3: PICK UP HERE' breadcrumb; report both qcow2 member counts in
+      the count-mismatch message; merge the two duplicated diffoscope-rc comments.
+
+commit 1cd0484c0e630a508f30e58d69cd3bc833a0992e
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 11:17:43 2026 -0400
+
+    dm-reproducible-fetch: require --version/--url, drop the positional form
+
+    The bare-positional VERSION|URL form was confusing: a positional VERSION still
+    needed --arch/--target/--flavor (which cannot be derived from a version), yet it
+    read like "just fetch this". Require --version (with its flags) or --url
+    explicitly; an unexpected positional now errors with guidance. This also removes
+    the post-'--' positional loop (its "assume positionals after options" TODO is
+    moot) and rewrites the vague "pass a version or a URL" error to name the flags
+    and point at --help.
+
+    Also drop kicksecure-xfce: XFCE was only offered on <= Kicksecure 17, none of
+    which is reproducible.
+
+    No caller passes a positional (only docs mention it).
+
+commit 69887dacd060fe5268d75fb24ff347607e406a3b
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 10:48:04 2026 -0400
+
+    dm-github-org-security-report: scan the mirror org only
+
+    output-lies is a PROJECT org, not a MIRROR, so drop it from MIRROR_ORGS -- which
+    also removes the MIRROR-vs-PROJECT contradiction with dm-github-org-policy's
+    PROJECT_ORGS.
+
+    Scanning org-ai-assisted alone suffices: the SOURCE orgs (Kicksecure / Whonix)
+    and the PROJECT orgs (secure-terminal / output-lies) are all mirrored into
+    org-ai-assisted, where the AI-assisted CI runs CodeQL / Coverity, so their
+    alerts surface there -- and the bot is a read-only member on the SOURCE orgs and
+    cannot read their code-scanning alerts directly anyway. The rationale is
+    documented in-file so the list is not re-expanded.
+
+    Tests are unaffected: test_dm_security_report.sh drives the tool via
+    ORGS_OVERRIDE, independent of the default constant.
+
+commit b40268a9b7104d0f3ca1064e024e409d80135972
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 10:38:33 2026 -0400
+
+    dm-github-org-policy: fix the Actions-scope comment mislabeling output-lies
+
+    The comment listed output-lies under "MIRROR", but it is a PROJECT org
+    (PROJECT_ORGS). Drop it from the MIRROR parenthetical so the label is accurate;
+    the source-vs-non-source pivot already applies Actions-on to PROJECT orgs too.
+    Resolves the FIXME.
+
 commit bbcbc25281efa25cf2c67b8f7d3f0ef744f1cf67
 Author: Aaron Rainbolt <arraybolt3@gmail.com>
 Date:   Sun Aug 9 10:09:24 2026 -0400
 
     .
+
+commit e84e7292b6378e47a737736afbe2144d2d438c83
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 10:02:59 2026 -0400
+
+    dm-github-org-policy: drop stale/inaccurate policy detail from --help
+
+    The help claimed private vulnerability reporting is turned off "everywhere
+    except the project orgs", but the code (POLICY_REPO_PVR_OFF, applied to every
+    repo of every kind) and agents/github-policy-org-kinds.md both disable PVR
+    EVERYWHERE. Drop the policy-contents parenthetical entirely -- --policy-dump
+    already carries the authoritative per-org table. Resolves both show_help FIXMEs
+    (the inaccurate PVR claim and "policy contents do not belong in help").
+
+commit ca0451d9e170dc6152619c1148072afcedce3a0b
+Merge: b8ff7516 a1b6055a
+Author: claude (dev172 95595d52-ccfe-4088-99f2-560955a081b5) <noreply@anthropic.com>
+Date:   Sun Aug 9 03:40:12 2026 -0400
+
+    Merge remote-tracking branch 'github-kicksecure/master' into ai
+
+    # Conflicts:
+    #       usr/bin/dm-reproducible-buildinfo
+    #       usr/bin/dm-upload-images
 
 commit a1b6055acb6fc15b45935441709ace90687e6964
 Merge: 69862539 04161ebf
@@ -71,6 +1107,65 @@ Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Sun Aug 9 02:25:33 2026 -0400
 
     Merge remote-tracking branch 'ArrayBolt3/arraybolt3/trixie'
+
+commit b8ff7516e5b2e8c3899144047a0eec94478b4de5
+Author: claude (dev170 ad818220-b8bb-4205-b850-b65074e52454) <noreply@anthropic.com>
+Date:   Sat Aug 8 14:11:44 2026 -0400
+
+    R-062: record stcat as a verified '--' rejecter
+
+    stcat takes every argument as a path, so 'stcat -- <file>' reads a file
+    literally named '--' and dies with FileNotFoundError. The rule already carried
+    the denylist idea and one entry; this adds the second, with what it cost:
+    helper-scripts' read_integer_file used the separator, reported "Cannot stcat
+    target file" for a file that was present and readable, and four of tb-updater's
+    e2e scenarios failed on it.
+
+    pre-push-static enforces the entry; this documents it.
+
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 08d28ceac2de23586ca6dac191dfc186b1c41e6b
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 13:49:11 2026 -0400
+
+    dev_clearnet: no-strict waiver, plus SC2250 braces
+
+    dangerous-scripts/dev_clearnet is short-circuited: 'exit 0' is the second
+    executed statement in the file, and everything below it is documentation.
+
+    No strict-mode preamble
+    -----------------------
+
+    A preamble here would govern nothing that runs, and converting the dead body
+    would assert a correctness it was never exercised for. It carries an explicit
+    'style-ok: no-strict' waiver saying so, and naming what the body does if the
+    short-circuit is ever lifted: it sets ip_forward, flushes every iptables and
+    ip6tables chain to a default-ACCEPT policy, and chmod -x's the DHCP
+    nodnsupdate hook. That is a review, not a mechanical conversion.
+
+    SC2250
+    ------
+
+    Touching the file brings it into the gate's changed-file scope, where it fails
+    shellcheck SC2250 on six unbraced expansions -- pre-existing, in the dead body.
+    Braced, since the alternative is a second waiver for a check that is trivially
+    satisfiable.
+
+    Testing
+    -------
+
+    Gate exit 0 in an ISOLATED checkout.
+
+    Differential, old (master) vs new: both exit 0 with empty output, which is the
+    whole observable behaviour of a file that exits at line 10.
+
+commit 7ed2a70c49b7c448f09c88722c96ef9c8aff64c8
+Merge: 7e520e32 69862539
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 13:48:59 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master' into ai
 
 commit 04161ebf9655a3a03649f726d0e4c46ff9f1484e
 Merge: 9b4e008d 69862539
@@ -84,6 +1179,330 @@ Author: Aaron Rainbolt <arraybolt3@gmail.com>
 Date:   Thu Aug 6 01:35:25 2026 -0400
 
     Lots of tweaks, mostly to add FIXME/TODO comments
+
+commit 7e520e32f3eb66cc09a20a314017a5b8848373bc
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Wed Aug 5 05:06:47 2026 -0400
+
+    dm-upload-images: set and export HELPER_SCRIPTS_PATH before sourcing
+
+    Set and export HELPER_SCRIPTS_PATH (falling back to the resolved source
+    tree) so strings.bsh resolves its sibling libraries through it, and
+    preflight it with a clear error instead of bash's bare ENOENT.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 732410a39bd5be8e2db4ba6ecf98012faa224b72
+Author: claude (dev161 151ccca1-8a4e-4cae-aba3-d2fb959e0d4e) <noreply@anthropic.com>
+Date:   Tue Aug 4 09:32:04 2026 -0400
+
+    reusable-pre-push-static: diff against the push's before-sha, not origin/master
+
+    - On a 'push' run github.base_ref is empty, so BASE_REF resolved to
+      'origin/master' -- which after the push IS the pushed head. The range
+      origin/master...HEAD was empty, so the gate reported "no changed shell
+      files" and passed having examined nothing. Every push-triggered run was a
+      guaranteed green; only the commit-time dmf-gate hook actually gated those
+      commits.
+    - Resolve to github.event.before on a push. An all-zero before-sha (a
+      branch's first push, no prior head) still falls through to origin/master
+      rather than naming a commit that does not exist.
+    - Stays one GitHub expression, per R-100.
+
+    Verified: YAML parses; actionlint clean (sandbox); the expression resolves to
+    the input when given, the PR base on pull_request, the before-sha on a normal
+    push, and origin/master on a first push and on workflow_dispatch.
+
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 4e971913297d5f44b8aff9e0e41f786aebe484a5
+Author: claude (dev156 61950e21-e5bc-4e66-8ce6-2c224cbabc13) <noreply@anthropic.com>
+Date:   Tue Aug 4 09:22:51 2026 -0400
+
+    bash-style-guide: R-062 -- add sudo; document the gate-enforced negative half
+
+    - sudo added to the verified '--'-supporting list ('sudo -- cmd args'
+      ends sudo's OWN options before the command word).
+    - Split R-062 into halves: the positive 'prefer --' is convention only
+      (undecidable by a single grep); the NEGATIVE half is gate-enforced --
+      the gate FAILS on a '--' passed to a tool on a verified reject-'--'
+      denylist (git check-ref-format, exit 129). Extend only after checking
+      the real binary. echo also mishandles '--' but is banned by R-034.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 338309e72e763ae4aa37dd0a467735ac6c98bfcd
+Author: claude (dev161 151ccca1-8a4e-4cae-aba3-d2fb959e0d4e) <noreply@anthropic.com>
+Date:   Tue Aug 4 07:51:50 2026 -0400
+
+    dm-reproducible-compare-artifacts: fix R-030 printf format strings
+
+    - The report block baked literal text into five printf format strings
+      ('  target: %s\n', '  A: %s\n', '     sha256 %s\n', ...), which the
+      pre-push static gate rejects: R-030 requires a fixed '%s\n' format
+      with all data in the data argument.
+    - Move the literal prefixes into the data string. Output is unchanged.
+    - Failing check on PR #176 was 'gate / pre-push static gate' (5x R-030,
+      lines 210-214); the gate now passes locally against org-ai-assisted/master.
+
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 44845c893ed064b1d587c38dd4ec75f4f5661c23
+Author: claude (dev161 151ccca1-8a4e-4cae-aba3-d2fb959e0d4e) <noreply@anthropic.com>
+Date:   Tue Aug 4 07:44:41 2026 -0400
+
+    dm-github-org-security-report: walk alert pages; mock: page-aware fixtures
+
+    - /code-scanning/alerts caps at per_page=100; one unpaginated request
+      reported the first 100 of 329 open org alerts as the whole result.
+    - Truncation was invisible: the output is a plain table, so a cut-off
+      report reads exactly like "that is all there is".
+    - Walk pages until a short one; cap at GHORG_MAX_PAGES and warn +
+      exit non-zero if the cap is hit, so an incomplete report is never
+      reported as complete.
+    - Per-page bodies (~1 MB) stay well under GHORG_JQ_MAX_BYTES; raising
+      per_page instead would degrade to a jq parse failure.
+    - ghorg_mock_dispatch: honour page=N, resolving '<key>_pageN' and
+      serving an empty 200 past the last page. It previously stripped the
+      query string and re-served page 1 for every page, so the mock could
+      not express - and no test could catch - a missing page walk.
+
+commit efc27e05764e07c5008c4c8d2028e1a12ff47a32
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Tue Aug 4 07:22:21 2026 -0400
+
+    dm-debconf-normalize-owners: anchor ucf temp-path match to the NEW key
+
+    ai-review (coderabbit, agy): the prior '/tmp/*.suffix' match was too broad --
+    it would also rewrite an unrelated value like 'X = /tmp/cache.release'. Anchor
+    to ucf's 'NEW' variable (config.dat serializes one variable per continuation
+    line, so the end-anchor is correct), so only ucf's transient temp path is
+    normalized and any other /tmp value is left intact. Add /g.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 09d0ee864ef5b47abab908f5085c2bafc8c2d17e
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Tue Aug 4 07:12:50 2026 -0400
+
+    dm-debconf-normalize-owners: normalize transient ucf mktemp paths
+
+    The last ISO local-vs-CI difference: config.dat carried ucf's random temp
+    path, e.g. 'NEW = /tmp/grub.JI3HRI56IT' (the copy ucf diffed /etc/default/grub
+    against in live-build's chroot), which differs every build. Collapse the >=6
+    char mktemp suffix to a constant. Only /tmp paths with such a suffix are
+    touched; a real value (FILE = /etc/default/grub) is left intact. Idempotent.
+    Runs for both ISO (3600) and VM (4350) via the same normalizer call.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 25e8c1f5c11d7042992afe31fd608e3f405e54ea
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Tue Aug 4 06:19:23 2026 -0400
+
+    dm-reproducible-buildinfo: guard state_from_head against git-C walk-up
+
+    - 'git -C DIR' walks up to the nearest enclosing .git, so a non-git build
+      dir nested under an unrelated repo borrowed that repo's HEAD. Require
+      source_code_folder_dist to BE the work-tree root ('-ef' vs --show-toplevel).
+    - Capture 'git submodule status' off the sed pipe so a git failure aborts
+      rather than being masked by sed's success on empty input.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 94279c2f4eca760b18dd6ff6e7a8e73b6ae03fc1
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Tue Aug 4 06:08:41 2026 -0400
+
+    dm-reproducible-buildinfo: record real HEAD when no pre-sign state file
+
+    - Absent dm-source-state means sign-and-tag did not amend, so HEAD IS the
+      fetchable source commit and the checked-out gitlinks are the real pins.
+    - state_from_head reads them from source_code_folder_dist (the build's
+      explicit, bind-mounted source tree), never a PWD guess -- unset/non-git
+      falls through to 'unrecorded', so the past false-positive path stays closed.
+    - Same Deb822 shape sign-and-tag records; a build with signing off now
+      publishes verifiable provenance instead of 'unrecorded'.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit eba3c724fc101337d72a491bda1d0bba8e38fba0
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Tue Aug 4 03:12:09 2026 -0400
+
+    dm-normalize-fat-partition: harden per ai-review (agy)
+
+    - Refuse a non-FAT32 filesystem: the FAT32 boot-sector offsets (serial 0x43,
+      label 0x47) differ from FAT12/16, so running on a FAT16 ESP would misread the
+      serial and force it to FAT32, corrupting the partition. Detect the FAT32 type
+      signature (offset 0x52) and refuse otherwise -- fail-safe, no corruption.
+    - A short/empty/unreadable input now fails this same check cleanly instead of
+      crashing on '$(( 16# ))' arithmetic.
+    - Read boot-sector bytes with od (coreutils), not xxd (vim-common) -- removes an
+      unchecked dependency.
+    - A block device without blockdev errors clearly instead of a false 'not a FAT'
+      (stat -c%s returns 0 for a block device).
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 123e8d0c0591270974494f4af68ecd7222259955
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Tue Aug 4 03:01:05 2026 -0400
+
+    Add dm-normalize-fat-partition for a reproducible EFI System Partition
+
+    - Rebuilds a FAT ESP so its bytes are identical regardless of build host.
+    - ROOT CAUSE: 4350 reimages the ext4 root deterministically (mke2fs -d) but
+      never touches the FAT ESP. grml-debootstrap/grub-install populate it during
+      the build, and FAT cluster allocation follows the build host's file-write
+      order -- so the SAME boot files land at different clusters locally vs CI.
+      Measured 3.44 MB of a 100 MB ESP differing between a sandbox build and CI,
+      with every ESP file byte-identical -- the bulk of the remaining local-vs-CI
+      image difference.
+    - FIX: extract the files (via mtools, no mount/loop/root), rebuild the FAT in a
+      fresh ZERO-FILLED image (deterministic free space) preserving geometry,
+      volume serial and label (a new serial would break an fstab UUID= ESP mount),
+      and mcopy the files back in LC_ALL=C sorted order with mtimes pinned to
+      SOURCE_DATE_EPOCH. Same files + order + geometry -> byte-identical FAT.
+      Verified to bring two independently-built ESPs to 0 differing bytes, fsck
+      clean, all boot files intact. Cluster layout does not affect boot (ESP files
+      are read by path).
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 451c38719fa80ba47bc6b12ae54c9836a482b145
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Mon Aug 3 10:52:52 2026 -0400
+
+    dm-debconf-normalize-owners: read via stdin, replace atomically
+
+    Two defects found by ai-review (agy):
+    - Perl's diamond over an @ARGV filename uses 2-argument open, so a path ending
+      in '|' would run as a command. Read via stdin redirection instead; the hazard
+      is gone regardless of caller. Callers pass fixed root-owned paths, but defense
+      in depth costs nothing.
+    - 'cat > file' truncates in place, so an interruption (signal, ENOSPC) left the
+      database half-written -- contradicting the file's own atomicity claim. Write a
+      same-dir temp with the original's mode+owner, then rename over it (atomic).
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit b02682d672e68d6d6ce66e8ca135647d8d63953a
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Mon Aug 3 10:45:00 2026 -0400
+
+    Add dm-debconf-normalize-owners for reproducible debconf ownership
+
+    - Canonicalizes config.dat 'Owners:' so a built image is byte-identical
+      regardless of the build environment.
+    - ROOT CAUSE (verified synthetically): debconf records each question's owner
+      with the package name AS dpkg spells it per configure phase -- bare
+      ('shim-signed') in one, arch-qualified ('shim-signed:amd64') in another. A
+      build that configures a package across two phases records BOTH; a one-phase
+      build records one. Same system, build-varying bytes. Observed in a CI ISO:
+      shim-signed, libc6 and libpam0g all carried the dual spelling. debconf SORTS
+      Owners, so the difference is the SET, not the order -- this was the last
+      local-vs-CI difference.
+    - FIX: strip the ':arch' qualifier per owner and dedupe, so 'shim-signed',
+      'shim-signed:amd64' and 'shim-signed, shim-signed:amd64' all collapse to
+      'shim-signed'. Arch is never meaningful for question ownership; a later
+      db_unregister of a now-unmatched arch owner leaves a harmless orphan (the
+      trade-off Debian's own reproducible-builds work accepts). ONLY config.dat --
+      templates.dat 'Owners:' hold question names, not packages. Idempotent.
+    - Wired into 4350_reimage-raw-reproducible (raw/qcow2) and
+      3600_convert-raw-to-iso (ISO) in the parent, before the image is packed.
+    - Regression suite (dist-ai): 7 cases incl. convergence of all three spellings
+      to one output, multi-owner dedup, idempotency, and two canaries.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 9ac5d8570aa0268a5d0360faf785f72ae7cccd6b
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Mon Aug 3 07:53:33 2026 -0400
+
+    verify-windows: retry with explicitly fetched CRLs
+
+    osslsigncode downloads each CRL distribution point itself at verify time, which
+    makes an otherwise offline check depend on a live fetch to an external host. It
+    broke a CI build:
+
+      PEM routines:get_name:no start line
+      CRL distribution point: http://crl3.digicert.com/...CodeSigning...crl
+      Use the "-CRLfile" option to add one or more CRLs in PEM format.
+      Signature verification: failed
+
+    while the identical installer verified fine in the sandbox minutes earlier, so
+    it is environment-specific, not the file. CRLs are published in DER; -CRLfile
+    wants PEM, which is the shape of that parse error.
+
+    Revocation checking is NOT skipped. Skipping it would trade a flaky build for a
+    weaker security check. On failure the CRLs are fetched with curl -- which
+    honours the proxy settings the build already uses -- converted DER to PEM, and
+    passed back in. The URLs are read from the failed run's own output, so they come
+    from the file under test and survive certificate rotation rather than being
+    hardcoded.
+
+    Verified both paths: the real installer still verifies first try and exits 0;
+    and against a stub reproducing CI's exact failure, the script extracts the URL,
+    fetches 1 CRL, retries with -CRLfile and succeeds. If no CRL can be retrieved it
+    fails loudly instead of passing.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 77a095fb9c2023a33dff77402c455bc653affb08
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Mon Aug 3 00:31:51 2026 -0400
+
+    dm-nbd-cleanup: fix three defects found by review
+
+    All three verified live before and after.
+
+    1. A MOUNT POINT WITH A SPACE COULD UNMOUNT THE WRONG FILESYSTEM (agy). The
+       parser read mount(8), which prints such a path verbatim, so field-splitting
+       truncated '/mnt/my nbd' to '/mnt/my' -- a DIFFERENT filesystem, which the
+       release path would then have unmounted. Now reads /proc/mounts, which
+       octal-escapes the space, restored with printf '%b'. Tested with a decoy tmpfs
+       mounted at the truncated path: the tool names the full path, releases only
+       it, and the decoy survives.
+
+    2. EXIT 0 AFTER A FAILED RELEASE (coderabbit). umount or qemu-nbd --disconnect
+       failing printed an error and still exited 0, so a caller running this to make
+       nbd usable would proceed straight into the unreadable state it exists to
+       clear. Failures are now counted and reported with a non-zero exit.
+
+    3. A LEAKED DEVICE COULD BE MISSED ENTIRELY (agy). The guard keyed on
+       /dev/nbd0; where that node is absent but /dev/nbd1 is leaked, the tool exited
+       0 reporting nothing to do. It now probes the range.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit c04d71317f2945b0254da7109a659e5e0a5219e1
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Mon Aug 3 00:25:28 2026 -0400
+
+    dm-nbd-cleanup: release leaked nbd devices and their stale mounts
+
+    Belongs with the other dm-* build tools rather than in dist-ai: it is used by
+    the derivative-maker build itself (1100_sanity-tests refuses to build on a stale
+    nbd mount and names this command).
+
+    Image comparison and inspection run inside the derivative-maker container, which
+    is torn down with SIGKILL, so its EXIT traps never run. The container is
+    --privileged with /dev shared, so the mounts it made survive in the host
+    namespace. Attaching a different image to the same /dev/nbdN then makes every
+    read return EIO -- which presents as a corrupt image rather than a stale mount,
+    and cost a debugging detour on a perfectly good CI image.
+
+    REPORTS by default; --release acts. It cannot tell a leaked device from one a
+    concurrent job is using -- both look attached -- so the destructive step is
+    opt-in and the default output is the evidence to decide on.
+
+    Unmounts before disconnecting, and only touches devices actually in use
+    (size != 0). --lazy on the umount because a container that died mid-read can
+    still hold the mount, and EBUSY there would leave exactly the state being
+    cleaned.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
 
 commit 1fc1755209f657983e9c7f86e8f74b863230a715
 Merge: aa45322d b8f4bc28
