@@ -66,6 +66,14 @@ on:
         required: false
         type: string
         default: 'master'
+    secrets:
+      PRIVATE_AI_CONFIG_DEPLOY_KEY:
+        ## Read-only deploy key for org-ai-assisted/private-ai-config. Only used when
+        ## a consumer opts in via dm-consumer.yml 'dist-ai-tests.private-ai-config: true'
+        ## (the secure-terminal-shots reaper needs safe-pgrep/safe-pkill, which ship only
+        ## there). Optional so consumers that do not opt in need no secret; the checkout
+        ## step is gated on the opt-in, so an empty value is never used.
+        required: false
 
 permissions:
   contents: read
@@ -195,6 +203,33 @@ jobs:
           ref: master
           path: terminal-poc-corpus
           persist-credentials: false
+
+      - name: Install openssh-client (for the private-ai-config deploy-key checkout)
+        if: steps.cfg.outputs.private_ai_config == 'true'
+        ## actions/checkout's ssh-key path shells out to ssh / ssh-keyscan, absent from
+        ## the slim container. Gated on the opt-in so no other consumer pays for it.
+        run: apt-get install --yes --no-install-recommends openssh-client
+
+      - name: Checkout private-ai-config (safe-pgrep/safe-pkill for the shots reaper)
+        if: steps.cfg.outputs.private_ai_config == 'true'
+        ## private-ai-config is PRIVATE; the default GITHUB_TOKEN is scoped to the caller
+        ## repo, so a READ-ONLY deploy key (secret) authenticates this cross-repo checkout.
+        ## The reusable's fork-PR guard means only same-repo (trusted) events reach this
+        ## job, so the key is never exposed to a forked-PR payload.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/private-ai-config
+          ref: master
+          path: private-ai-config
+          ssh-key: ${{ secrets.PRIVATE_AI_CONFIG_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Provide safe-pgrep/safe-pkill at the system path
+        if: steps.cfg.outputs.private_ai_config == 'true'
+        ## Link them into /usr/local/bin so the shots reaper's 'type -P safe-pgrep'
+        ## resolves them, exactly as the installed package does on the host. Logic lives
+        ## in the committed dist-ai/ci script (no embedded shell in CI files).
+        run: dist-ai/ci/dist-ai-tests-ci-pac-runtime.sh "${GITHUB_WORKSPACE}/private-ai-config"
 
       - name: Install test dependencies (apt only)
         env:
