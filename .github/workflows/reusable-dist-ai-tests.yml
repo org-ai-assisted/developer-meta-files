@@ -205,13 +205,19 @@ jobs:
           persist-credentials: false
 
       - name: Install openssh-client (for the private-ai-config deploy-key checkout)
-        if: steps.cfg.outputs.private_ai_config == 'true'
+        ## Dependabot PRs pass the same-repo guard but receive NO ordinary Actions secrets,
+        ## so PRIVATE_AI_CONFIG_DEPLOY_KEY expands empty and the cross-repo checkout would fail
+        ## at auth. A dep-update PR does not need the shots reaper, so skip these steps for it.
+        if: steps.cfg.outputs.private_ai_config == 'true' && github.actor != 'dependabot[bot]'
         ## actions/checkout's ssh-key path shells out to ssh / ssh-keyscan, absent from
         ## the slim container. Gated on the opt-in so no other consumer pays for it.
         run: apt-get install --yes --no-install-recommends openssh-client
 
       - name: Checkout private-ai-config (safe-pgrep/safe-pkill for the shots reaper)
-        if: steps.cfg.outputs.private_ai_config == 'true'
+        ## Dependabot PRs pass the same-repo guard but receive NO ordinary Actions secrets,
+        ## so PRIVATE_AI_CONFIG_DEPLOY_KEY expands empty and the cross-repo checkout would fail
+        ## at auth. A dep-update PR does not need the shots reaper, so skip these steps for it.
+        if: steps.cfg.outputs.private_ai_config == 'true' && github.actor != 'dependabot[bot]'
         ## private-ai-config is PRIVATE; the default GITHUB_TOKEN is scoped to the caller
         ## repo, so a READ-ONLY deploy key (secret) authenticates this cross-repo checkout.
         ## The reusable's fork-PR guard means only same-repo (trusted) events reach this
@@ -225,7 +231,10 @@ jobs:
           persist-credentials: false
 
       - name: Provide safe-pgrep/safe-pkill at the system path
-        if: steps.cfg.outputs.private_ai_config == 'true'
+        ## Dependabot PRs pass the same-repo guard but receive NO ordinary Actions secrets,
+        ## so PRIVATE_AI_CONFIG_DEPLOY_KEY expands empty and the cross-repo checkout would fail
+        ## at auth. A dep-update PR does not need the shots reaper, so skip these steps for it.
+        if: steps.cfg.outputs.private_ai_config == 'true' && github.actor != 'dependabot[bot]'
         ## Link them into /usr/local/bin so the shots reaper's 'type -P safe-pgrep'
         ## resolves them, exactly as the installed package does on the host. Logic lives
         ## in the committed dist-ai/ci script (no embedded shell in CI files).
