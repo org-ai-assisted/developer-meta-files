@@ -36,9 +36,3 @@ concurrency:
 jobs:
   dist-ai-tests:
     uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-dist-ai-tests.yml@master
-    ## Pass the read-only private-ai-config deploy key. Only consumers that opt in
-    ## (dm-consumer.yml 'dist-ai-tests.private-ai-config: true') set this repo secret;
-    ## for everyone else it resolves to empty and the reusable's gated checkout never
-    ## uses it. The secret is declared 'required: false' in the reusable.
-    secrets:
-      PRIVATE_AI_CONFIG_DEPLOY_KEY: ${{ secrets.PRIVATE_AI_CONFIG_DEPLOY_KEY }}
