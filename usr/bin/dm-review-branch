@@ -3,7 +3,11 @@
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-set -x
+## No 'set -x': xtrace prints every command's EXPANDED form to the terminal,
+## which would echo an untrusted ref name (git permits U+202E and other spoofing
+## codepoints in ref names) RAW, before any scan or stcat neutralization runs --
+## defeating this tool's purpose. The sibling scan tools omit it for the same
+## reason. Use 'bash -x dm-review-branch ...' externally if a trace is needed.
 set -o errexit
 set -o nounset
 set -o pipefail
