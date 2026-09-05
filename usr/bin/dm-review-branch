@@ -65,7 +65,11 @@ review_prompt_or_die "${scan_rc}" check-ref-names-for-unicode
 
 ## Neutralize via stcat: a unicode/ANSI finding the operator consented past
 ## (review_prompt_or_die) must not inject the terminal through the raw log.
-git log "...${1}" | stcat
+## NO_COLOR=1 so attacker SGR color (e.g. black-on-black to hide text) is
+## neutralized too -- stcat keeps SGR when color is enabled, and a commit
+## message is attacker-controlled. --no-pager matches the rest of the review
+## flow, which never pages (git-review-driver.sh disables it too).
+git --no-pager log "...${1}" | NO_COLOR=1 stcat
 
 git-diff-review "...${1}"
 
