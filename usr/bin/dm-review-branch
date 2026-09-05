@@ -27,6 +27,19 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 has stcat || die 1 "'stcat' not on PATH; cannot neutralize review output."
 has unicode-show || die 1 "'unicode-show' not on PATH; the unicode scans cannot run."
 
+## Validate the single ref argument up front: a clear usage message instead of
+## a bare 'unbound variable' crash, and reject a leading-dash ref so it cannot
+## be misparsed as an option by check-ref-commits-for-unicode below (which takes
+## a bare ref, not the '...' range the git tools further down receive).
+if [ "$#" -ne 1 ]; then
+   die 2 "usage: ${0##*/} <ref>"
+fi
+case "${1}" in
+   -*)
+      die 2 "ref '${1}' must not start with '-'."
+      ;;
+esac
+
 ## Handle the result of a unicode-spoofing scan ($1 = its exit code, $2 = its
 ## name). The scan tools separate their exit codes on purpose:
 ##   0    = clean;
