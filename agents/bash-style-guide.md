@@ -905,7 +905,7 @@ belongs in its own executable file, not embedded in the shell.
 
 Bad:
 
-    python3 "${dir}/report-summary.py" "${report}"   # run via shebang
+    python3 "${dir}/report-summary.py" "${report}"   # script via interpreter
     python3 -- "${dir}/report-summary.py"            # same, '--' form
     python3 -c 'import json, sys; ...'               # embedded program
     python3 - <<'PY'                                 # program on stdin
