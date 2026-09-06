@@ -897,29 +897,47 @@ Exception: bootstrap that runs before the executable bit is set
 lost +x), or surfaces that don't honor the shebang. State the
 reason inline.
 
-**R-193: Call an in-repo Python script directly, not via `python3 --
-<file>.py`.** R-180 makes every `*.py` executable with a shebang, so
-run it like any other program.
+**R-193: Never name the Python interpreter in command position.** No
+`python`, `python3`, or version-pinned `python3.11` as a command. R-180
+makes every `*.py` executable with a shebang, so run a script like any
+other program; and an inline program (`-c`, or a program fed on stdin)
+belongs in its own executable file, not embedded in the shell.
 
 Bad:
 
-    python3 -- "${dir}/report-summary.py" "${report}"
+    python3 "${dir}/report-summary.py" "${report}"   # run via shebang
+    python3 -- "${dir}/report-summary.py"            # same, '--' form
+    python3 -c 'import json, sys; ...'               # embedded program
+    python3 - <<'PY'                                 # program on stdin
+    ...
+    PY
+    python3.11 report.py                             # version pin
 
 Good:
 
-    "${dir}/report-summary.py" "${report}"
+    "${dir}/report-summary.py" "${report}"           # direct, +x
+    "${dir}/summarize.py" < "${report}"              # -c moved to a file
 
 Why: the same contract R-102 states for shell -- the shebang declares
 the interpreter, the caller should not restate it. It matters more
-here: a `python3 -- file` prefix DROPS the shebang's own flags
+here: a `python3 file` prefix DROPS the shebang's own flags
 (`#!/usr/bin/python3 -Bsu`), so the direct call is not just tidier, it
-runs the interpreter the file asked for. A generic dispatcher passing
-`"$@"` (no literal path) is glue, not a named call, and is fine.
+runs the interpreter the file asked for. An embedded `-c`/stdin program
+can't be linted, type-checked, coverage-measured, or unit-tested -- no
+file exists to see -- so it must move to a standalone `*.py`. A version
+pin (`python3.11`) hardcodes a version the target may not ship.
 
-Enforced by R-193 in the pre-push gate: it flags a literal
-`<interpreter> -- <path>.py` at quote depth zero, outside comments.
-Waiver: `## style-ok: allow-python-dashdash` for a script deliberately
-not executable, or an external path you don't control.
+The ONE exception is an unpinned `python3 -m MODULE` (an installed
+module, e.g. `python3 -m venv`): there is no script file to give a
+shebang, so naming the interpreter is unavoidable. A pin is still
+refused even there (`python3.11 -m ...`).
+
+Enforced by R-193 in the pre-push gate, in shell scripts AND in the
+command lines that units and workflows embed (systemd `Exec*=`, GitHub
+Actions `run:`). Command position only -- a `python3` inside a quoted
+string or a comment is data. Waiver, for a deliberate PATH/venv python
+you genuinely need: `## style-ok: allow-python-interpreter` (or the
+per-rule `## style-ok: R-193`).
 
 **R-103: Don't replace the process with `exec <command>`; run it as
 a child and forward the exit code.** Process-replacement `exec`
@@ -1391,16 +1409,17 @@ starts with the prefix (`${TMPFILE}`), are not matched.
 
 **R-190: A substantial interpreter program does not belong in a
 shell heredoc.** If the embedded body is more than ~5 lines, put it
-in its own file with a shebang and call it.
+in its own file with a shebang and call it. Covers `perl`, `ruby`,
+`node`, `php`; Python in ANY form (any size) is R-193's job.
 
     ## Bad -- invisible to every tool that would check it:
-    summary="$(python3 - "${report}" <<'PY'
+    summary="$(perl - "${report}" <<'PL'
     ...40 lines of parsing...
-    PY
+    PL
     )"
 
     ## Good:
-    summary="$("${helper_dir}/report-summary.py" "${report}")"
+    summary="$("${helper_dir}/report-summary.pl" "${report}")"
 
 Why: this is R-100's defect in the other direction. ruff and pyrefly
 only see real `*.py` files; coverage.py cannot measure a heredoc at
@@ -1414,7 +1433,9 @@ copy, fall back to the installed path) so editing the repo takes
 effect without installing, and fail loudly when neither exists. A
 silent fallback to a stale installed copy is worse than no fallback.
 
-Short glue stays inline: a one-line `python3 -c` is not a program.
+Short glue stays inline: a one-line `perl -e` / `node -e` is not a
+program. (This latitude is for the non-Python interpreters only --
+R-193 refuses `python3 -c` at any length.)
 
 Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
 
