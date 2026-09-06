@@ -5,12 +5,20 @@
 
 ## NOTE: No longer in use.
 
+## style-ok: no-has -- standalone cross-arch bootstrap installer; runs as root
+## before helper-scripts is on PATH, so it self-checks safe-rm with 'command -v'
+## rather than the helper-scripts 'has'.
+## style-ok: allow-apt-get -- deliberately drives apt-get directly to install
+## the cross-compiler toolchain in a bootstrap context.
+
 set -x
 set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 FPC_VERSION=3.2.2
 FPC_COMMIT_FOR_VERSION=0d122c49534b480be9284c21bd60b53d99904346 # 3.2.2
@@ -34,13 +42,13 @@ temp_folder="$(mktemp --directory)"
 ## Invoked indirectly via the trap below.
 # shellcheck disable=SC2317
 exit_handler() {
-  if [ "$temp_folder" = "" ]; then
+  if [ "${temp_folder}" = "" ]; then
     return 0
   fi
-  if ! test -d "$temp_folder" ; then
+  if ! test -d "${temp_folder}" ; then
     return 0
   fi
-  safe-rm --verbose --force --recursive -- "$temp_folder" || true
+  safe-rm --verbose --force --recursive -- "${temp_folder}" || true
 }
 
 trap exit_handler EXIT
@@ -58,9 +66,9 @@ install_ppcross() {
 ## Alternate path; toggled via the comment on the call site above.
 # shellcheck disable=SC2317
 install_ppcross_using_debian_source_package() {
-  mkdir --parents -- "$temp_folder"
+  mkdir --parents -- "${temp_folder}"
 
-  cd -- "$temp_folder"
+  cd -- "${temp_folder}"
 
   apt-get source fpc
 
@@ -71,9 +79,9 @@ install_ppcross_using_debian_source_package() {
   #fpcmake -w -Tall
   fpcmake -w -Tx86_64-win64
 
-  make clean all OS_TARGET="$OS_TARGET" CPU_TARGET="$CPU_TARGET"
-  make crossinstall OS_TARGET=$OS_TARGET CPU_TARGET="$CPU_TARGET" INSTALL_PREFIX=/usr
-  ln -sf "$fpc_version_path/$COMPILER" "/usr/bin/$COMPILER"
+  make clean all OS_TARGET="${OS_TARGET}" CPU_TARGET="${CPU_TARGET}"
+  make crossinstall OS_TARGET=${OS_TARGET} CPU_TARGET="${CPU_TARGET}" INSTALL_PREFIX=/usr
+  ln -sf "${fpc_version_path}/${COMPILER}" "/usr/bin/${COMPILER}"
 }
 
 install_ppcross_using_git_from_upstream() {
@@ -83,19 +91,19 @@ install_ppcross_using_git_from_upstream() {
   else
     cd -- /usr/share/fpcsrc
 
-    fpc_version_path="/usr/lib/fpc/$FPC_VERSION"
-    safe-rm --recursive --force -- "$fpc_version_path"
-    mkdir --parents -- "$fpc_version_path"
-    cd -- "$fpc_version_path"
+    fpc_version_path="/usr/lib/fpc/${FPC_VERSION}"
+    safe-rm --recursive --force -- "${fpc_version_path}"
+    mkdir --parents -- "${fpc_version_path}"
+    cd -- "${fpc_version_path}"
 
     git init
     git remote add origin https://gitlab.com/freepascal.org/fpc/source.git
-    git fetch --depth 1 origin "$FPC_COMMIT_FOR_VERSION"
+    git fetch --depth 1 origin "${FPC_COMMIT_FOR_VERSION}"
     git switch --detach FETCH_HEAD
 
-    make clean all OS_TARGET="$OS_TARGET" CPU_TARGET="$CPU_TARGET"
-    make crossinstall OS_TARGET=$OS_TARGET CPU_TARGET="$CPU_TARGET" INSTALL_PREFIX=/usr
-    ln -sf "$fpc_version_path/$COMPILER" "/usr/bin/$COMPILER"
+    make clean all OS_TARGET="${OS_TARGET}" CPU_TARGET="${CPU_TARGET}"
+    make crossinstall OS_TARGET="${OS_TARGET}" CPU_TARGET="${CPU_TARGET}" INSTALL_PREFIX=/usr
+    ln -sf "${fpc_version_path}/${COMPILER}" "/usr/bin/${COMPILER}"
   fi
 }
 
@@ -109,9 +117,15 @@ add_searchpath() {
 }
 
 case "${1:-}" in
-  install_dependencies) install_dependencies;;
-  install_ppcross) install_ppcross;;
-  add_searchpath) add_searchpath;;
+  install_dependencies)
+    install_dependencies
+  ;;
+  install_ppcross)
+    install_ppcross
+  ;;
+  add_searchpath)
+    add_searchpath
+  ;;
   all)
     install_dependencies
     install_ppcross

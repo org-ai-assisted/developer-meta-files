@@ -3,36 +3,73 @@
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-set -x
+## No 'set -x': xtrace prints every command's EXPANDED form to the terminal,
+## which would echo an untrusted ref name (git permits U+202E and other spoofing
+## codepoints in ref names) RAW, before any scan or stcat neutralization runs --
+## defeating this tool's purpose. The sibling scan tools omit it for the same
+## reason. Use 'bash -x dm-review-branch ...' externally if a trace is needed.
 set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 
+## Fail closed with a clear message if a neutralization/scan dependency is
+## absent. stcat neutralizes the attacker-controlled bytes the git log below
+## prints; a missing unicode-show makes check-ref-*-for-unicode return a
+## MISLEADING rc 1 (die_if_not_has) that review_prompt_or_die would take for a
+## detection and let the operator wave past -- reviewing with no working scanner.
+has stcat || die 1 "'stcat' not on PATH; cannot neutralize review output."
+has unicode-show || die 1 "'unicode-show' not on PATH; the unicode scans cannot run."
+
+## Validate the single ref argument up front: a clear usage message instead of
+## a bare 'unbound variable' crash, and reject a leading-dash ref so it cannot
+## be misparsed as an option by check-ref-commits-for-unicode below (which takes
+## a bare ref, not the '...' range the git tools further down receive).
+if [ "$#" -ne 1 ]; then
+   die 2 "usage: ${0##*/} <ref>"
+fi
+case "${1}" in
+   -*)
+      die 2 "ref '${1}' must not start with '-'."
+      ;;
+esac
+
 ## Handle the result of a unicode-spoofing scan ($1 = its exit code, $2 = its
-## name, for messages). A non-zero scan found a look-alike (or hit a benign
-## failure such as check-ref-names-for-unicode's "No refs matched"). Rather than
-## hard-abort the whole review under errexit, ask the operator via
-## prompt_yes_no_tty (log_run_die.sh) -- the same consent helper git-review uses.
+## name). The scan tools separate their exit codes on purpose:
+##   0    = clean;
+##   1    = a look-alike was found;
+##   >= 2 = the scan could not run (bad/absent ref, no new commits, not a work
+##          tree, git failure).
+## rc 1 is a real detection -- ask the operator via prompt_yes_no_tty
+## (log_run_die.sh, the same consent helper git-review uses) rather than
+## hard-aborting under errexit. rc >= 2 is a setup/usage error, NOT a detection:
+## continuing is futile (the diff would be empty or fail), so fail closed with
+## the real error rather than a misleading "unicode spoofing" prompt.
 ## prompt rc: 0 = continue; 1 = declined; 2 = no controlling terminal to ask (a
-## CI/batch run) -> fail closed. Either non-zero aborts with the scan's rc.
+## CI/batch run) -> fail closed.
 review_prompt_or_die() {
    local scan_rc="$1" scan_name="$2" prompt_rc
    if [ "${scan_rc}" -eq 0 ]; then
       return 0
    fi
-   log warn "'${scan_name}' failed (rc='${scan_rc}') -- possible unicode spoofing."
+   if [ "${scan_rc}" -ge 2 ]; then
+      die "${scan_rc}" "'${scan_name}' could not run (rc='${scan_rc}'); see its error above. Failing closed."
+   fi
+   log warn "'${scan_name}' flagged possible unicode spoofing (rc='${scan_rc}')."
    prompt_rc=0
    prompt_yes_no_tty "Continue the review anyway?" || prompt_rc="$?"
    if [ "${prompt_rc}" -eq 2 ]; then
-      die "${scan_rc}" "'${scan_name}' failed (rc='${scan_rc}') and there is no terminal to ask; failing closed."
+      die "${scan_rc}" "'${scan_name}' flagged spoofing and there is no terminal to ask; failing closed."
    fi
    if [ "${prompt_rc}" -ne 0 ]; then
       die "${scan_rc}" "aborting the review at your request."
@@ -56,7 +93,13 @@ scan_rc=0
 check-ref-names-for-unicode || scan_rc="$?"
 review_prompt_or_die "${scan_rc}" check-ref-names-for-unicode
 
-git log "...${1}"
+## Neutralize via stcat: a unicode/ANSI finding the operator consented past
+## (review_prompt_or_die) must not inject the terminal through the raw log.
+## NO_COLOR=1 so attacker SGR color (e.g. black-on-black to hide text) is
+## neutralized too -- stcat keeps SGR when color is enabled, and a commit
+## message is attacker-controlled. --no-pager matches the rest of the review
+## flow, which never pages (git-review-driver.sh disables it too).
+git --no-pager log "...${1}" | NO_COLOR=1 stcat
 
 git-diff-review "...${1}"
 

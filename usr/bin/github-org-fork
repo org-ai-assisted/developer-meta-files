@@ -16,6 +16,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=../libexec/developer-meta-files/github-org-lib.bsh
 source "${DEVELOPER_META_FILES_PATH:-}"/usr/libexec/developer-meta-files/github-org-lib.bsh
@@ -503,9 +504,6 @@ main() {
   local target_type auth_user source_repos target_repos repo_name
   local -A target_set=()
   local -a missing=() to_configure=()
-
-  ## sync_one calls 'git check-ref-format'.
-  die_if_not_has git
 
   log notice "source: ${source_owner} -> target: ${target_owner}"
 
