@@ -44,6 +44,19 @@ case "${1}" in
       ;;
 esac
 
+## Resolve the ref to an IMMUTABLE commit ONCE, up front, and drive every step below from
+## that commit -- the scan and all four display steps must see the SAME content. The primary
+## caller (dm-packaging-helper-script) reviews refs/remotes/<remote>/<branch>; a concurrent or
+## automatic 'git fetch' can move that ref between the scan and the minutes-long git-meld /
+## git-kdiff3 windows, which each RE-RESOLVE a ref name and would then display commits that were
+## never unicode-scanned. A commit id cannot move, so pinning closes that TOCTOU.
+## Safe to name the ref if it fails: die routes through log -> sanitize-string + stecho, which
+## neutralizes a U+202E (or other spoofing codepoint) in the name -- same reason the
+## leading-dash check above can print it.
+if ! target_commit="$(git rev-parse --verify --end-of-options "${1}^{commit}" 2>/dev/null)"; then
+   die 2 "ref '${1}' does not resolve to a commit."
+fi
+
 ## Handle the result of a unicode-spoofing scan ($1 = its exit code, $2 = its
 ## name). The scan tools separate their exit codes on purpose:
 ##   0    = clean;
@@ -79,7 +92,7 @@ review_prompt_or_die() {
 
 ## Scan the ref's new commits (content, messages, author identity)...
 scan_rc=0
-check-ref-commits-for-unicode "${1}" || scan_rc="$?"
+check-ref-commits-for-unicode "${target_commit}" || scan_rc="$?"
 review_prompt_or_die "${scan_rc}" check-ref-commits-for-unicode
 
 ## ...and every ref NAME in the repo, for spoofing via non-ASCII unicode.
@@ -99,12 +112,12 @@ review_prompt_or_die "${scan_rc}" check-ref-names-for-unicode
 ## neutralized too -- stcat keeps SGR when color is enabled, and a commit
 ## message is attacker-controlled. --no-pager matches the rest of the review
 ## flow, which never pages (git-review-driver.sh disables it too).
-git --no-pager log "...${1}" | NO_COLOR=1 stcat
+git --no-pager log "...${target_commit}" | NO_COLOR=1 stcat
 
-git-diff-review "...${1}"
+git-diff-review "...${target_commit}"
 
-git-meld "...${1}"
+git-meld "...${target_commit}"
 
-git-kdiff3 "...${1}"
+git-kdiff3 "...${target_commit}"
 
 true "$0: OK."
