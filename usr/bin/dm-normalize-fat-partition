@@ -158,10 +158,15 @@ mkfs.fat -F 32 \
 ## that dd overwrites the ESP with -- the same silent-strip failure mode as the
 ## extraction listing above. The '[ -n ]' guard keeps an empty set to zero
 ## iterations (a flat FAT legitimately has no subdirectories).
+##
 ## NUL-delimited: a file/dir name with a leading/trailing space or a newline must
-## survive verbatim into mmd/mcopy, or the ESP is re-imaged with the wrong path
-## -- the silent-strip failure mode this function exists to avoid. An empty tree
-## runs the loop zero times.
+## survive verbatim into mmd/mcopy.
+##
+## FIXME: We aren't capturing or `[ -n ]` guarding the listing anymore, so we
+## need to use a temp file to expose the exit code of cd | find | sort to the
+## parent shell, and should use a flag or similar to indicate whether we
+## created any dirs or copied any files. We should also DELETE (not rewrite!)
+## the comment above that mentions capturing listings.
 while IFS= read -r -d '' directory; do
    mmd -i "${fresh_image}" "::${directory#./}"
 done < <( cd -- "${staging}" && find . -mindepth 1 -type d -print0 | LC_ALL=C sort -z )

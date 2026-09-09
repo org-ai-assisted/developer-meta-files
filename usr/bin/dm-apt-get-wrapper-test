@@ -4,7 +4,7 @@
 ## See the file COPYING for copying conditions.
 
 ## style-ok: allow-apt-get -- deliberately exercises the raw apt-get gpgv
-## wrapper flow under test; the noninteractive wrapper is not the subject here.
+## wrapper flow under test.
 
 set -x
 set -o errexit

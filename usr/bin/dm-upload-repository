@@ -80,7 +80,7 @@ upload_dists() {
    rsync \
       ${rsync_opts} \
       --recursive \
-      "${rsync_delete_maybe}" \
+      ${rsync_delete_maybe} \
       ${rsync_dry_run_maybe} \
       --rsh ssh \
       "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/dists/"* \
@@ -94,7 +94,7 @@ upload_pool() {
    rsync \
       ${rsync_opts} \
       --recursive \
-      "${rsync_delete_maybe}" \
+      ${rsync_delete_maybe} \
       ${rsync_dry_run_maybe} \
       --rsh ssh \
       "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/pool/"* \

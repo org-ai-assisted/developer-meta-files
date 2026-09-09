@@ -25,7 +25,8 @@ named tag and the id override are interchangeable escape hatches for
 that rule. A waiver must be a real COMMENT: a `## style-ok:` line
 inside a heredoc body or a quoted string is data, not a waiver, and
 does not suppress anything. A waiver is a deliberate, reviewed
-exception, not a default -- prefer complying over waiving.
+exception, not a default -- prefer complying over waiving. Prefer using
+named waivers over ID-based waivers for the sake of reviewers.
 
 
 ## File-level
@@ -245,7 +246,12 @@ _auto-detected: no | auto-fixed: no_
 
     apt_candidate() {
        while IFS= read -r line; do
-          case "${line}" in *Candidate:*) printf '%s' "..."; return 0 ;; esac
+          case "${line}" in
+             *Candidate:*)
+                printf '%s' "..."
+                return 0
+                ;;
+          esac
        done < <(apt-cache policy -- "$1")
     }
 
@@ -253,8 +259,7 @@ Why: on no match the last body command is the non-matching `case` (rc 0)
 and an empty stream never runs the body (also 0); the failed EOF `read`
 does not set the status. So `cand="$(apt_candidate x)"` under `errexit`
 does NOT abort -- `cand` is empty and the script continues. Guard the
-empty result explicitly; a 6-line repro settles any doubt (reviewers
-routinely claim the opposite).
+empty result explicitly.
 
 
 **R-016: Prefer running a command and CAPTURING its output before a loop
@@ -358,13 +363,10 @@ _auto-detected: no | auto-fixed: no_
 
 Bad:
 
-    if var="$(cmd)"; then ...
     safe-rm --force -- "$(resolve_dir "${id}")/muted"
 
 Good:
 
-    var="$(cmd)" || return 1
-    if [ -n "${var}" ]; then ...
     local dir
     dir="$(resolve_dir "${id}")" || return 1
     safe-rm --force -- "${dir}/muted"
@@ -376,6 +378,12 @@ return`/`|| die`) catch it first; and under `set -x` a separate
 assignment line traces the resolved value before the branch. A plain
 top-level `var="$(...)"` already lets errexit catch the failure (see
 R-011, R-022 for `local`, R-033 for `printf`).
+
+Note that `if var="$(cmd)"; then ... fi` is fine. The return value of
+this expression is the return value of the command in the subshell, so
+it isn't vulnerable to the issue described above. This is a common
+idiom to capture the output of a command and handle errors
+conveniently.
 
 
 **R-028: Default an unbound variable at its SOURCE with `[ -v VAR ] ||
@@ -1562,10 +1570,9 @@ NEITHER, which would otherwise slip past both.
 
 **R-200: `timeout` should almost always carry `--kill-after=`.** A bare
 `timeout <N> <cmd>` sends only `SIGTERM` after `<N>` seconds; a child
-wedged in an uninterruptible syscall can ignore `SIGTERM` and keep
-running, defeating the very bound `timeout` was added for. Add
-`--kill-after=<K>` so `timeout` follows up with `SIGKILL` `<K>` seconds
-later:
+can ignore `SIGTERM` and keep running, defeating the very bound
+`timeout` was added for. Add `--kill-after=<K>` so `timeout` follows up
+with `SIGKILL` `<K>` seconds later:
 _auto-detected: yes | auto-fixed: yes_
 
     timeout --kill-after=5 5 -- eglinfo -B
@@ -1577,8 +1584,11 @@ short `-k` provides the same safety. `<K>` is the grace window after the
 
 Why: the whole point of `timeout` is a hard upper bound on wall-clock;
 without the `SIGKILL` follow-up that bound is only advisory, and the one
-process you most need to bound (a hung one, blocked in the kernel) is
-exactly the one that ignores `SIGTERM`.
+process you most need to bound (a stuck or busy-waiting process) is
+exactly the one that ignores `SIGTERM`. Note that even `SIGKILL` cannot
+terminate processes that are stuck in an uninterruptible D-state, so
+code should be somewhat wary of assuming a process is truly dead after
+a SIGKILL.
 
 The rare legitimate bare `timeout` (a command that MUST be allowed to
 finish its own cleanup on `SIGTERM`, or where `SIGKILL` would corrupt
@@ -1606,7 +1616,7 @@ Why: the wrapper exports `DEBIAN_FRONTEND=noninteractive`,
 `DEBIAN_PRIORITY=critical`, a `policy-rc.d`, and force-conf* options, so a
 scripted install never blocks on a debconf prompt or a conffile question
 (the class of hang that wedges an unattended build or a boot-time
-install). A bare `apt-get` inherits the caller's frontend and stalls.
+install). A bare `apt-get` inherits the caller's frontend and may stall.
 
 **R-211: `dpkg-noninteractive`, not `dpkg`, for state-changing actions.**
 Any action that unpacks or changes package state -- `--install`/`-i`,
@@ -1624,6 +1634,11 @@ A read-only QUERY (`dpkg --compare-versions`, `-l`, `-L`, `-s`, `-S`,
 `--force-confnew` is meaningless there, and forcing a query through it
 would break early-boot code where the wrapper may be absent.
 
+Why a wrapper file is exempt: the helper-scripts scripts that DEFINE
+`apt-get-noninteractive` / `dpkg-noninteractive` necessarily call bare
+`apt-get` / `dpkg` -- that is their job -- so the gate never flags them
+(matched by basename).
+
 **R-212: never `--allow-downgrades`.** A silent downgrade masks a
 dependency or repository regression that should fail loudly; rely on the
 default refuse-downgrade behaviour (`dpkg --refuse-downgrade`).
@@ -1633,11 +1648,6 @@ _auto-detected: yes | auto-fixed: no_
 genmkfile build hides packaging defects. Fix the lintian findings
 instead.
 _auto-detected: yes | auto-fixed: no_
-
-Why a wrapper file is exempt: the helper-scripts scripts that DEFINE
-`apt-get-noninteractive` / `dpkg-noninteractive` necessarily call bare
-`apt-get` / `dpkg` -- that is their job -- so the gate never flags them
-(matched by basename).
 
 The pre-push gate flags R-210 through R-213 on shell files (command
 position, sparing an apt-get/dpkg inside a string or comment); its
@@ -1661,7 +1671,10 @@ _auto-detected: yes | auto-fixed: no_
     type -P helper-script >/dev/null || exit 77
 
     # Good -- a required tool absent fails LOUD:
-    type -P helper-script >/dev/null || { printf 'FATAL: helper-script absent\n' >&2 ; exit 1 ; }
+    if ! type -P helper-script >/dev/null; then
+       printf 'FATAL: helper-script absent\n' >&2
+       exit 1
+    fi
 
     # Good -- a genuinely OPTIONAL target may skip, WITH a reason:
     [ -x /usr/bin/optional-e2e-daemon ] || exit 77  ## style-ok: allow-skip: e2e-only daemon, absent in the core lane

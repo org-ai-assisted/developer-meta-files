@@ -8,9 +8,7 @@
 ## unreachable.
 # shellcheck disable=SC2317
 
-## style-ok: no-has -- standalone Qubes backup tool; runs on a Qubes system
-## without helper-scripts on PATH, so it preflights deps with 'command -v'
-## rather than the helper-scripts 'has'.
+## style-ok: no-has -- runs on Qubes dom0.
 
 set -x
 set -o errexit

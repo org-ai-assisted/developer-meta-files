@@ -39,7 +39,7 @@ while read -r line; do
 
    file_name="$(printf '%s\n' "${line}" | str_replace "Filename: " "")"
 
-   if grep --quiet -- anon-meta-packages <<< "${file_name}" ; then
+   if printf '%s\n' "$file_name" | grep -- anon-meta-packages >/dev/null 2>&1 ; then
       continue
    fi
 
