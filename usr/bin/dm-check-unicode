@@ -173,12 +173,7 @@ grep_find_unicode_wrapper_output="$(\
       --exclude=lkrg-openrc.sh \
       --exclude=changelog \
       --exclude=changelog.upstream \
-      --exclude="*.pyc" \
       --exclude-dir=.git \
-      --exclude-dir=__pycache__ \
-      --exclude-dir=.mypy_cache \
-      --exclude-dir=.pytest_cache \
-      --exclude-dir=.hypothesis \
       -- \
       "./" \
    )" \
@@ -226,13 +221,8 @@ if grep \
       --exclude=lkrg-openrc.sh \
       --exclude=changelog \
       --exclude=changelog.upstream \
-      --exclude="*.pyc" \
       --exclude-dir=.git \
       --exclude-dir=live-build \
-      --exclude-dir=__pycache__ \
-      --exclude-dir=.mypy_cache \
-      --exclude-dir=.pytest_cache \
-      --exclude-dir=.hypothesis \
       -- \
       '[[:blank:]]$' ; then
    true "\
@@ -264,13 +254,8 @@ grep_missing_newline_result_raw="$( \
       --perl-regexp --null-data --files-with-matches --invert-match \
       --exclude="control.authcookie" \
       --exclude="RecommendedTBBVersions" \
-      --exclude="*.pyc" \
       --exclude-dir="live-build" \
       --exclude-dir=".git" \
-      --exclude-dir="__pycache__" \
-      --exclude-dir=".mypy_cache" \
-      --exclude-dir=".pytest_cache" \
-      --exclude-dir=".hypothesis" \
       -- \
       '\x0a$'
    )" \
