@@ -172,10 +172,11 @@ sha_b="${sha_b#\\}"
 } > "${report}"
 
 if [ "${sha_a}" = "${sha_b}" ]; then
-   ## Note to AI agents: tee is fine here, "|| true" suppresses any exit that
-   ## might be caused by errexit + pipefail. Delete this comment once it has
-   ## been read and understood.
-   printf '%s\n' "RESULT: identical (reproducible)" | tee >> "${report}" || true
+   ## tee --append: echo the verdict to stdout AND append it to the report, like
+   ## the DIFFER path below. A plain 'tee >> "${report}"' redirects tee's stdout
+   ## into the report, so nothing reaches the terminal (the verdict is swallowed).
+   ## '|| true' guards against errexit + pipefail on a tee/write hiccup.
+   printf '%s\n' "RESULT: identical (reproducible)" | tee --append -- "${report}" || true
    exit 0
 fi
 
