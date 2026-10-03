@@ -19,10 +19,14 @@ source /usr/libexec/helper-scripts/git.sh
 ## XXX: hardcoded path
 derivative_maker_source_code_dir="${HOME}/derivative-maker"
 
-## XXX: hardcoded path
-cd -- "${HOME}/derivative-maker/packages/kicksecure/timesanitycheck"
+## minimum_unixtime now lives in the dist-system-metadata package; the generator
+## stays in timesanitycheck but writes into dist-system-metadata, and the commit
+## lands there.
+minimum_unixtime_file="${derivative_maker_source_code_dir}/packages/kicksecure/dist-system-metadata/usr/share/dist-system-metadata/timesanitycheck/minimum_unixtime"
 
-./usr/share/timesanitycheck/date-minimum-file-create
+"${derivative_maker_source_code_dir}/packages/kicksecure/timesanitycheck/usr/share/timesanitycheck/date-minimum-file-create" "${minimum_unixtime_file}"
+
+cd -- "${derivative_maker_source_code_dir}/packages/kicksecure/dist-system-metadata"
 
 if nothing_to_commit; then
   exit 0
@@ -37,7 +41,7 @@ git diff HEAD
 true "press enter to continue"
 read -r temp
 
-git add -- 'usr/share/timesanitycheck/minimum_unixtime'
+git add -- 'usr/share/dist-system-metadata/timesanitycheck/minimum_unixtime'
 git commit -m 'update minimum_unixtime'
 
 true "$0: INFO: OK"

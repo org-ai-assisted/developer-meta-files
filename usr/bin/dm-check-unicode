@@ -202,6 +202,13 @@ fi
 
 ## Check for missing newline at the end of the file (EOF).
 ##
+## DO NOT add --exclude-dir for __pycache__ / .mypy_cache / .pytest_cache /
+## .hypothesis (or any other regenerable tool cache) here or in any scan
+## above. Flagging such files is the POINT: they are build artifacts that
+## must never live in the source checkout. The fix is to remove the stray
+## dir and stop generating it (e.g. a 'python3 -B' shebang, or a cache dir
+## pointed outside the tree), NOT to silence this gate.
+##
 ## Thanks to:
 ## Julien Palard
 ## https://stackoverflow.com/a/25686825/2605155

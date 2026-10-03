@@ -1484,7 +1484,11 @@ is exactly the intent here: the parents (`/var/cache`, `~/.cache`, ...)
 pre-exist, so only the temp directory itself is created and it gets the
 mode atomically. There is no form that is both idempotent AND atomic
 without the flag combination SC2174 warns about, so the disable is part
-of the pattern -- `pre-push-fix` inserts it for you.
+of the pattern -- `pre-push-fix` inserts it for you. The insertion is NOT
+temp-dir-specific: ANY `mkdir --parents --mode=` (for example a lock
+directory `mkdir --parents --mode=0700 -- /run/user/0`) gets the directive
+from the fixer, so the atomic form is never blocked by SC2174 and the
+directive is never hand-typed. Only the REQUIREMENT below is temp-scoped.
 
 Waiver: `## style-ok: allow-mkdir-no-mode` anywhere in the script (same
 mechanism as R-120's `## style-ok: no-safe-rm`). Reserve it for a temp
