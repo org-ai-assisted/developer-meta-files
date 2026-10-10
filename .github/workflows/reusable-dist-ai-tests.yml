@@ -67,7 +67,7 @@ on:
           auto-resolves: the same-named COMPANION branch in dist-ai if it exists,
           else master -- so a coordinated dist-ai (tests) + consumer (behaviour)
           change travels under one branch name and is tested together (see the
-          resolve-dist-ai-ref action). Set only to force a specific ref.
+          resolve-companion-ref action). Set only to force a specific ref.
         required: false
         type: string
         default: ''
@@ -98,6 +98,13 @@ jobs:
       ## '--security-opt=apparmor=unconfined' alone all fail; the pair
       ## succeeds. Narrower than '--privileged', which also grants every
       ## other capability plus raw device access.
+      ##
+      ## NOT seccomp=unconfined: SYS_ADMIN already allowlists unshare in Docker's
+      ## default seccomp, and the GHA runner's bwrap/userns block is the kernel's
+      ## apparmor_restrict_unprivileged_userns LSM (seccomp cannot touch it), so it
+      ## would only add escape surface for no benefit. bwrap/userns suites are
+      ## CI-infra-impossible here and SkipTest. (A sandbox-docker repro that showed
+      ## seccomp unblocking pivot_root does NOT reflect the GHA runner's LSM.)
       ##
       ## Scope: the fork-PR guard below means only same-repo code reaches
       ## this job, so no untrusted contributor payload runs with it.
@@ -139,7 +146,7 @@ jobs:
       - name: Resolve dist-ai ref (companion branch, else master)
         id: resolve_dist_ai
         if: inputs.dist-ai-ref == ''
-        uses: org-ai-assisted/developer-meta-files/.github/actions/resolve-dist-ai-ref@master
+        uses: org-ai-assisted/developer-meta-files/.github/actions/resolve-companion-ref@master
 
       - name: Checkout dist-ai (test suites)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -185,12 +192,25 @@ jobs:
           ## submodules, and recursing multiplies the checkout for no coverage.
           git submodule update --init
 
+      - name: Resolve helper-scripts ref (companion branch, else master)
+        id: resolve_helper_scripts
+        if: steps.cfg.outputs.helper_scripts == 'true'
+        ## Same companion-branch resolution as dist-ai above (the action takes the
+        ## companion repo as an input). A coordinated helper-scripts (library) +
+        ## consumer change on one branch name is then tested together, instead of
+        ## the consumer running against helper-scripts@master -- which lacks the
+        ## branch's library changes and yields a false red (e.g. a standalone
+        ## regenerated from the branch's helper-scripts vs a master regen).
+        uses: org-ai-assisted/developer-meta-files/.github/actions/resolve-companion-ref@master
+        with:
+          repo: org-ai-assisted/helper-scripts
+
       - name: Checkout helper-scripts (for suites that drive its tools)
         if: steps.cfg.outputs.helper_scripts == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           repository: org-ai-assisted/helper-scripts
-          ref: master
+          ref: ${{ steps.resolve_helper_scripts.outputs.ref }}
           path: helper-scripts
           persist-credentials: false
 
@@ -216,6 +236,20 @@ jobs:
           path: terminal-poc-corpus
           persist-credentials: false
 
+      - name: Checkout secure-terminal (for suites that need unicode-tag-stdin)
+        if: steps.cfg.outputs.secure_terminal == 'true'
+        ## The secure-terminal app ships no apt package, and its unicode-tag-stdin /
+        ## secure_terminal package is a REQUIRED (not optional) dependency of some
+        ## component suites (e.g. codepoint-neutralizer-test). Opt-in per repo via
+        ## .github/dm-consumer.yml (dist-ai-tests.secure-terminal: true) so the clone
+        ## is not imposed on every consumer. Sibling dir, matching component/ above.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/secure-terminal
+          ref: master
+          path: secure-terminal
+          persist-credentials: false
+
       - name: Install test dependencies (apt only)
         env:
           APT_PACKAGES: ${{ steps.cfg.outputs.apt_packages }}
@@ -225,6 +259,22 @@ jobs:
           # directive written with one hash, so a '##' form is silently inert
           # and actionlint's shellcheck pass reports SC2086 anyway.)
           apt-get install --yes --no-install-recommends ${APT_PACKAGES}
+
+      - name: Install static-analysis CLIs (zizmor, actionlint)
+        if: steps.cfg.outputs.static_analysis_tools == 'true'
+        ## Neither tool is Debian-packaged, so the apt step above cannot carry
+        ## them; the component ships a pinned installer (static-cli-install) that
+        ## downloads an exact version and verifies it against a committed sha256,
+        ## computed locally from the asset (never read off a web page). The gate
+        ## logic stays in the component's committed script, not inline here.
+        ## --no-attest --no-vt: a bare CI container cannot run the stronger SLSA /
+        ## VirusTotal checks -- the attestations API 403s without a GitHub token
+        ## and CI has no VT key -- so the committed sha256 pin is the integrity
+        ## anchor here (the maintainer re-verifies SLSA when bumping a pin). Needs
+        ## 'helper-scripts: true' (the installer sources it), opted in alongside.
+        run: |
+          component/usr/bin/static-cli-install --tool zizmor --no-attest --no-vt --install-dir /usr/local/bin
+          component/usr/bin/static-cli-install --tool actionlint --no-attest --no-vt --install-dir /usr/local/bin
 
       - name: Run dist-ai suites for this component
         env:
@@ -237,6 +287,9 @@ jobs:
           ## dist-ai-tests-all's wire() resolves the corpus from this; harmless when
           ## the checkout was not requested (the suite then SKIPs as before).
           TERMINAL_POC_CORPUS_REPO: ${{ steps.cfg.outputs.terminal_poc_corpus == 'true' && format('{0}/terminal-poc-corpus', github.workspace) || '' }}
+          ## codepoint-neutralizer-test resolves unicode-tag-stdin from this; empty
+          ## when the checkout was not requested (the test then FATALs, as before).
+          SECURE_TERMINAL_REPO: ${{ steps.cfg.outputs.secure_terminal == 'true' && format('{0}/secure-terminal', github.workspace) || '' }}
         run: |
           # shellcheck disable=SC2086  # CATEGORIES / HS_ARG / SKIP_ARGS / ALLOW_SKIP_ARGS are intentional flag lists
           # Must live INSIDE the run: script, with a single '#'. As a YAML

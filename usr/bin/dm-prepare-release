@@ -3,29 +3,30 @@
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## The dependency probes in sanity_tests() use 'command -v' rather than 'has'
-## (this tool runs early and does not source helper-scripts' has.bsh).
-## style-ok: no-has
-
-set -x
-set -o errexit
-set -o nounset
-set -o pipefail
-set -o errtrace
-shopt -s inherit_errexit
-shopt -s shift_verbose
-export LC_ALL=C
-
-true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
-
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
-## variables (sourced below) reassigns MYDIR; capture the dirs we need first.
+## 'variables' reassigns MYDIR, capture the dirs we need first.
 dmf_libexec_dir="${MYDIR}/../libexec/developer-meta-files"
 
+## Resolve the derivative-maker tree FIRST: helper-scripts comes from it, so an
+## installed /usr/bin copy works on a build host without helper-scripts installed.
 # shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
 source "${dmf_libexec_dir}/source-tree-lib.bsh"
 derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
+
+## provides was_executed
+## Always the resolved tree's copy (the same one help-steps/pre uses), never an
+## installed fallback: a copy missing from the tree must fail here, not be masked.
+helper_scripts_base="${HELPER_SCRIPTS_PATH:-${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}"
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/check_runtime.bsh
+source "${helper_scripts_base}/usr/libexec/helper-scripts/check_runtime.bsh" || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
+
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.bsh
+source "${helper_scripts_base}/usr/libexec/helper-scripts/has.bsh"
 
 source "${derivative_maker_source_code_dir}/help-steps/pre"
 source "${derivative_maker_source_code_dir}/help-steps/variables"
@@ -33,13 +34,11 @@ source "${derivative_maker_source_code_dir}/help-steps/variables"
 # shellcheck source=../libexec/developer-meta-files/signing-lib.bsh
 source "${dmf_libexec_dir}/signing-lib.bsh"
 
-cd -- "${dist_binary_build_folder}"
-
 sanity_tests() {
-   command -v -- mktorrent >/dev/null
-   command -v -- transmission-show >/dev/null
-   command -v -- sq >/dev/null
-   command -v -- signify-openbsd >/dev/null
+   has mktorrent
+   has transmission-show
+   has sq
+   has signify-openbsd
    test -f "${signify_public_key}"
    test -f "${signify_private_key}"
    test -f "${binary_image_installer_dist_source}"
@@ -52,8 +51,8 @@ installer_dist() {
       return 0
    fi
 
-   command -v -- git >/dev/null
-   command -v -- str_replace >/dev/null
+   has git
+   has str_replace
 
    cp -- "${binary_image_installer_dist_source}" "${binary_image_installer_dist_file}"
 
@@ -546,55 +545,63 @@ Please donate! [C]
 
 
 signatures_create() {
-   local var_names file_list upload_url_part target_names
+   local var_names file_list upload_url_part target_names should_signify_list
    var_names=()
    file_list=()
    upload_url_part=()
    ## Derivative target per artifact for the reproducibility buildinfo; empty =
    ## no buildinfo (installer / windows / source are not reproducible-image targets).
    target_names=()
+   should_signify_list=()
 
    if [ "${dist_build_virtualbox:-}" = "true" ]; then
       var_names+=("binary_image_ova_file")
       file_list+=("${binary_image_ova_file}")
       upload_url_part+=("ova")
       target_names+=("virtualbox")
+      should_signify_list+=("false")
    fi
    if [ "${dist_build_raw:-}" = "true" ]; then
       var_names+=("libvirt_target_raw_xz_archive_file")
       file_list+=("${libvirt_target_raw_xz_archive_file}")
       upload_url_part+=("raw")
       target_names+=("raw")
+      should_signify_list+=("false")
    fi
    if [ "${dist_build_qcow2:-}" = "true" ]; then
       var_names+=("libvirt_target_qcow2_xz_archive_file")
       file_list+=("${libvirt_target_qcow2_xz_archive_file}")
       upload_url_part+=("libvirt")
       target_names+=("qcow2")
+      should_signify_list+=("false")
    fi
    if [ "${dist_build_iso:-}" = "true" ]; then
       var_names+=("binary_image_iso_file")
       file_list+=("${binary_image_iso_file}")
       upload_url_part+=("iso")
       target_names+=("iso")
+      should_signify_list+=("false")
    fi
    if [ "${dist_build_installer_dist:-}" = "true" ]; then
       var_names+=("binary_image_installer_dist_file")
       file_list+=("${binary_image_installer_dist_file}")
       upload_url_part+=("dist-installer-cli")
       target_names+=("")
+      should_signify_list+=("true")
    fi
    if [ "${dist_build_windows_installer:-}" = "true" ]; then
       var_names+=("binary_image_windows_installer_file")
       file_list+=("${binary_image_windows_installer_file}")
       upload_url_part+=("windows")
       target_names+=("")
+      should_signify_list+=("false")
    fi
    if [ "${dist_build_source_archive:-}" = "true" ]; then
       var_names+=("source_archive_xz_file")
       file_list+=("${source_archive_xz_file}")
       upload_url_part+=("source")
       target_names+=("")
+      should_signify_list+=("false")
    fi
 
    ## Thanks to:
@@ -623,10 +630,12 @@ signatures_create() {
       true "Variable Name: ${var_names[i]}"
       true "Variable Content: ${file_list[i]}"
       true "upload_url_part: ${upload_url_part[i]}"
+      true "Should sign with signify: ${should_signify_list[i]}"
 
       local file_item url_part_item
       file_item="${file_list[i]}"
       url_part_item="${upload_url_part[i]}"
+      should_signify="${should_signify_list[i]}"
 
       local base_name
       base_name=$(basename -- "${file_item}")
@@ -644,17 +653,19 @@ signatures_create() {
       sha512sum -- "${base_name}" | tee -- "${file_item}.sha512sums" >/dev/null
       sha512sum --check -- "${file_item}.sha512sums"
 
-      sign_and_verify "${file_item}"
-      sign_and_verify "${file_item}.torrent"
-      sign_and_verify "${file_item}.sha512sums"
+      if [ "${should_signify}" = "true" ]; then
+         sign_and_verify_signify "${file_item}"
+      else
+         sign_and_verify "${file_item}"
+      fi
+      sign_and_verify_signify "${file_item}.torrent"
+      sign_and_verify_signify "${file_item}.sha512sums"
 
-      ## Reproducibility buildinfo: record the parameters needed to rebuild this
-      ## image, published next to it and signed by the SAME sign_and_verify.
       local dm_target_item
       dm_target_item="${target_names[i]}"
       if [ -n "${dm_target_item}" ]; then
          "${dist_developer_meta_files_folder}/usr/bin/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
-         sign_and_verify "${file_item}.dm-buildinfo"
+         sign_and_verify_signify "${file_item}.dm-buildinfo"
       fi
    done
 }
@@ -671,6 +682,19 @@ legal_files_copy() {
 }
 
 main() {
+   set -x
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+
+   true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
+
+   cd -- "${dist_binary_build_folder}"
+
    if [ "${dist_build_utm:-}" = "true" ]; then
       true "dist_build_utm: true"
       true "INFO: Skipping ${FUNCNAME[0]}, because not implemented for UTM."
@@ -692,4 +716,6 @@ main() {
    sync
 }
 
-main "$@"
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi

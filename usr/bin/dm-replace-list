@@ -18,7 +18,6 @@ cd -- "${HOME}/derivative-maker"
 ## NOTE: does not support spaces
 replace_list="\
 exception_handler_shell exception_handler_shell
-exception_handler_retry exception_handler_retry
 exception_handler_process_shared exception_handler_process_shared
 exception_handler_maybe_exit exception_handler_maybe_exit
 exception_handler_general exception_handler_general

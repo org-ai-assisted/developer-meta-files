@@ -833,7 +833,7 @@ set_batch_context_from_pwd() {
    parent_basename="${parent##*/}"
    ## XXX: hardcoded
    project_root=~/derivative-maker
-   repo_submodule_path="${pwd_abs#"$project_root"/}"
+   repo_submodule_path="${pwd_abs#"${project_root}"/}"
 
    batch_current_package_path="${pwd_abs}"
    batch_current_package_reponame="${reponame}"
@@ -1427,6 +1427,9 @@ pkg_git_remotes_add() {
 }
 
 pkg_git_check_current_branch() {
+   ## Allow callers to operate on non-master branches if requested.
+   [ "${pkg_git_branch_agnostic:-}" = "true" ] && return 0
+
    local current_branch
    current_branch="$(git branch --show-current)"
 
@@ -2158,7 +2161,7 @@ pkg_git_manpages() {
    msg='re-generate man pages (generated using "genmkfile manpages")'
    dry_run_or_run git add -- 'man'/* || true
    dry_run_or_run git add -- 'auto-generated-man-pages'/* || true
-   dry_run_or_run git commit -m "${msg}" || true
+   dry_run_or_run git commit -m "${msg}" -- 'man' 'auto-generated-man-pages' || true
    dry_run_or_run git status
    return 0
 }
@@ -2177,7 +2180,7 @@ pkg_git_debinstfile() {
    msg='add debian install file (generated using "genmkfile debinstfile")'
    printf '%s\n' "PWD: '${PWD}'"
    dry_run_or_run git add -- "debian/${batch_current_package_reponame}.install" || true
-   dry_run_or_run git commit -m "${msg}" || true
+   dry_run_or_run git commit -m "${msg}" -- "debian/${batch_current_package_reponame}.install" || true
    dry_run_or_run git status
    return 0
 }
@@ -2333,13 +2336,13 @@ ${url}" >/dev/null
 ## Generates a release announcement.
 pkg_git_packages_git_log_writer() {
    local package_header_written package_version_old package_version_new \
-      new_package commit_msg_short_list commit_hash commit_msg_short \
-      committer_person commit_msg_full credit_msg commit_msg_line \
-      commit_first_line temp_folder_path
+      new_package commit_record commit_records_file tag_ref commit_hash \
+      commit_msg_short committer_person commit_msg_full credit_msg \
+      commit_msg_line commit_first_line temp_folder_path
+   local -a git_log_range
 
    if [ "${batch_func_init_done}" = 'false' ]; then
       post_run_hook_list+=( 'generate_announcement' )
-      dry_run_or_run safe-rm -f -- "${announcements_drafts_dir}/derivative-maker_giant_git_log.txt"
       dry_run_or_run safe-rm -f -- "${announcements_drafts_dir}/kicksecure_giant_git_log.txt"
       dry_run_or_run safe-rm -f -- "${announcements_drafts_dir}/whonix_giant_git_log.txt"
       batch_func_init_done='true'
@@ -2353,13 +2356,31 @@ pkg_git_packages_git_log_writer() {
 
    if [ "${batch_current_package_reponame}" != 'derivative-maker' ]; then
       pushd -- .. >/dev/null
-      ## Use refs/tags/ to avoid name collision with same-named branches.
-      if package_version_old="$(git rev-parse "refs/tags/${derivative_version_old_main}:${temp_folder_path}")" ; then
+      ## A missing release TAG is a misconfigured version var (affects every
+      ## package) -> fail loud, do NOT swallow it as "package absent". Checked
+      ## before the path lookups so a typo cannot masquerade as "nothing to
+      ## announce". refs/tags/ avoids collision with a same-named branch.
+      for tag_ref in "${derivative_version_old_main}" "${derivative_version_new_main}"; do
+         if ! git rev-parse -q --verify "refs/tags/${tag_ref}^{commit}" >/dev/null 2>&1; then
+            popd >/dev/null
+            printf '%s\n' "${red}${bold}FATAL ERROR:${reset} release tag 'refs/tags/${tag_ref}' does not resolve to a commit (check derivative_version_old_main / derivative_version_new_main)." >&2
+            exit 1
+         fi
+      done
+      ## A package absent from the new release tag has nothing to announce for
+      ## this release (added after the tag, or removed by it) -> skip. Both
+      ## path lookups are guarded: the tag is known valid above, so a miss here
+      ## is the path, not the tag, and must not abort the batch under errexit.
+      if ! package_version_new="$(git rev-parse "refs/tags/${derivative_version_new_main}:${temp_folder_path}" 2>/dev/null)" ; then
+         popd >/dev/null
+         true "${batch_current_package_reponame}: not in refs/tags/${derivative_version_new_main}; skipping"
+         return 0
+      fi
+      if package_version_old="$(git rev-parse "refs/tags/${derivative_version_old_main}:${temp_folder_path}" 2>/dev/null)" ; then
          new_package='false'
       else
          new_package='true'
       fi
-      package_version_new="$(git rev-parse "refs/tags/${derivative_version_new_main}:${temp_folder_path}")"
       popd >/dev/null
    else
       new_package='false'
@@ -2371,21 +2392,53 @@ pkg_git_packages_git_log_writer() {
       if [ "${package_version_old}" = "${package_version_new}" ]; then
          true "skipping because package_version_old = package_version_new"
          return 0
-      else
-         commit_msg_short_list="$(git --no-pager log --pretty='%H %s' "${package_version_old}..${package_version_new}")"
       fi
+      git_log_range=( "${package_version_old}..${package_version_new}" )
    else
-      commit_msg_short_list="$(git --no-pager log --pretty='%H %s')"
+      ## New package (absent from the old tag): announce its history UP TO the
+      ## new release tag, not through the working tree's HEAD, which may carry
+      ## commits made after the release was tagged.
+      git_log_range=( "${package_version_new}" )
    fi
 
-   if [ "${commit_msg_short_list}" = "" ]; then
-      true "${batch_current_package_reponame}: commit_msg_short_list empty?"
-      exit 1
+   ## One git-log pass per repo emitting, per commit: hash, author name,
+   ## subject and full body. Replaces two extra `git log` spawns PER COMMIT
+   ## (author + body), which dominated runtime across a release's commits
+   ## times dozens of repos. Records are NUL-separated (`-z`): NUL is the one
+   ## byte git forbids in a commit object, so a crafted body/author cannot
+   ## forge a record boundary. Within a record the first three fields are
+   ## single-line (hash is hex; git's author line and %s carry no newline),
+   ## so a newline splits them off and the remainder is the verbatim %B.
+   ## Streamed through a temp file (not $(...)): command substitution strips
+   ## NUL bytes, and a file keeps the git failure under errexit (a bad range
+   ## aborts loudly instead of silently yielding no records).
+   ## -c log.showSignature=false: with that config (or --show-signature) set,
+   ## git prepends a gpg verification line to each record and shifts every
+   ## field -- and these are signed commits, so pin it off.
+   commit_records_file="$(mktemp)"
+   git --no-pager -c log.showSignature=false log -z \
+      --pretty=format:'%H%n%an%n%s%n%B' "${git_log_range[@]}" > "${commit_records_file}"
+
+   if [ ! -s "${commit_records_file}" ]; then
+      ## Empty range (e.g. new not a descendant of old) -> nothing to announce.
+      safe-rm -f -- "${commit_records_file}"
+      true "${batch_current_package_reponame}: no commits in range; skipping"
+      return 0
    fi
 
    package_header_written='false'
 
-   while read -r commit_hash commit_msg_short ; do
+   ## `|| [ -n ... ]` also processes the final record: `-z` SEPARATES with NUL
+   ## (no trailing NUL), so the last record arrives without a delimiter.
+   while IFS= read -r -d '' commit_record || [ -n "${commit_record}" ] ; do
+      commit_hash="${commit_record%%$'\n'*}"
+      commit_record="${commit_record#*$'\n'}"
+      committer_person="${commit_record%%$'\n'*}"
+      commit_record="${commit_record#*$'\n'}"
+      commit_msg_short="${commit_record%%$'\n'*}"
+      ## Remainder is the verbatim %B (its own first line is the subject).
+      commit_msg_full="${commit_record#*$'\n'}"
+
       if [ "${commit_msg_short}" = "" ]; then
          true "${batch_current_package_reponame}: commit_hash: ${commit_hash} | commit_msg_short empty"
          continue
@@ -2396,8 +2449,6 @@ pkg_git_packages_git_log_writer() {
       fi
       true "OK: ${commit_msg_short}"
 
-      committer_person="$(git log --format='%an' -n 1 "${commit_hash}")"
-      commit_msg_full="$(git log --format='%B' -n 1 "${commit_hash}")"
       ## Strip trailing whitespace from every line, then delete the lines that
       ## are left blank. Also strip AI-assistant commit trailers
       ## ("Co-Authored-By:", "Claude-Session:" and the "Generated with
@@ -2459,7 +2510,8 @@ pkg_git_packages_git_log_writer() {
             dry_run_or_run append "${batch_current_package_changelog}" "    ${commit_msg_line}" >/dev/null
          fi
       done <<< "${commit_msg_full}"
-   done <<< "${commit_msg_short_list}"
+   done < "${commit_records_file}"
+   safe-rm -f -- "${commit_records_file}"
 
    if [ "${package_header_written}" = 'true' ]; then
       ## Add newline but only if there were actually changelog lines.
@@ -2767,6 +2819,11 @@ pkg_need_version_bump_and_pkg_build_and_reprepro_add() {
    #   return 0
    #fi
 
+   ## Regenerate manpages and install files before checking for changes to
+   ## catch accidents.
+   pkg_git_manpages
+   pkg_git_debinstfile
+
    ## sets: batch_current_package_needs_version_bump
    pkg_need_version_bump_show
 
@@ -2776,8 +2833,6 @@ pkg_need_version_bump_and_pkg_build_and_reprepro_add() {
 
    true "INFO: ${FUNCNAME[0]}: needs version bump: ${batch_current_package_reponame}"
 
-   pkg_git_manpages
-   pkg_git_debinstfile
    ## TODO
    #pkg_readme_creator_do
    #pkg_readme_creator_commit
@@ -2893,11 +2948,7 @@ wait_for_git_processes() {
 generate_announcement() {
    local changelog_file derivative_name project_name project_website temp \
       derivative_version_new_main_short release_type_long end_text \
-      header_text
-
-   ## TODO: Should this dynamically change depending on the project? Also,
-   ## should it be inserted into the announcement automatically?
-   changelog_file="${announcements_drafts_dir}/kicksecure_giant_git_log.txt"
+      header_text announce_target announce_tmp announce_pre announce_post
 
    for derivative_name in "${derivative_name_list[@]}"; do
       if [ "${derivative_name}" = 'kicksecure' ]; then
@@ -2907,6 +2958,10 @@ generate_announcement() {
          project_name='Whonix'
          project_website='whonix.org'
       fi
+
+      ## Per-project changelog; derivative_name matches the giant_git_log
+      ## file basenames written by pkg_git_packages_git_log_writer.
+      changelog_file="${announcements_drafts_dir}/${derivative_name}_giant_git_log.txt"
 
       temp="${derivative_version_new_main}"
       temp="$(str_replace "-developers-only" "" <<< "${temp}")"
@@ -2935,7 +2990,8 @@ https://www.${project_website}/wiki/Download
          error "invalid derivative_release_type!"
       fi
 
-      dry_run_or_run overwrite "${announcements_drafts_dir}/${project_name}.txt" "\
+      announce_target="${announcements_drafts_dir}/${project_name}.txt"
+      announce_pre="\
 ${project_name} ${derivative_version_new_main_short} - ${release_type_long}!
 
 ${header_text}
@@ -2966,11 +3022,8 @@ https://www.${project_website}/wiki/Contribute
 
 # Major Changes
 
-TODO
-
-${changelog_file}
-
-----
+TODO"
+      announce_post="----
 
 # Full difference of all changes
 
@@ -2978,8 +3031,26 @@ ${changelog_file}
 
 ----
 
-${end_text}
-" >/dev/null
+${end_text}"
+
+      ## Stream the changelog between the fixed template halves via redirection,
+      ## NOT as one `overwrite` argv: a full release changelog can exceed the
+      ## kernel per-argument limit (MAX_ARG_STRLEN, ~128 KiB) and E2BIG the
+      ## write. cat streams the file regardless of size.
+      if [ "${batch_meta_dry_run}" = 'true' ]; then
+         log notice "[DRY-RUN] ${batch_current_package_reponame:-}: WOULD write announcement ${announce_target}" >&2
+      else
+         ## Write to a temp file then `mv -f` into place so a pre-existing
+         ## symlink at the destination is REPLACED, not followed and its target
+         ## truncated (the atomic-replace semantics the old `overwrite` had).
+         announce_tmp="$(mktemp)"
+         {
+            printf '%s\n' "${announce_pre}" ''
+            cat -- "${changelog_file}" 2>/dev/null || true
+            printf '%s\n' '' "${announce_post}"
+         } > "${announce_tmp}"
+         mv -f -- "${announce_tmp}" "${announce_target}"
+      fi
    done
 }
 
