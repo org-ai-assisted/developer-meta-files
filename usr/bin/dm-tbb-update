@@ -53,8 +53,8 @@ pkg_tor_browser_version_update() {
    ## Instead `source` system location because 'version-validator' requires '/usr/libexec/tb-updater/version-parser'.
    source /usr/libexec/tb-updater/version-validator
 
-   tbb_hardcoded_version_file="${derivative_maker_source_code_dir}/packages/kicksecure/tb-updater/usr/share/tb-updater/tbb_hardcoded_version"
-   tbb_hardcoded_version_alpha_file="${derivative_maker_source_code_dir}/packages/kicksecure/tb-updater/usr/share/tb-updater/tbb_hardcoded_version_alpha"
+   tbb_hardcoded_version_file="${derivative_maker_source_code_dir}/packages/kicksecure/dist-system-metadata/usr/share/dist-system-metadata/tb-updater/tbb_hardcoded_version_stable"
+   tbb_hardcoded_version_alpha_file="${derivative_maker_source_code_dir}/packages/kicksecure/dist-system-metadata/usr/share/dist-system-metadata/tb-updater/tbb_hardcoded_version_alpha"
    tbb_stable_json_url='https://aus1.torproject.org/torbrowser/update_3/release/download-linux-x86_64.json'
    tbb_alpha_json_url='https://aus1.torproject.org/torbrowser/update_3/alpha/download-linux-x86_64.json'
    RecommendedTBBVersions="$(mktemp)"
@@ -65,7 +65,7 @@ pkg_tor_browser_version_update() {
    ## the operator can find it.
    trap pkg_tor_browser_version_report_tmp_file EXIT
 
-   pushd -- "${derivative_maker_source_code_dir}/packages/kicksecure/tb-updater"
+   pushd -- "${derivative_maker_source_code_dir}/packages/kicksecure/dist-system-metadata"
    if ! nothing_to_commit; then
       printf '%s\n' "${red}${bold}FATAL ERROR: Uncommitted changes!${reset}"
       exit 1
@@ -98,7 +98,7 @@ pkg_tor_browser_version_update() {
    safe-rm -f -- "${tbb_hardcoded_version_alpha_file}"
    printf '%s\n' "tbb_hardcoded_version=\"${current_tbb_alpha_version}\"" | sponge -a -- "${tbb_hardcoded_version_alpha_file}"
 
-   pushd -- "${derivative_maker_source_code_dir}/packages/kicksecure/tb-updater"
+   pushd -- "${derivative_maker_source_code_dir}/packages/kicksecure/dist-system-metadata"
 
    if nothing_to_commit; then
      exit 0
@@ -113,8 +113,8 @@ pkg_tor_browser_version_update() {
    true "press enter to continue"
    read -r temp
 
-   git add -- 'usr/share/tb-updater/tbb_hardcoded_version'
-   git add -- 'usr/share/tb-updater/tbb_hardcoded_version_alpha'
+   git add -- 'usr/share/dist-system-metadata/tb-updater/tbb_hardcoded_version_stable'
+   git add -- 'usr/share/dist-system-metadata/tb-updater/tbb_hardcoded_version_alpha'
    git commit -m 'tbb_hardcoded_version update'
 
    popd

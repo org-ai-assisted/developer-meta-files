@@ -134,9 +134,9 @@ done
 ## Verify signatures and hashes BEFORE trusting any recorded parameter.
 [ -f "${signify_public_key}" ] || error "signify public key not found: '${signify_public_key}' (pass --signify-pubkey)."
 printf '%s\n' "INFO: verifying buildinfo + sha512sums signatures (sq + signify)..." >&2
-verify_signature "${buildinfo_file}" \
+verify_signature_signify "${buildinfo_file}" \
    || error "buildinfo signature verification FAILED -- refusing to trust it."
-verify_signature "${sha_file}" \
+verify_signature_signify "${sha_file}" \
    || error "sha512sums signature verification FAILED."
 
 printf '%s\n' "INFO: checking image against the signed sha512sums..." >&2

@@ -5,8 +5,8 @@
 
 ## AI-Assisted
 
-## Decide which org-ai-assisted/dist-ai ref a CI job should check out, and
-## emit it as `ref=` on $GITHUB_OUTPUT.
+## Decide which companion repo ref a CI job should check out, and emit it
+## as `ref=` on $GITHUB_OUTPUT. dist-ai is the default companion.
 ##
 ## WHY THIS EXISTS: dist-ai was pinned to 'master' for every consumer.
 ## dist-ai holds the tests; the consumers hold the behaviour those tests
@@ -50,13 +50,13 @@ me="${0##*/}"
 ##   THIS_REPO      github.repository
 ##   THIS_SHA       github.sha
 ##   BRANCH_NAME    github.head_ref (PR) or github.ref_name (push)
-##   DIST_AI_REPO   owner/repo of dist-ai
+##   COMPANION_REPO   owner/repo of the companion (default dist-ai)
 [ -v THIS_REPO ] || THIS_REPO=''
 [ -v THIS_SHA ] || THIS_SHA=''
 [ -v BRANCH_NAME ] || BRANCH_NAME=''
-[ -v DIST_AI_REPO ] || DIST_AI_REPO='org-ai-assisted/dist-ai'
+[ -v COMPANION_REPO ] || COMPANION_REPO='org-ai-assisted/dist-ai'
 
-## Remote to probe. Defaults to the public GitHub URL for DIST_AI_REPO;
+## Remote to probe. Defaults to the public GitHub URL for COMPANION_REPO;
 ## override to point at a mirror, or at a local repository so a test can
 ## assert the companion-branch path without depending on which branches
 ## happen to exist on github.com right now.
@@ -66,17 +66,17 @@ me="${0##*/}"
 ## that branch auto-deleted it, so the test began reporting the fallback
 ## and failed. An assertion whose subject can be deleted by unrelated
 ## work is not an assertion.
-[ -v DIST_AI_REMOTE_URL ] || DIST_AI_REMOTE_URL="https://github.com/${DIST_AI_REPO}.git"
+[ -v COMPANION_REMOTE_URL ] || COMPANION_REMOTE_URL="https://github.com/${COMPANION_REPO}.git"
 
 emit() {
-   printf '%s\n' "${me}: dist-ai ref -> $1 ($2)" >&2
+   printf '%s\n' "${me}: companion ref -> $1 ($2)" >&2
    printf '%s\n' "ref=$1" >> "${GITHUB_OUTPUT}"
    exit 0
 }
 
-## dist-ai testing itself: its own commit is the subject.
-if [ "${THIS_REPO}" = "${DIST_AI_REPO}" ]; then
-   emit "${THIS_SHA}" 'this IS dist-ai; testing its own commit'
+## The companion is testing itself: its own commit is the subject.
+if [ "${THIS_REPO}" = "${COMPANION_REPO}" ]; then
+   emit "${THIS_SHA}" 'this IS the companion; testing its own commit'
 fi
 
 ## A branch name we cannot use is not an error, just no companion.
@@ -92,10 +92,10 @@ esac
 ## ls-remote rather than the REST API: no token, no rate limit, and it
 ## answers the exact question (does this ref exist) without a checkout.
 if git ls-remote --exit-code --branches -- \
-      "${DIST_AI_REMOTE_URL}" "refs/heads/${BRANCH_NAME}" \
+      "${COMPANION_REMOTE_URL}" "refs/heads/${BRANCH_NAME}" \
       > /dev/null 2>&1
 then
-   emit "${BRANCH_NAME}" "companion branch exists in ${DIST_AI_REPO}"
+   emit "${BRANCH_NAME}" "companion branch exists in ${COMPANION_REPO}"
 fi
 
-emit 'master' "no companion branch '${BRANCH_NAME}' in ${DIST_AI_REPO}"
+emit 'master' "no companion branch '${BRANCH_NAME}' in ${COMPANION_REPO}"

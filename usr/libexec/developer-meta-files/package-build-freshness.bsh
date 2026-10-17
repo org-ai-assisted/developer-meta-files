@@ -41,7 +41,7 @@ dm_source_hash_manifest_path() {
 
 ## Look up the recorded source hash for a source package (empty if none).
 dm_source_hash_lookup() {
-   local manifest="$1" source_pkg="$2" line manifest_pkg manifest_hash
+   local manifest="$1" source_pkg="$2" line manifest_pkg
    [ -f "${manifest}" ] || return 0
    ## '|| [ -n "${line}" ]' so a final line with no trailing newline is still examined.
    while IFS= read -r line || [ -n "${line}" ]; do
@@ -74,11 +74,83 @@ dm_source_hash_record() {
    mv -- "${tmp}" "${manifest}"
 }
 
+## Determine if a binary stanza's 'Architecture:' field covers a build target.
+dm_architecture_covers_target() {
+   local architecture_field="$1" target="$2" token
+   # shellcheck disable=SC2086
+   for token in ${architecture_field}; do
+      case "${token}" in
+         any | linux-any | "${target}" | "linux-${target}")
+            return 0
+            ;;
+      esac
+   done
+   return 1
+}
+
+## Determine if the local package pool contains every .deb this source would
+## would build for the current version and build targets.
+dm_package_artifacts_present() {
+   local control_file package_version target_list bin_pkg_and_archs_str \
+      package_name archs_str target_item got_reprepro_output reprepro_output \
+      found_expected package_source_dir
+
+   package_source_dir="${1:-}"
+   control_file="${package_source_dir}/debian/control"
+   [ -f "${control_file}" ] || return 1
+   package_version="$(dpkg-parsechangelog --show-field Version --file "${package_source_dir}/debian/changelog")"
+   target_list="${make_cross_build_platform_list:-${dist_build_target_arch:-$(dpkg --print-architecture)}}"
+   found_expected='false'
+
+   ## Example bin_pkg_and_archs_str:
+   ##     helper-scripts$'\t'all
+   while read -r bin_pkg_and_archs_str; do
+      package_name="${bin_pkg_and_archs_str%%$'\t'*}"
+      archs_str="${bin_pkg_and_archs_str#*$'\t'}"
+      found_expected='true'
+      got_reprepro_output='false'
+
+      # shellcheck disable=SC2086
+      for target_item in ${target_list}; do
+         ## Ensure the architecture we're testing is one the package supports.
+         if ! [ "${archs_str}" = 'all' ] \
+            && ! dm_architecture_covers_target "${archs_str}" "${target_item}"; then
+            continue
+         fi
+
+         ## Ask reprepro if it knows about the package, and if so, what
+         ## versions and architectures for that package it knows about.
+         if [ "${got_reprepro_output}" = 'false' ]; then
+            if ! reprepro_output="$(reprepro "${dist_build_reprepro_folder_options[@]}" list local "${package_name}")"; then
+               return 1
+            fi
+            got_reprepro_output='true'
+         fi
+
+         ## Ensure a line of reprepro's output contains the combination of
+         ## package name, version, and architecture we're checking for.
+         if ! [[ "${reprepro_output}" \
+            =~ (^|$'\n')local\|[^|]+\|"${target_item}: ${package_name} ${package_version}"($|$'\n') ]]; then
+            return 1
+         fi
+      done
+   done < <(grep-dctrl -F 'Package' --pattern='' -s Package,Architecture -n "${control_file}" \
+      | sed -z 's/\n\([^\n]\)/\t\1/g; s/\n\t/\n/g; s/\n$//')
+
+   ## Force a rebuild if a source package seems to declare no binary packages.
+   if [ "${found_expected}" = "false" ]; then
+      true "WARNING: Source package at '${package_source_dir}' appears to contain no binary packages?"
+      return 1
+   fi
+   return 0
+}
+
 ## Decide whether a package source tree needs (re)building.
 ##   dm_package_needs_rebuild <package_source_dir> <apt_codename>
 ## Returns 0 (needs rebuild) when the source content differs from what was last
-## built or when nothing was ever recorded for it. Returns 1 (skip) only when
-## the recorded hash matches the current source hash.
+## built, when nothing was ever recorded for it, or when its built artifact is no
+## longer present in the local package output. Returns 1 (skip) only when the
+## recorded hash matches the current source hash AND that artifact is still there.
 dm_package_needs_rebuild() {
    local package_source_dir apt_codename
    local source_pkg manifest current_hash stored_hash
@@ -86,6 +158,12 @@ dm_package_needs_rebuild() {
    apt_codename="$2"
 
    source_pkg="$(dpkg-parsechangelog --show-field Source --file "${package_source_dir}/debian/changelog")"
+
+   ## Check that the binary packages for a source package exist.
+   if ! dm_package_artifacts_present "${package_source_dir}"; then
+      true "INFO: rebuild ${source_pkg}: a built artifact is absent from the local package pool."
+      return 0
+   fi
 
    manifest="$(dm_source_hash_manifest_path "${apt_codename}")"
    current_hash="$(dm_package_source_hash "${package_source_dir}")"
@@ -97,6 +175,6 @@ dm_package_needs_rebuild() {
       return 0
    fi
 
-   true "INFO: skip ${source_pkg}: source unchanged since last build."
+   true "INFO: skip ${source_pkg}: source unchanged since last build and artifacts present."
    return 1
 }

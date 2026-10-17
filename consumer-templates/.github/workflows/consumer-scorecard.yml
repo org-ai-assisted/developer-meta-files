@@ -33,7 +33,10 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  ## No pull_request trigger here (push / schedule / dispatch only), so there are
+  ## no superseded PR runs to cancel and each master / scheduled scan must run to
+  ## completion -- never cancel.
+  cancel-in-progress: false
 
 jobs:
   scorecard:

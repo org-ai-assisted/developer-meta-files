@@ -152,14 +152,15 @@ upload_files() {
       done
 
       rsync_exit_code="0"
-      ## rsync_dry_run_maybe must stay UNQUOTED. It is "--dry-run" on the first pass and is
-      ## set to "" for the second, real pass; quoted, the empty value would be handed to
-      ## rsync as an EMPTY ARGUMENT rather than vanishing, and rsync reads that as an empty
-      ## source path and fails the upload.
+      ## rsync_dry_run_maybe is unquoted on purpose.
+      ##
+      ## --checksum ensures new images are uploaded if they contain any
+      ## meaningful changes even if their size and mtime are the same.
       # shellcheck disable=SC2248
       ${rsync_cmd} \
          ${rsync_dry_run_maybe} \
          ${rsync_opts} \
+         --checksum \
          "${upload_file_list[@]}" \
          "${dist_server_with_upload_location_item_with_version_maybe}" \
          || { rsync_exit_code="$?" ; true; };
