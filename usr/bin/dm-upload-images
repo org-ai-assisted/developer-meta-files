@@ -3,39 +3,32 @@
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-set -x
-set -o errexit
-set -o nounset
-set -o pipefail
-set -o errtrace
-shopt -s inherit_errexit
-shopt -s shift_verbose
-export LC_ALL=C
-
-true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
+true "INFO: dm-upload-images loading: ${BASH_SOURCE[0]}"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
-## BEFORE the 'cd' below: the resolver's cwd branch is captured when this library
-## is sourced, and cd-ing first would offer it /usr/bin instead of the tree.
+## Resolve the source tree at LOAD time (NO build-variable sourcing here), so a dist-ai e2e test
+## can `source` this file and call show_files / upload_files directly. The executed-only bootstrap
+## (help-steps/pre + help-steps/variables, which run parse-cmd) and main() are gated by
+## was_executed at the bottom, keeping strict-mode out of a sourcing test shell.
 ##
-## This script may run as the installed '/usr/bin' copy, where a '$MYDIR'-relative
-## path cannot locate the tree, so resolve it explicitly. Hardcoding
-## "$HOME/derivative-maker" made any build outside that path die HERE -- in the
-## release phase, after the whole build, on bash's bare "No such file or directory".
+## BEFORE the 'cd' (in main): the resolver's cwd branch is captured when this library is sourced,
+## and cd-ing first would offer it /usr/bin instead of the tree. This script may run as the
+## installed '/usr/bin' copy, where a '$MYDIR'-relative path cannot locate the tree, so resolve it
+## explicitly. Hardcoding "$HOME/derivative-maker" made any build outside that path die HERE.
 # shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
 source "${MYDIR}/../libexec/developer-meta-files/source-tree-lib.bsh"
 derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
 
-cd -- "${MYDIR}"
-
-## help-steps/pre sets and exports HELPER_SCRIPTS_PATH (to the sibling
-## helper-scripts in the derivative-maker source tree) and uses no strings.bsh
-## function, so source it first.
-source "${derivative_maker_source_code_dir}/help-steps/pre"
-# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/strings.bsh"
-source "${derivative_maker_source_code_dir}/help-steps/variables"
+## was_executed (check_runtime.bsh) gates the executed-only entrypoint. HELPER_SCRIPTS_PATH is the
+## same path help-steps/pre derives; set only if unset so a test may override it.
+: "${HELPER_SCRIPTS_PATH:=${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}"
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/check_runtime.bsh" || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "dm-upload-images: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
 
 ## Build upload_file_list (reset) for ONE image file: the image plus its
 ## signatures, torrent and checksums. Called once per (file, location) pair from
@@ -152,14 +145,15 @@ upload_files() {
       done
 
       rsync_exit_code="0"
-      ## rsync_dry_run_maybe must stay UNQUOTED. It is "--dry-run" on the first pass and is
-      ## set to "" for the second, real pass; quoted, the empty value would be handed to
-      ## rsync as an EMPTY ARGUMENT rather than vanishing, and rsync reads that as an empty
-      ## source path and fails the upload.
+      ## rsync_dry_run_maybe is unquoted on purpose.
+      ##
+      ## --checksum ensures new images are uploaded if they contain any
+      ## meaningful changes even if their size and mtime are the same.
       # shellcheck disable=SC2248
       ${rsync_cmd} \
          ${rsync_dry_run_maybe} \
          ${rsync_opts} \
+         --checksum \
          "${upload_file_list[@]}" \
          "${dist_server_with_upload_location_item_with_version_maybe}" \
          || { rsync_exit_code="$?" ; true; };
@@ -188,6 +182,27 @@ upload_files() {
 }
 
 main() {
+   set -x
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+
+   true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
+   cd -- "${MYDIR}"
+
+   ## help-steps/pre sets and exports HELPER_SCRIPTS_PATH (to the sibling helper-scripts in the
+   ## derivative-maker source tree) and uses no strings.bsh function, so source it first. These
+   ## run parse-cmd / the full build-variable context, so they are EXECUTED-only (a sourcing test
+   ## provides the few vars show_files/upload_files read, and never reaches here).
+   source "${derivative_maker_source_code_dir}/help-steps/pre"
+   # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+   source "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/strings.bsh"
+   source "${derivative_maker_source_code_dir}/help-steps/variables"
+
    if [ ! "${dist_build_image_upload_supported}" = "true" ]; then
       if [ "${CI:-}" = "true" ]; then
          true "upload support for this --target is not yet implemented."
@@ -233,4 +248,8 @@ main() {
    true
 }
 
-main
+## Only auto-run when EXECUTED, not when sourced (the dist-ai e2e test sources this file and calls
+## show_files / upload_files against a throwaway localhost sshd, without the build-variable bootstrap).
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi
