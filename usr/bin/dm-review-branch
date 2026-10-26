@@ -35,13 +35,20 @@ if [[ "${review_spec}" == -* ]]; then
    die 2 "ref '${review_spec}' must not start with '-'."
 fi
 
-## Don't allow the use of '--' as it could cause options to be misinterpreted
-## by the various Git tools.
+## Don't allow the use of '--' or non-option non-final arguments as they could
+## cause options to be misinterpreted by the various Git tools.
 for review_opt in "${review_opts[@]}"; do
    if [ "${review_opt}" = '--' ]; then
       die 2 "'--' is not a valid option here, ref-or-range is always the last argument."
    fi
+   if [[ "${review_opt}" != -* ]]; then
+      die 2 "forwarded argument '${review_opt}' must be a git-diff option in attached-value form (e.g. --opt=value)."
+   fi
 done
+
+## REMINDER: Undesirable behavior can still be triggered with some options, but
+## this is considered out-of-scope at the moment. We might add an option
+## whitelist later.
 
 ## Allow both ranges ('..') and merge-base ranges ('...').
 if [[ "${review_spec}" == *...* ]]; then
@@ -127,10 +134,10 @@ review_range="${base_commit}..${target_commit}"
 
 git --no-pager log "${review_range}" | NO_COLOR=1 stcat
 
-git-diff-review "${review_opts[@]}" "${review_range}"
+git-diff-review "${review_opts[@]}" --end-of-options "${review_range}"
 
-git-meld "${review_opts[@]}" "${review_range}"
+git-meld "${review_opts[@]}" --end-of-options "${review_range}"
 
-git-kdiff3 "${review_opts[@]}" "${review_range}"
+git-kdiff3 "${review_opts[@]}" --end-of-options "${review_range}"
 
 true "$0: OK."

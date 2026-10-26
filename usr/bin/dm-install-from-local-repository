@@ -21,9 +21,13 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 cd -- "${MYDIR}"
 
-## XXX: hardcoded path
-source "${HOME}/derivative-maker/help-steps/pre"
-source "${HOME}/derivative-maker/help-steps/variables"
+## This tool lives at
+## <derivative-maker>/packages/kicksecure/developer-meta-files/usr/bin; the parent
+## repo root (five levels up) holds help-steps. Derive it from our own location so
+## the tool works regardless of $HOME or where the checkout lives.
+dist_source_root="$( cd -- "${MYDIR}/../../../../.." && pwd )"
+source "${dist_source_root}/help-steps/pre"
+source "${dist_source_root}/help-steps/variables"
 
 main() {
    trap "exception_handler_unchroot_unmount" ERR INT TERM
@@ -50,8 +54,10 @@ main() {
    fi
 
    ## This file doesn't include Whonix's APT repository.
-   cp -- "${source_code_folder_dist}/packages/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
-   chmod o+r -- "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
+   ## CHROOT_FOLDER is the root-owned mounted image fs; this tool runs as the
+   ## unprivileged build user, so the write needs SUDO_TO_ROOT.
+   ${SUDO_TO_ROOT} cp -- "${source_code_folder_dist}/packages/kicksecure/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
+   ${SUDO_TO_ROOT} chmod o+r -- "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
 
    "${dist_source_help_steps_folder}/create-local-temp-apt-repo" "$@"
 

@@ -298,6 +298,26 @@ readonly POLICY_REPO_PROJECT_ENDPOINT='/repos/__OWNER__/__REPO__'
 readonly POLICY_REPO_PROJECT_METHOD='PATCH'
 readonly POLICY_REPO_PROJECT_LABEL='PROJECT: wiki/discussions off, issues on, secret-scan on'
 
+## STAGE orgs (kicksecure-stage, whonix-stage) each host one generated
+## *.github.io repo serving the noindex STAGING build of the wiki. It is
+## a published mirror of content maintained elsewhere, not a bug-tracked
+## project, so issues/wiki/projects/discussions are all off - same body
+## shape as MIRROR. The content source is the wiki, not an upstream
+## GitHub repo, so there is nothing to file issues against here either.
+readonly POLICY_REPO_STAGE='{
+   has_wiki: false,
+   has_issues: false,
+   has_projects: false,
+   has_discussions: false,
+   security_and_analysis: {
+      secret_scanning: { status: "enabled" },
+      secret_scanning_push_protection: { status: "enabled" }
+   }
+}'
+readonly POLICY_REPO_STAGE_ENDPOINT='/repos/__OWNER__/__REPO__'
+readonly POLICY_REPO_STAGE_METHOD='PATCH'
+readonly POLICY_REPO_STAGE_LABEL='STAGE: wiki/issues/projects/discussions off, secret-scan on'
+
 ## MIRROR only. Dependabot lives in exactly one place: the org whose CI can
 ## act on what it reports. GitHub Actions runs on org-ai-assisted and nowhere
 ## else in this family, so that is where both an alert and the pull request
@@ -455,6 +475,10 @@ readonly POLICY_REPO_PVR_OFF_LABEL='disable private vulnerability reporting'
 readonly POLICY_RULESET_BYPASS_SOURCE='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
 readonly POLICY_RULESET_BYPASS_MIRROR='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
 readonly POLICY_RULESET_BYPASS_PROJECT='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
+## STAGE reuses the MIRROR/PROJECT shape: the org owner can override so
+## a staging redeploy that must force-push or re-create the branch does
+## not require dropping the ruleset first.
+readonly POLICY_RULESET_BYPASS_STAGE='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
 
 ## Branch + tag ruleset body shapes. POSTed to
 ## /orgs/{org}/rulesets or /repos/{owner}/{repo}/rulesets via the
@@ -532,6 +556,14 @@ readonly POLICY_RULESET_RULES_PERSON='[
    {"type": "required_signatures"}
 ]'
 readonly POLICY_RULESET_RULES_BOT='[
+   {"type": "deletion"},
+   {"type": "non_fast_forward"}
+]'
+## Same rules as MIRROR: no required_signatures, because the staging
+## site is pushed by the bot (site-deploy) with commits that carry no
+## GPG key matching the bot's GitHub-verified identity; the rule would
+## block every legitimate deploy push.
+readonly POLICY_RULESET_RULES_STAGE='[
    {"type": "deletion"},
    {"type": "non_fast_forward"}
 ]'
