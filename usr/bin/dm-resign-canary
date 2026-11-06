@@ -26,6 +26,9 @@ source "${HOME}/derivative-maker/help-steps/variables"
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.bsh
 
+# shellcheck source=../libexec/developer-meta-files/signing-lib.bsh
+source "${MYDIR}/../libexec/developer-meta-files/signing-lib.bsh"
+
 if [ "$(id -u)" = "0" ]; then
    true "ERROR: Do not run this as root!"
    exit 1
@@ -43,48 +46,18 @@ sanity_tests() {
    "${dist_source_help_steps_folder}/signing-key-test" "$@"
 }
 
-sign_and_verify_openpgp() {
-   local base_name detached_signature clearsigned_file
-   test -f "${full_path_to_canary_txt}"
+sign_and_verify_canary_openpgp() {
+   ## Detached signature + verify via the shared signing library.
+   sign_and_verify_openpgp "${full_path_to_canary_txt}"
+
+   ## Clearsigned canary in addition to the detached signature.
+   local base_name clearsigned_file
    base_name="$(basename -- "${full_path_to_canary_txt}")"
-
-   detached_signature="${binary_build_folder_dist}/canary/canary.txt.asc"
-   clearsigned_file="${binary_build_folder_dist}/canary/canary.txt.clearsign.asc"
-
-   safe-rm -f -- "${detached_signature}"
-   safe-rm -f -- "${clearsigned_file}"
-
-   ## '--signature-notation "file@name"':
-   ## OpenPGP signatures do not authenticate filenames by default, therefore add
-   ## the name of the file as a OpenPGP notation so at least users that look
-   ## at OpenPGP notations have a chance to detect if file names have been
-   ## tampered with.
-
-   sq sign --signature-notation "file@name" "${base_name}" --signer-email "${DEBEMAIL}" --signature-file="${detached_signature}" -- "${full_path_to_canary_txt}"
-   test -f "${detached_signature}"
-   sq verify --signer-email "${DEBEMAIL}" --signature-file="${detached_signature}" -- "${full_path_to_canary_txt}"
-
+   clearsigned_file="${full_path_to_canary_txt}.clearsign.asc"
    sq sign --signature-notation "file@name" "${base_name}" --signer-email "${DEBEMAIL}" --cleartext "${full_path_to_canary_txt}" | tee -- "${clearsigned_file}" >/dev/null
    test -f "${clearsigned_file}"
    ## Use '>/dev/null' to avoid output of full file content.
    sq verify --signer-email "${DEBEMAIL}" --cleartext -- "${clearsigned_file}" >/dev/null
-}
-
-sign_cmd_signify() {
-   ## To create a key for signify-openbsd:
-   ## as account "user"
-   ## mkdir -p ~/.signify
-   ## cd ~/.signify
-   ## signify-openbsd -n -G -p keyname.pub -s keyname.sec -c "Firstname Lastname e-mail@address.org signify"
-
-   ## https://forums.whonix.org/t/signify-openbsd/7842
-   signify-openbsd -S -s "${signify_private_key}" -m "$1" -x "${1}${2}" ${3:-}
-   ## Sanity test.
-   test -f "${1}${2}"
-}
-
-verify_cmd_signify() {
-   signify-openbsd -V -p "${signify_public_key}" -m "$1" -x "${1}${2}" ${3:-}
 }
 
 sanity_tests "$@"
@@ -104,12 +77,12 @@ printf '%s\n' "${proof_of_freshness_output}" | tee --append -- "${full_path_to_c
 
 cat -- "${full_path_to_canary_txt}"
 
-sign_and_verify_openpgp
+sign_and_verify_canary_openpgp
 
-sign_cmd_signify "${full_path_to_canary_txt}" ".sig"
-verify_cmd_signify "${full_path_to_canary_txt}" ".sig"
+sign_cmd_signify "${full_path_to_canary_txt}" "${full_path_to_canary_txt}.sig"
+verify_cmd_signify "${full_path_to_canary_txt}" "${full_path_to_canary_txt}.sig"
 
-sign_cmd_signify "${full_path_to_canary_txt}" ".embed.sig" -e
+sign_cmd_signify "${full_path_to_canary_txt}" "${full_path_to_canary_txt}.embed.sig" -e
 
 signify-openbsd -V -e -p "${signify_public_key}" -x "${binary_build_folder_dist}/canary/canary.txt.embed.sig" -m "${binary_build_folder_dist}/canary/canary-unembed.txt"
 

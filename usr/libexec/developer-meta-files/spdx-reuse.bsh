@@ -1,0 +1,352 @@
+#!/bin/bash
+
+## SPDX-FileCopyrightText: ENCRYPTED SUPPORT LLC <adrelanos@kicksecure.com>
+## SPDX-License-Identifier: AGPL-3.0-or-later
+
+## AI-Assisted
+
+# shellcheck shell=bash
+
+## Convert Kicksecure license headers to the SPDX/REUSE HYBRID layout: a per-file
+## SPDX header on every comment-capable file plus a NARROW generic REUSE.toml
+## (precedence = "closest") for the uncommentable files only. The header rewrite is
+## literal whole-string replacement via the `str_replace` tool, never sed regex, so
+## a comment prefix and any same-line closer are preserved untouched.
+##
+## It REWRITES existing legacy headers (pass 1) and REPORTS comment-capable files
+## that still lack an SPDX header, but does NOT inject one -- a human adds the real
+## per-file header (the canonical curl/KDE norm), and 'reuse lint' stays the gate.
+## Deliberately so: guessing a comment SYNTAX per extension is what would corrupt a
+## polkit .rules (JavaScript) or fontconfig .conf (XML), so that guesser is gone.
+
+## SCOPE (deliberate): for a single ENCRYPTED SUPPORT LLC / AGPL-3.0-or-later
+## Kicksecure or Whonix package, run per package and VERIFY with `reuse lint` plus
+## a `git diff` review. NOT a blind batch tool: it hardcodes the AGPL holder, so do
+## NOT run it on a vendored upstream with a different license (grml-debootstrap is
+## GPL-2+), and it REPLACES REUSE.toml wholesale, so a package with a curated
+## multi-license REUSE.toml needs manual handling. Email domain is packages/whonix
+## -> whonix.org, else kicksecure.com (other Whonix repo layouts are not special-cased).
+
+## style-ok: no-strict -- sourced library.
+
+spdx_reuse_license_id="AGPL-3.0-or-later"
+spdx_reuse_holder="ENCRYPTED SUPPORT LLC"
+
+## Email domain is derived from the package path. packages/whonix -> whonix.org;
+## everything else (packages/kicksecure and the default) -> kicksecure.com.
+spdx_reuse_email_for_path() {
+   local path="${1}"
+   case "${path}" in
+      */packages/whonix/* | */packages/whonix)
+         printf '%s\n' "adrelanos@whonix.org"
+         ;;
+      *)
+         printf '%s\n' "adrelanos@kicksecure.com"
+         ;;
+   esac
+}
+
+## Does a file already carry an SPDX copyright tag?
+spdx_reuse_has_spdx() {
+   grep --quiet -F -- 'SPDX-FileCopyrightText:' "${1}" 2>/dev/null
+}
+
+## Does a file carry the legacy Kicksecure two-line header? Keyed on the
+## conditions line, which is unique to that header (COPYING and debian/copyright
+## do not contain it, so neither is ever rewritten as source).
+spdx_reuse_file_has_kicksecure_header() {
+   grep --quiet -F -- 'See the file COPYING for copying conditions.' "${1}" 2>/dev/null
+}
+
+## Echo a string with any leading year run (digits, spaces, dashes) stripped.
+## "2012 - 2025 troubadour <x>" -> "troubadour <x>".
+spdx_reuse_strip_leading_years() {
+   local val="${1}"
+   while [ -n "${val}" ]; do
+      case "${val}" in
+         [0-9]* | ' '* | '-'*)
+            val="${val#?}"
+            ;;
+         *)
+            break
+            ;;
+      esac
+   done
+   printf '%s\n' "${val}"
+}
+
+## Rewrite a file's legacy Kicksecure headers to SPDX, IN PLACE, via literal
+## str_replace: the comment prefix and any same-line closer (/* ... */, <!-- ... -->)
+## sit outside the search string, so a one-line block/HTML header is never left
+## unterminated. str_replace edits in place (mode/owner preserved). Order matters:
+## normalize the company copyright END year to the current year, THEN drop it.
+## Every year/email edit is anchored on the company holder, so an upstream /
+## other-contributor copyright never matches (its year is kept, only the marker
+## swapped). Malformed / rangeless outliers (a bare single year, a reversed or typo
+## range) are left with their year and normalized by hand in the per-package
+## 'reuse lint' + 'git diff' review the SCOPE above mandates -- deliberately NOT a
+## blind batch tool, so no per-file guard is carried here.
+spdx_reuse_convert_file() {
+   local file="${1}" email="${2}"
+   ## Company author email -> the package's canonical domain. adrelanos is the
+   ## company (${spdx_reuse_holder}); a different handle is a separate contributor
+   ## and is left untouched.
+   str_replace "adrelanos@riseup.net" "${email}" "${file}"
+   str_replace "adrelanos@whonix.org" "${email}" "${file}"
+   str_replace "adrelanos@kicksecure.com" "${email}" "${file}"
+   ## Normalize the company copyright END year to the current year (only '- 2025'
+   ## needs it; '- 2026' is already current).
+   str_replace "- 2025 ${spdx_reuse_holder}" "- 2026 ${spdx_reuse_holder}" "${file}"
+   ## Drop the now-uniform company copyright year, one per start year.
+   str_replace "2012 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2013 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2014 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2015 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2016 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2017 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2018 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2019 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2020 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2021 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2022 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2023 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2024 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2025 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   str_replace "2026 - 2026 ${spdx_reuse_holder}" "${spdx_reuse_holder}" "${file}"
+   ## Legacy header markers -> SPDX tags.
+   str_replace "Copyright (C) " "SPDX-FileCopyrightText: " "${file}"
+   str_replace "See the file COPYING for copying conditions." \
+      "SPDX-License-Identifier: ${spdx_reuse_license_id}" "${file}"
+}
+
+## Can this file NOT carry an in-file SPDX header (so it must be annotated by
+## path in REUSE.toml instead)? True for binary/data files by extension and for
+## an extensionless file with no shebang. The extension list adds ONLY '.gpg':
+## binary OpenPGP (keyring / key / encrypted blob) that no source ecosystem uses
+## and reuse has no comment style for. Extensions that ALSO name a source language
+## are EXCLUDED even when usually binary -- .asc (AsciiDoc), .sig (Standard ML),
+## .mo (Modelica), .json (tsconfig / JSONC) -- because reuse reads an inline SPDX
+## tag from them, so a headerless one is REPORTED, never blanket-annotated with
+## the wrong license. Deliberately NARROW and unambiguous:
+## this tool does NOT inject headers, so it never decides a COMMENT SYNTAX (the
+## old per-extension guesser mislabelled polkit .rules as shell and fontconfig
+## .conf as hash-config and would have corrupted them). An ambiguous
+## source/config file lacking a header is REPORTED for a human, not classified
+## here. (COPYING/LICENSES/debian/auto-generated-man-pages are handled by the
+## generic REUSE.toml globs and never reach this function.)
+spdx_reuse_is_uncommentable_data() {
+   local file="${1}" base ext first
+   base="${file##*/}"
+   ext=""
+   case "${base}" in
+      *.*)
+         ext="${base##*.}"
+         ;;
+   esac
+   case "${ext}" in
+      txt | png | jpg | jpeg | gif | ico | pdf | gz | xz | zst | deb | bin | dat | gpg)
+         return 0
+         ;;
+   esac
+   ## Extensionless, but a known hash-comment file -> comment-capable, report it.
+   case "${base}" in
+      Makefile | Dockerfile)
+         return 1
+         ;;
+   esac
+   ## Other extensionless: a shebang marks a script (comment-capable -> report
+   ## it); otherwise treat as uncommentable data.
+   if [ -z "${ext}" ]; then
+      IFS= read -r first < "${file}" 2>/dev/null || first=""
+      case "${first}" in
+         '#!'*)
+            return 1
+            ;;
+         *)
+            return 0
+            ;;
+      esac
+   fi
+   return 1
+}
+
+## Drop years (and normalize the company email) in debian/copyright's DEP-5
+## 'Copyright:' field. Keeps DEP-5 format; does NOT touch the indented license
+## text (whose 'Copyright (C) <year> <name of author>' sample must stay verbatim).
+spdx_reuse_fix_dep5_copyright() {
+   local file="${1}" email="${2}" tmp line marker="Copyright: " rest
+   [ -f "${file}" ] || return 0
+   tmp="$(mktemp)"
+   while IFS= read -r line || [ -n "${line}" ]; do
+      case "${line}" in
+         "${marker}"*,*)
+            ## Multiple holders (a comma): leave untouched rather than risk
+            ## dropping a co-holder -- a multi-holder DEP-5 field is manual review.
+            printf '%s\n' "${line}"
+            printf '%s\n' "WARNING: multi-holder DEP-5 '${line}' left unchanged (review manually)" >&2
+            ;;
+         "${marker}"*"${spdx_reuse_holder}"*)
+            printf '%s\n' "${marker}${spdx_reuse_holder} <${email}>"
+            ;;
+         "${marker}"*)
+            rest="${line#"${marker}"}"
+            rest="$(spdx_reuse_strip_leading_years "${rest}")"
+            printf '%s\n' "${marker}${rest}"
+            ;;
+         *)
+            printf '%s\n' "${line}"
+            ;;
+      esac
+   done < "${file}" > "${tmp}"
+   cat -- "${tmp}" > "${file}"
+   safe-rm --force -- "${tmp}"
+}
+
+## Write the narrow generic REUSE.toml. Extra uncommentable paths (beyond the
+## generic categories) are appended so 'reuse lint' stays green while the file
+## stays templatable.
+spdx_reuse_generate_toml() {
+   local dir="${1}" email="${2}"
+   shift 2
+   local extra=("${@}") p
+   {
+      printf '%s\n' \
+         'version = 1' \
+         '' \
+         '# Narrow generic annotation: only uncommentable / generated / data paths that' \
+         '# cannot carry an in-file SPDX header. Comment-capable files carry per-file' \
+         '# SPDX headers instead. precedence = "closest" means any in-file header wins;' \
+         '# this block only fills the gap for the globbed paths.' \
+         '#' \
+         '# Verbatim COPYING + LICENSES/<id>.txt duplicate the license text because' \
+         '# GitHub licensee does not detect DEP-5 (licensee#333, wontfix) nor a' \
+         '# LICENSES-only tree on github.com yet (licensee#926, merged-not-deployed).' \
+         '' \
+         '[[annotations]]' \
+         'path = [' \
+         '  "COPYING",' \
+         '  "LICENSES/**",' \
+         '  "debian/**",' \
+         '  "auto-generated-man-pages/**",' \
+         '  "changelog.upstream",'
+      for p in "${extra[@]}"; do
+         [ -n "${p}" ] || continue
+         ## Escape for a TOML basic string so an odd path char cannot break it.
+         p="${p//\\/\\\\}"
+         p="${p//\"/\\\"}"
+         printf '%s\n' "  \"${p}\","
+      done
+      printf '%s\n' \
+         ']' \
+         'precedence = "closest"' \
+         "SPDX-FileCopyrightText = \"${spdx_reuse_holder} <${email}>\"" \
+         "SPDX-License-Identifier = \"${spdx_reuse_license_id}\""
+   } > "${dir}/REUSE.toml"
+}
+
+## Orchestrate a whole package tree. Returns the exit status of 'reuse lint'.
+spdx_reuse_convert_tree() {
+   local dir="${1}" email file real extra=() files=() missing_header_count=0
+   if [ ! -d "${dir}" ]; then
+      printf '%s\n' "ERROR: not a directory: ${dir}" >&2
+      return 1
+   fi
+   real="$(cd -- "${dir}" && pwd -P)" || return 1
+   email="$(spdx_reuse_email_for_path "${real}")"
+
+   ## NUL-delimited, so a filename with a newline/space is read as one entry.
+   while IFS= read -r -d '' file; do
+      files+=("${file}")
+   done < <(git -C "${dir}" ls-files -z)
+   if [ "${#files[@]}" -eq 0 ]; then
+      printf '%s\n' "ERROR: no tracked files under ${dir} (not a git checkout?)" >&2
+      return 1
+   fi
+
+   ## Pass 1: rewrite existing Kicksecure headers to SPDX. Skip symlinks: a
+   ## symlink's tracked content is its target path, and an in-place rewrite would
+   ## follow it and clobber a file OUTSIDE the repo.
+   for file in "${files[@]}"; do
+      [ -L "${dir}/${file}" ] && continue
+      ## Skip non-source files that merely QUOTE a marker, so the whole-file
+      ## str_replace does not rewrite text that is not a license header:
+      ##  - COPYING / changelog.upstream: verbatim + generated (pass 2 and the
+      ##    REUSE.toml pass skip the same pair; a changelog quotes header lines in
+      ##    its commit messages).
+      ##  - this converter's OWN source: it carries the marker/email literals as
+      ##    code (the has-header grep, the str_replace arguments).
+      ## All already carry / get their license info elsewhere, so nothing is lost.
+      case "${file}" in
+         COPYING | changelog.upstream | \
+         usr/libexec/developer-meta-files/spdx-reuse.bsh)
+            continue
+            ;;
+      esac
+      if spdx_reuse_file_has_kicksecure_header "${dir}/${file}"; then
+         spdx_reuse_convert_file "${dir}/${file}" "${email}"
+      fi
+   done
+
+   ## Pass 2: REPORT each comment-capable file still lacking a header. This tool
+   ## does NOT inject headers (no comment-syntax guessing, no file mutation) -- a
+   ## human adds a real per-file SPDX header. The final 'reuse lint' is the gate
+   ## and stays red until they do. Binary/data + extensionless-non-script files
+   ## cannot hold a header and are handled by REUSE.toml below, so they are not
+   ## reported.
+   for file in "${files[@]}"; do
+      [ -L "${dir}/${file}" ] && continue
+      case "${file}" in
+         COPYING | changelog.upstream | REUSE.toml | \
+         usr/libexec/developer-meta-files/spdx-reuse.bsh)
+            continue
+            ;;
+         LICENSES/* | debian/* | auto-generated-man-pages/*)
+            continue
+            ;;
+      esac
+      spdx_reuse_has_spdx "${dir}/${file}" && continue
+      spdx_reuse_is_uncommentable_data "${dir}/${file}" && continue
+      printf '%s\n' "SPDX header MISSING (add one manually): ${file}" >&2
+      missing_header_count=$((missing_header_count + 1))
+   done
+   if [ "${missing_header_count}" -gt 0 ]; then
+      printf '%s\n' "${missing_header_count} file(s) need a per-file SPDX header added by hand; 'reuse lint' will flag them until then." >&2
+   fi
+
+   ## DEP-5 year drop.
+   spdx_reuse_fix_dep5_copyright "${dir}/debian/copyright" "${email}"
+
+   ## REUSE.toml leftovers: only files that CANNOT carry an in-file header --
+   ## every symlink (never header-written) and binary/data (and extensionless
+   ## non-script) files. Comment-capable files lacking a header are NOT swept in
+   ## here: they were reported in pass 2 and must get a real per-file header, so
+   ## 'reuse lint' keeps flagging them.
+   for file in "${files[@]}"; do
+      case "${file}" in
+         COPYING | changelog.upstream | REUSE.toml)
+            continue
+            ;;
+         LICENSES/* | debian/* | auto-generated-man-pages/*)
+            continue
+            ;;
+      esac
+      ## A symlink is never given a header, so always annotate it by path; do not
+      ## consult has_spdx, which would follow the link.
+      if [ -L "${dir}/${file}" ]; then
+         extra+=("${file}")
+         continue
+      fi
+      spdx_reuse_has_spdx "${dir}/${file}" && continue
+      spdx_reuse_is_uncommentable_data "${dir}/${file}" && extra+=("${file}")
+   done
+
+   spdx_reuse_generate_toml "${dir}" "${email}" "${extra[@]}"
+
+   ## License text: keep an existing LICENSES file (byte-identical to COPYING);
+   ## only fetch when absent.
+   if [ ! -f "${dir}/LICENSES/${spdx_reuse_license_id}.txt" ]; then
+      ( cd -- "${dir}" && reuse download "${spdx_reuse_license_id}" )
+   fi
+
+   ( cd -- "${dir}" && reuse lint )
+}

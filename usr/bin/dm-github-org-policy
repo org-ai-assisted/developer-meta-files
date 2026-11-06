@@ -45,16 +45,24 @@ die_if_not_has github-org-fork
 ##          belong on SOURCE. Defaults: has_issues=false,
 ##          has_projects=false, has_discussions=false.
 ## PROJECT = org holding one self-contained first-party project
-##          (secure-terminal, output-lies). Not a copy of anything,
-##          so issues and private vulnerability reporting live here.
-##          Dependabot does not: it follows the CI, which runs on the
-##          MIRROR. Defaults: has_issues=true, has_wiki=false,
-##          has_discussions=false.
+##          (secure-terminal, output-lies, computer-security-research).
+##          Not a copy of anything, so issues and private vulnerability
+##          reporting live here. Dependabot does not: it follows the CI,
+##          which runs on the MIRROR. Defaults: has_issues=true,
+##          has_wiki=false, has_discussions=false.
+## STAGE  = org hosting one generated <org>.github.io repo serving the
+##          noindex STAGING build of the wiki (kicksecure-stage,
+##          whonix-stage). A published mirror of content maintained
+##          elsewhere, not a bug tracker and running no CI, so issues
+##          are off and Actions are disabled org-wide (the Pages legacy
+##          branch build needs none). Defaults: has_issues=false,
+##          Dependabot off, no required_signatures ruleset rule.
 ##
 ## Vocabulary aligns with dm-github-fork-sync.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
 readonly MIRROR_ORGS=( 'org-ai-assisted' )
-readonly PROJECT_ORGS=( 'secure-terminal' 'output-lies' )
+readonly PROJECT_ORGS=( 'secure-terminal' 'output-lies' 'computer-security-research' )
+readonly STAGE_ORGS=( 'kicksecure-stage' 'whonix-stage' )
 
 ## SOURCE_ORGS currently commented out pending an admin token scoped
 ## to those orgs. ORGS_OVERRIDE (comma-separated, since bash arrays
@@ -65,7 +73,7 @@ readonly PROJECT_ORGS=( 'secure-terminal' 'output-lies' )
 if [ -n "${ORGS_OVERRIDE:-}" ]; then
    IFS=',' read -ra ORGS <<< "${ORGS_OVERRIDE}"
 else
-   ORGS=( "${MIRROR_ORGS[@]}" "${PROJECT_ORGS[@]}" )
+   ORGS=( "${MIRROR_ORGS[@]}" "${PROJECT_ORGS[@]}" "${STAGE_ORGS[@]}" )
 fi
 readonly ORGS
 
@@ -92,7 +100,13 @@ org_kind() {
          return 0
       fi
    done
-   log error "org_kind: '${org}' not in SOURCE_ORGS, MIRROR_ORGS or PROJECT_ORGS"
+   for name in "${STAGE_ORGS[@]}"; do
+      if [ "${name}" = "${org}" ]; then
+         printf '%s\n' stage
+         return 0
+      fi
+   done
+   log error "org_kind: '${org}' not in SOURCE_ORGS, MIRROR_ORGS, PROJECT_ORGS or STAGE_ORGS"
    return 1
 }
 
@@ -244,18 +258,20 @@ apply_org_policy() {
    policy_apply_org "${org}" WORKFLOW_PERMS
 
    ## Actions / CI scope pivots on org kind:
-   ##   SOURCE (Kicksecure / Whonix): disable Actions entirely,
-   ##     org-wide (enabled_repositories=none). The canonical SOURCE
-   ##     repos run their own CI, not GitHub Actions; the AI-assisted
-   ##     test + scanner CI runs on the MIRROR org. Disabling org-wide
-   ##     also removes the fork-PR workflow-abuse surface and saves
-   ##     Actions minutes. No allowlist follow-up: allowed_actions is
-   ##     moot when Actions are off.
-   ##   MIRROR (org-ai-assisted): Actions on, restricted
-   ##     to the github-owned + verified-creators allowlist - it is
-   ##     where AI-assisted dev + CI run.
+   ##   SOURCE (Kicksecure / Whonix) and STAGE (kicksecure-stage /
+   ##     whonix-stage): disable Actions entirely, org-wide
+   ##     (enabled_repositories=none). The canonical SOURCE repos run
+   ##     their own CI, not GitHub Actions; a STAGE org serves a Pages
+   ##     legacy branch build that needs no Actions at all. The
+   ##     AI-assisted test + scanner CI runs on the MIRROR org.
+   ##     Disabling org-wide also removes the fork-PR workflow-abuse
+   ##     surface and saves Actions minutes. No allowlist follow-up:
+   ##     allowed_actions is moot when Actions are off.
+   ##   MIRROR (org-ai-assisted) / PROJECT (secure-terminal, output-lies,
+   ##     computer-security-research): Actions on, restricted to the
+   ##     github-owned + verified-creators allowlist - these run CI.
    ## See agents/github-policy-org-kinds.md.
-   if [ "${kind}" = 'source' ]; then
+   if [ "${kind}" = 'source' ] || [ "${kind}" = 'stage' ]; then
       policy_apply_org "${org}" ACTIONS_DISABLED_ORG
    else
       policy_apply_org "${org}" ACTIONS_SCOPE
@@ -490,12 +506,13 @@ audit_org_state() {
    fi
 
    ## Expected scope depends on the org KIND, exactly as apply_org_policy
-   ## chooses it: SOURCE orgs (Kicksecure / Whonix) have Actions disabled
-   ## org-wide, everything else runs 'selected'. Comparing every org
-   ## against POLICY_ACTIONS_SCOPE would report a correctly configured
-   ## SOURCE org as drift and fail the audit on it.
+   ## chooses it: SOURCE (Kicksecure / Whonix) and STAGE (kicksecure-stage
+   ## / whonix-stage) have Actions disabled org-wide, everything else runs
+   ## 'selected'. Comparing every org against POLICY_ACTIONS_SCOPE would
+   ## report a correctly configured SOURCE or STAGE org as drift and fail
+   ## the audit on it.
    audit_kind="$(org_kind "${org}")" || audit_kind=''
-   if [ "${audit_kind}" = 'source' ]; then
+   if [ "${audit_kind}" = 'source' ] || [ "${audit_kind}" = 'stage' ]; then
       audit_expect 'actions scope' \
          "/orgs/${org}/actions/permissions" \
          "${POLICY_ACTIONS_DISABLED_ORG}"
@@ -705,11 +722,12 @@ audit_org_state() {
    ## org-level Dependabot alerts enabled, repos missing the file
    ## still fail Scorecard.
    ##
-   ## Off the mirror the same probe is a POLICY CHECK, not an inventory
-   ## line: the file IS the version-update switch and only MIRROR may
-   ## carry one, because only MIRROR runs the CI that verifies the bump
-   ## PRs it opens. On MIRROR the file is opt-in per repo (see
-   ## dm-packaging-helper-script), so either answer is in policy there.
+   ## On SOURCE and STAGE the same probe is a POLICY CHECK, not an inventory
+   ## line: the file IS the version-update switch, and those kinds disable
+   ## Actions org-wide, so a bump PR there can never carry a CI verdict --
+   ## the file must be absent. MIRROR and PROJECT both keep Actions on, so a
+   ## bump PR is verifiable and the file is allowed (opt-in per repo, see
+   ## dm-packaging-helper-script); either answer is in policy there.
    ## Archived repos are outside this enumeration; Dependabot does not
    ## run on them, so a leftover config there is inert until the repo is
    ## un-archived.
@@ -733,8 +751,12 @@ audit_org_state() {
             200)
                have_count=$(( have_count + 1 ))
                log notice "    yes: ${org}/${repo}"
-               if [ "${audit_kind}" != 'mirror' ]; then
-                  log warn "    ${org}/${repo}: DRIFT from policy: Dependabot version updates are ON (${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} present); only the mirror org has CI to verify the PRs they open"
+               ## Version updates are allowed where Actions/CI runs to verify the
+               ## bump PRs: MIRROR and PROJECT (both keep Actions on). Drift only
+               ## on SOURCE and STAGE, where Actions are disabled org-wide so a
+               ## bump PR can never carry a CI verdict.
+               if [ "${audit_kind}" = 'source' ] || [ "${audit_kind}" = 'stage' ]; then
+                  log warn "    ${org}/${repo}: DRIFT from policy: Dependabot version updates are ON (${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} present); Actions are disabled org-wide here, so no CI can verify the bump PRs they open"
                   audit_findings=$(( audit_findings + 1 ))
                fi
                ;;
@@ -851,17 +873,104 @@ apply_repo_policy() {
       policy_skip_ui_repo "${owner}" "${repo}" AUTO_TRIAGE_DISMISS_DEV
       policy_skip_ui_repo "${owner}" "${repo}" AUTO_TRIAGE_DISMISS_MALWARE
       policy_skip_ui_repo "${owner}" "${repo}" DELEGATED_DISMISSAL
-   else
+   elif [ "${kind}" = 'source' ] || [ "${kind}" = 'stage' ]; then
       ## Dependabot VERSION updates have no REST setter at any scope: the
       ## presence of .github/dependabot.yml is the switch, so turning them
       ## off means a commit that deletes the file. Emitted per repo
-      ## because that is the granularity the fix has.
+      ## because that is the granularity the fix has. Only SOURCE and STAGE
+      ## must be absent (Actions off -> no CI to verify a bump PR); PROJECT
+      ## keeps Actions on, so version updates are allowed there and no
+      ## delete-the-file notice is emitted.
       policy_skip_ui_repo "${owner}" "${repo}" DEPENDABOT_VERSION_UPDATES_OFF
    fi
 }
 
+## Cross-check the orgs this tool manages against the orgs the bot is
+## actually an admin of. An org the bot can write but that is absent
+## from every *_ORGS array is silently SKIPPED by --apply, so it sits
+## unhardened with nothing reporting the gap - exactly how
+## kicksecure-stage / whonix-stage / computer-security-research went
+## unmanaged until a human happened to notice. This makes the drift a
+## finding on every default-scope run instead.
+##
+## Runs ONLY on the default-scope path: ORGS_OVERRIDE means the operator
+## deliberately narrowed scope (a test, a single SOURCE org), where a
+## whole-account registration check does not apply and would misfire.
+## Findings fold into BOTH failure signals (audit_findings for --audit,
+## policy_warn_seen for --apply/--dry-run); each mode's main() reads the
+## one that matters to it.
+check_registration_drift() {
+   local result status body admin_csv registered_csv line org page count page_logins
+   local -a registered_all admin_logins
+
+   [ -z "${ORGS_OVERRIDE:-}" ] || return 0
+
+   ## Writable orgs only: admin role + active membership. A 'member' org
+   ## (Kicksecure / Whonix) is not writable, is deliberately out of the
+   ## applied set, and must not read as drift.
+   ##
+   ## Paginated (mirrors ghorg_list_repos): a single per_page=100 page would
+   ## drop a registered org onto page 2 once the bot belongs to >100 orgs,
+   ## misreporting it as STALE and missing a page-2 unregistered org -- the
+   ## exact failure mode this check exists to catch.
+   admin_logins=()
+   page=1
+   while [ "${page}" -le "${GHORG_MAX_PAGES}" ]; do
+      result="$(ghorg_api GET "/user/memberships/orgs?per_page=100&page=${page}")" || {
+         log warn 'registration drift: <api error> reading /user/memberships/orgs -- NOT VERIFIED'
+         audit_findings=$(( audit_findings + 1 ))
+         policy_warn_seen=1
+         return 0
+      }
+      status="$(ghorg_status_of "${result}")"
+      if [ "${status}" != '200' ]; then
+         log warn "registration drift: HTTP ${status} reading /user/memberships/orgs (need admin:org) -- NOT VERIFIED"
+         audit_findings=$(( audit_findings + 1 ))
+         policy_warn_seen=1
+         return 0
+      fi
+      body="$(ghorg_body_of "${result}")"
+      count="$(printf '%s' "${body}" | ghorg_jq_capped -- 'length')"
+      [ "${count}" = '0' ] && break
+      page_logins="$(printf '%s' "${body}" \
+         | ghorg_jq_capped --raw-output -- \
+           '.[] | select(.role == "admin" and .state == "active") | .organization.login')"
+      while IFS= read -r line; do
+         [ -z "${line}" ] && continue
+         admin_logins+=( "${line}" )
+      done <<< "${page_logins}"
+      [ "${count}" -lt 100 ] && break
+      page=$(( page + 1 ))
+   done
+   admin_csv="$(IFS=','; printf '%s' "${admin_logins[*]:-}")"
+
+   ## The writable set this tool applies policy to. SOURCE is member-only
+   ## (declarative, commented out of ORGS), so it is excluded here too.
+   registered_all=( "${MIRROR_ORGS[@]}" "${PROJECT_ORGS[@]}" "${STAGE_ORGS[@]}" )
+   registered_csv="$(IFS=','; printf '%s' "${registered_all[*]}")"
+
+   while IFS= read -r line; do
+      [ -n "${line}" ] || continue
+      case "${line}" in
+         'UNREGISTERED '*)
+            org="${line#UNREGISTERED }"
+            log warn "registration drift: bot is ADMIN of '${org}' but no org kind claims it; --apply SKIPS it, leaving it UNHARDENED. Add it to MIRROR_ORGS / PROJECT_ORGS / STAGE_ORGS in dm-github-org-policy."
+            audit_findings=$(( audit_findings + 1 ))
+            policy_warn_seen=1
+            ;;
+         'STALE '*)
+            org="${line#STALE }"
+            log warn "registration drift: '${org}' is registered but the bot is NOT an admin of it; --apply cannot reach it. Remove it or restore access."
+            audit_findings=$(( audit_findings + 1 ))
+            policy_warn_seen=1
+            ;;
+      esac
+   done <<< "$(policy_registration_drift_report "${registered_csv}" "${admin_csv}")"
+}
+
 main() {
    local org repos repo
+   check_registration_drift
    if [ "${mode}" = 'audit' ]; then
       for org in "${ORGS[@]}"; do
          audit_org_state "${org}"

@@ -35,12 +35,26 @@ if [[ "${review_spec}" == -* ]]; then
    die 2 "ref '${review_spec}' must not start with '-'."
 fi
 
-## Don't allow the use of '--' as it could cause options to be misinterpreted
-## by the various Git tools.
+## Don't allow the use of '--' or non-option non-final arguments as they could
+## cause options to be misinterpreted by the various Git tools.
 for review_opt in "${review_opts[@]}"; do
    if [ "${review_opt}" = '--' ]; then
       die 2 "'--' is not a valid option here, ref-or-range is always the last argument."
    fi
+   if [[ "${review_opt}" != -* ]]; then
+      die 2 "forwarded argument '${review_opt}' must be a git-diff option in attached-value form (e.g. --opt=value)."
+   fi
+   ## Reject options that SUPPRESS or REDIRECT the diff: forwarded to the review tools they
+   ## silently empty the review (no patch shown) or send it to a file, so the reviewer sees
+   ## nothing and the tool still exits 0 -- a quiet review bypass. A denylist, not an allowlist:
+   ## three different tools (git-diff-review / git-meld / git-kdiff3) accept different legitimate
+   ## view options, so an allowlist would over-block ordinary usage.
+   case "${review_opt%%=*}" in
+      -s | --no-patch | --quiet | --name-only | --name-status | -o | --output \
+         | --no-ext-diff | --diff-filter)
+         die 2 "option '${review_opt}' suppresses or redirects the diff and would silently empty the review."
+         ;;
+   esac
 done
 
 ## Allow both ranges ('..') and merge-base ranges ('...').
@@ -127,10 +141,10 @@ review_range="${base_commit}..${target_commit}"
 
 git --no-pager log "${review_range}" | NO_COLOR=1 stcat
 
-git-diff-review "${review_opts[@]}" "${review_range}"
+git-diff-review "${review_opts[@]}" --end-of-options "${review_range}"
 
-git-meld "${review_opts[@]}" "${review_range}"
+git-meld "${review_opts[@]}" --end-of-options "${review_range}"
 
-git-kdiff3 "${review_opts[@]}" "${review_range}"
+git-kdiff3 "${review_opts[@]}" --end-of-options "${review_range}"
 
 true "$0: OK."

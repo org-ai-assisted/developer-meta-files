@@ -210,8 +210,10 @@ without integrity checks; an attacker with code-exec on a workflow
 that holds `ACTIONS_RUNTIME_TOKEN` can replace cache entries
 visible to the default branch for ~6h after the run. Mitigations
 in this repo: (1) no `pull_request_target` triggers anywhere,
-(2) fork-PR guard on every PR-triggered reusable, (3) cache keys
-pinned to `hashFiles(<this workflow>)` with no catch-all
+(2) fork-PR guard on every PR-triggered reusable, blocking fork
+PRs under `pull_request` and `pull_request_target` alike so (2)
+does not rely on (1) holding, (3) cache keys pinned to
+`hashFiles(<this workflow>)` with no catch-all
 `restore-keys:` fallback, (4) cached payloads are apt `.deb`s
 re-verified by `apt-get install` against fresh `Packages`
 metadata. See
