@@ -386,6 +386,26 @@ missing section, because `build-command` is required there.
 - `timeout-minutes`: **hardcoded in reusable** at the current
   default (30).
 
+All four wrappers reference the reusable at `@ai` (the org's active
+development branch), per G-A-004 in agents/github-actions.md - CI
+exercises the current reusable logic, not the lagging `master` copy.
+The `c-cpp` lane needs it specifically: the `security-and-quality`
+suite on `ai` drops three C/C++ style queries by query-filter
+(`cpp/poorly-documented-function`, `cpp/long-switch`,
+`cpp/commented-out-code`) - maintainability lint we do not churn C
+for - while every security query still runs; `master` does not carry
+that filter.
+
+Per-change consumer lanes also trigger on `ai` pushes and PRs
+(`branches: [master, ai]`), so direct work on an `ai` branch gets CI
+without waiting for a PR to `master`. The two periodic security
+scans are the exception: `consumer-coverity.yml` keeps its
+tag + weekly-schedule trigger (an `ai` push trigger would burn the
+daily free-tier Coverity slot - see its singleton note / G-A-006),
+and `consumer-scorecard.yml` keeps its default-branch + schedule
+trigger (a repo-posture scan has no per-change value on `ai`). Both
+still track the reusable at `@ai`.
+
 ### Coverity canonical-repos gate placement
 
 The current `reusable-coverity.yml` uses
@@ -624,7 +644,7 @@ never in `.github/workflows/`:
 
     jobs:
       coverity:
-        uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-coverity.yml@master
+        uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-coverity.yml@ai
         secrets:
           COVERITY_SCAN_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
           COVERITY_SCAN_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}

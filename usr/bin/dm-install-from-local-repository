@@ -21,9 +21,31 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 cd -- "${MYDIR}"
 
-## XXX: hardcoded path
-source "${HOME}/derivative-maker/help-steps/pre"
-source "${HOME}/derivative-maker/help-steps/variables"
+## This tool lives at
+## <derivative-maker>/packages/kicksecure/developer-meta-files/usr/bin; the parent
+## repo root (five levels up) holds help-steps. Derive it from our own location so
+## the tool works regardless of $HOME or where the checkout lives.
+dist_source_root="$( cd -- "${MYDIR}/../../../../.." && pwd )"
+## When installed system-wide (MYDIR=/usr/bin) the five-levels-up assumption
+## resolves to '/', so fall back to an explicit checkout location.
+if [ ! -f "${dist_source_root}/help-steps/pre" ]; then
+   for dist_source_root_candidate in \
+      "${DERIVATIVE_MAKER_ROOT:-}" \
+      "${source_code_folder_dist:-}" \
+      "${HOME:-}/derivative-maker" ; do
+      if [ -n "${dist_source_root_candidate}" ] \
+         && [ -f "${dist_source_root_candidate}/help-steps/pre" ]; then
+         dist_source_root="${dist_source_root_candidate}"
+         break
+      fi
+   done
+fi
+if [ ! -f "${dist_source_root}/help-steps/pre" ]; then
+   printf '%s\n' "ERROR: cannot locate the derivative-maker checkout (no help-steps/pre under '${dist_source_root}'). Run this from a checkout or set DERIVATIVE_MAKER_ROOT." >&2
+   exit 1
+fi
+source "${dist_source_root}/help-steps/pre"
+source "${dist_source_root}/help-steps/variables"
 
 main() {
    trap "exception_handler_unchroot_unmount" ERR INT TERM
@@ -50,10 +72,12 @@ main() {
    fi
 
    ## This file doesn't include Whonix's APT repository.
-   cp -- "${source_code_folder_dist}/packages/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
-   chmod o+r -- "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
+   ## CHROOT_FOLDER is the root-owned mounted image fs; this tool runs as the
+   ## unprivileged build user, so the write needs SUDO_TO_ROOT.
+   ${SUDO_TO_ROOT} cp -- "${source_code_folder_dist}/packages/kicksecure/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
+   ${SUDO_TO_ROOT} chmod o+r -- "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
 
-   "${dist_source_help_steps_folder}/create-local-temp-apt-repo" "$@"
+   "${dist_source_help_steps_folder}/create-local-apt-repo" "$@"
 
    ## Reading local repository containing Whonix's packages.
    chroot_run apt-get "${DIST_APTGETOPT[@]}" ${apt_sourcelist_empty} ${apt_sourceparts} -o APT::Get::List-Cleanup="0" update
@@ -104,7 +128,7 @@ main() {
 
    #chroot_run apt-get "${DIST_APTGETOPT[@]}" $apt_sourcelist_empty $apt_sourceparts -f install
 
-   "${dist_source_help_steps_folder}/remove-local-temp-apt-repo" "$@"
+   "${dist_source_help_steps_folder}/remove-local-apt-repo" "$@"
 
    ## Forget about local repository containing Whonix's packages.
    chroot_run apt-get --no-download --list-cleanup update

@@ -93,12 +93,12 @@ jobs:
     ## variable in its own repo; no patch to our files.
     ##
     ## ANDed with the fork-PR guard, which stays: a no-op unless the
-    ## caller routes pull_request events into us, in which case it blocks
-    ## PRs from forks (those need maintainer review and a manual re-run
-    ## from a trusted ref).
+    ## caller routes pull_request / pull_request_target events into us,
+    ## in which case it blocks PRs from forks (those need maintainer
+    ## review and a manual re-run from a trusted ref).
     if: >-
       vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'
-      && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request')
+      && (github.event.pull_request.head.repo.full_name == github.repository || !startsWith(github.event_name, 'pull_request'))
 
     timeout-minutes: 10
 

@@ -14,6 +14,9 @@ export LC_ALL=C
 
 true "$0: START."
 
+## DO NOT add --exclude-dir for any regenerable tool cache in any scan. We want
+## to flag those so they can be deleted.
+
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
 if [ "${MYDIR}" = "/usr/bin" ]; then
@@ -190,7 +193,6 @@ if grep \
       --exclude=changelog \
       --exclude=changelog.upstream \
       --exclude-dir=.git \
-      --exclude-dir=live-build \
       -- \
       '[[:blank:]]$' ; then
    true "\

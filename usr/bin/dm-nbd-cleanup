@@ -127,7 +127,11 @@ for mount_point in "${nbd_mount_points[@]}"; do
 done
 
 released_devices=0
-for nbd_device in /dev/nbd[0-9] /dev/nbd[0-9][0-9]; do
+for nbd_device in /dev/nbd[0-9]*; do
+   ## Match whole-device nbd nodes of any index (nbd0 .. nbd100+); the mount
+   ## scan above accepts the same, so teardown must not cap at two digits.
+   ## Also drops partition nodes (nbdNpM) and the literal glob when none exist.
+   [[ "${nbd_device}" =~ ^/dev/nbd[0-9]+$ ]] || continue
    [ -b "${nbd_device}" ] || continue
    ## An unconnected device has size 0 and can be skipped.
    size_path="/sys/block/${nbd_device##*/}/size"

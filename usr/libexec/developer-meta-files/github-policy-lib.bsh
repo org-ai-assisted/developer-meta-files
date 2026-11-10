@@ -406,6 +406,67 @@ policy_tag_ruleset_body() {
 }
 
 ## ============================================================================
+## Registration-drift report
+## ============================================================================
+
+## Compare the orgs the tool is configured to manage (registered_csv:
+## MIRROR + PROJECT + STAGE) against the orgs the bot is actually an
+## admin of (admin_csv, from GET /user/memberships/orgs filtered
+## role=admin + state=active). Prints one line per finding to STDOUT,
+## nothing when the two sets agree:
+##   UNREGISTERED <org>   bot is admin of <org> but no kind claims it,
+##                        so every --apply silently SKIPS it and the
+##                        writable public org sits UNHARDENED.
+##   STALE <org>          <org> is registered but the bot is not an
+##                        admin of it, so --apply cannot reach it - the
+##                        registration is dead or the access was lost.
+##
+## Pure: no network, no caller-scope globals. The caller does the GET
+## and folds each line into the mode's failure signal, so this stays
+## unit-testable with crafted inputs and no fixtures.
+##
+## Args: $1 = registered CSV, $2 = admin CSV (comma-separated logins).
+policy_registration_drift_report() {
+   local registered_csv admin_csv org other found
+   local -a registered admin
+
+   registered_csv="$1"
+   admin_csv="$2"
+   IFS=',' read -ra registered <<< "${registered_csv}"
+   IFS=',' read -ra admin <<< "${admin_csv}"
+
+   for org in "${admin[@]}"; do
+      [ -n "${org}" ] || continue
+      found=0
+      for other in "${registered[@]}"; do
+         if [ "${other}" = "${org}" ]; then
+            found=1
+            break
+         fi
+      done
+      if [ "${found}" -eq 0 ]; then
+         printf '%s\n' "UNREGISTERED ${org}"
+      fi
+   done
+
+   for org in "${registered[@]}"; do
+      [ -n "${org}" ] || continue
+      found=0
+      for other in "${admin[@]}"; do
+         if [ "${other}" = "${org}" ]; then
+            found=1
+            break
+         fi
+      done
+      if [ "${found}" -eq 0 ]; then
+         printf '%s\n' "STALE ${org}"
+      fi
+   done
+
+   return 0
+}
+
+## ============================================================================
 ## Argument parser
 ## ============================================================================
 

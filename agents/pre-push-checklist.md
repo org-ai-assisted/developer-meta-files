@@ -47,9 +47,10 @@ Wire as a hook so the gate is unmissable:
     [ ] has from has.bsh, not 'command -v X >/dev/null 2>&1'
         (R-090)
     [ ] safe-rm, not rm (R-120)
-    [ ] temp-dir mkdir sets the mode atomically:
-        'mkdir --parents --mode=700 -- "${TMPDIR}"', never a
-        following chmod (TOCTOU) and never the short -m (R-172)
+    [ ] a mkdir sets its mode atomically: a temp-dir mkdir uses
+        '--mode=', never the short -m (R-172); a mkdir + a
+        following same-dir chmod becomes one 'install -d -m'
+        (R-173, TOCTOU)
     [ ] traps as named functions, registered after vars init
         (R-051)
     [ ] true "INFO: ..." not bare ':' (R-130)

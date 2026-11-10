@@ -95,11 +95,19 @@ with no explanatory comment.
 
 A test that drives a script's functions must be able to `source` it
 without running it or leaking strict-mode into the test shell. Such a
-script sources `check_runtime.bsh`, keeps its strict-mode block and its
-`main "$@"` call each behind `if was_executed "${BASH_SOURCE[0]}"`, and
-moves its former top-level logic into `main()`:
+script sources `check_runtime.bsh` then asserts the POSTCONDITION that
+`was_executed` is defined (fail loud with a named error on a bad
+`HELPER_SCRIPTS_PATH`) -- checking the function's presence, not `source`'s
+exit status, so a truncated lib that sources cleanly yet defines nothing
+is still caught. It keeps its strict-mode block and its `main "$@"` call
+each behind `if was_executed "${BASH_SOURCE[0]}"`, and moves its former
+top-level logic into `main()`:
 
-    source /usr/libexec/helper-scripts/check_runtime.bsh
+    source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+    if ! declare -F was_executed >/dev/null; then
+       printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+       exit 1
+    fi
 
     if was_executed "${BASH_SOURCE[0]}"; then
        set -o errexit
@@ -482,30 +490,38 @@ not dereference). Reserve `${var:-}` for genuinely-optional variables.
 
 ## printf
 
-**R-030: Always `printf '%s\n' "..."`, unless doing complex table-like
-formatting.** Format string is otherwise fixed; all data goes in the
-data string. No `%d`, no `%q` (except where shell-escaping is genuinely
-required), no extra `\n` in the format.
+**R-030: Always `printf '%s\n' "..."`.** The format is exactly
+`'%s\n'`, `'%s'` or `'%s\0'` (any quoting that yields that string);
+all text and data go in the data argument. No `%d`, no padding, no
+text and no extra `\n` in the format. GATE-ENFORCED.
 
-Numeric-probe carve-out (GATE-ENFORCED as an exemption): a `printf`
-with a SINGLE-quoted literal format whose own command discards BOTH
-stdout and stderr is a validator, not output, and keeps its format
-verb. `is_integer` in helper-scripts' `strings.bsh` is the case:
+    Bad:  printf '%s: kept %s\n' "${a}" "${b}"
+    Good: printf '%s\n' "${a}: kept ${b}"
 
-    printf '%d' "$1" >/dev/null 2>&1 || return 1
+Several lines: one data argument per line, `printf '%s\n' "line1"
+"line2"`. A byte escape: an ANSI-C value like `$'\303\251'` (which
+translates to 'e' with an acute symbol).
 
-Nothing is emitted, so neither of this rule's failure modes is
-reachable, and the printf's FAILURE on a non-number is the check
-R-141 relies on -- rewriting the format to `%s` would silently turn
-that guard into one that always succeeds. Discarding stdout alone,
-or `2>&1 >/dev/null`, does not qualify (the latter form is identical
-to the above form but is unusual): those still emit.
+The gate also flags a double-quoted or unquoted format containing `$`
+or a backtick (data interpolated into the format).
 
-TODO: Add to dist-ai's shell rule checker a way to override this rule
-for specific lines of code. We need more complex printf format strings
-for things like formatting tables, and while we could theoretically
-reimplement the formatting logic, that would increase the code we need
-to understand and maintain.
+Exemptions (all gate-honored):
+
+- `printf -v` builds a string (R-041); any format.
+- A `%q`-only format (`'%q'`, `'%q '`, `'%q\n'`), only where
+  shell-escaping is genuinely required.
+- Numeric probe: a `%d`-only format whose own command sends BOTH
+  stdout and stderr to `/dev/null` is a validator, not output.
+  `is_integer` in helper-scripts' `strings.bsh`:
+
+      printf '%d' "$1" >/dev/null 2>&1 || return 1
+
+  The printf's FAILURE on a non-number is the check R-141 relies on;
+  a `%s` format would always succeed. Stdout alone, or `2>&1
+  >/dev/null` (stderr still on the old stdout), does not qualify.
+- Genuine table formatting (`%-10s` columns): file-wide waiver
+  `## style-ok: printf-format`.
+- Per-rule override: `## style-ok: R-030`.
 
 **R-031: Multi-line block: ONE quoted string with embedded
 newlines.** Multiple separate lines: one `printf '%s\n'` per line.
@@ -520,9 +536,9 @@ line should exist at all is R-042's separate call; this rule only
 fixes its form once you decide to write one.
 
 Waiver: `## style-ok: printf-format` (file-wide) suppresses BOTH the
-printf format rules -- R-030's format-injection check and R-031's
-bare-newline check. Reserve it for a file whose printf usage is
-deliberately non-standard; prefer the compliant `printf '%s\n' ""`.
+printf format rules -- R-030 (both checks) and R-031's bare-newline
+check. Reserve it for genuine table formatting; prefer the compliant
+`printf '%s\n' ""`.
 
 **R-032: Quote choice.** Double quotes preferred. Single quotes
 acceptable when the body has many doubles to escape:
@@ -1457,6 +1473,11 @@ Bad -- the mode is not atomic (a `chmod` follows the create):
     mkdir --parents -- "${TMPDIR}"
     chmod 700 -- "${TMPDIR}"          # TOCTOU: dir is world-visible first
 
+This split form is owned by R-173 (which rewrites it to a single
+`install -d -m`); R-172 defers it there rather than double-report. R-172
+still flags a temp `mkdir` that drops the mode entirely or uses a short
+`-m`.
+
 Bad -- no mode at all:
 
     mkdir --parents -- "${TMPDIR}"
@@ -1484,7 +1505,11 @@ is exactly the intent here: the parents (`/var/cache`, `~/.cache`, ...)
 pre-exist, so only the temp directory itself is created and it gets the
 mode atomically. There is no form that is both idempotent AND atomic
 without the flag combination SC2174 warns about, so the disable is part
-of the pattern -- `pre-push-fix` inserts it for you.
+of the pattern -- `pre-push-fix` inserts it for you. The insertion is NOT
+temp-dir-specific: ANY `mkdir --parents --mode=` (for example a lock
+directory `mkdir --parents --mode=0700 -- /run/user/0`) gets the directive
+from the fixer, so the atomic form is never blocked by SC2174 and the
+directive is never hand-typed. Only the REQUIREMENT below is temp-scoped.
 
 Waiver: `## style-ok: allow-mkdir-no-mode` anywhere in the script (same
 mechanism as R-120's `## style-ok: no-safe-rm`). Reserve it for a temp
@@ -1497,6 +1522,85 @@ a `TMPDIR` / `TMP` / `TEMP` / `TEMPDIR` variable and that carries no
 `--mode=`, on a non-comment line of a changed shell file. A `mkdir` that
 does not create one of those temp variables, and a name that merely
 starts with the prefix (`${TMPFILE}`), are not matched.
+
+
+**R-173: A `mkdir` immediately followed by a same-directory `chmod` must
+be one atomic `install -d -m`.**
+
+    install -d -m 0755 -- "${dir}"
+
+Creating a directory and then setting its mode in a separate `chmod` is
+two problems in one. It leaves a TOCTOU window -- the directory exists
+with the umask-default (potentially world-traversable) mode until the
+`chmod` lands -- and it takes two commands where one does the job.
+
+Bad -- the create and the mode are split:
+
+    mkdir --parents -- "${dir}"
+    chmod 0755 -- "${dir}"
+
+Use `install -d -m` instead of `mkdir --parents --mode=` for this. For a
+SINGLE-component target it sets the mode on the directory AND re-modes an
+existing one (fixing messed-up perms on a directory that already exists),
+whereas `mkdir --parents --mode=` modes only the deepest component -- the
+SC2174 case. Being `install`, not `mkdir`, it never trips SC2174, so no
+`# shellcheck disable=SC2174` is needed. `install -d` is idempotent (like
+`mkdir --parents`): it succeeds when the directory already exists.
+
+Caveat -- a MULTI-component target (`a/b/c`): `install -d -m MODE` applies
+MODE only to the final component; any PARENT it has to create (`a`, `b`)
+is made 0755, independent of `-m` AND the umask. So `install -d -m 0700
+-- a/b/c` leaves `a` and `b` world-traversable (0755) -- unlike `mkdir
+--parents -- a/b/c; chmod 0700 -- a/b/c`, where the parents keep the
+umask-default mode (0700 under `umask 077`). `mkdir --parents --mode=0700`
+is no better: `--mode` with `--parents` also modes only the deepest
+component (the SC2174 case). So the fixer auto-rewrites only a
+single-component target; a multi-component pair is left for a human
+(below), who must set the parents' perms deliberately.
+
+`pre-push-fix` rewrites only the mechanical, behavior-preserving case,
+where the whole pair reconstructs losslessly to `install -d -m MODE --
+DIR`: a `mkdir --parents DIR` whose ONLY option is `--parents`, a `chmod
+MODE DIR` with a numeric octal mode and no flags, both unwrapped, with
+nothing but a plain separator (newline, `;`, or `&&`) between them and
+one directory operand -- a single path component (no `/`) -- textually
+the same on both sides. It is left for a human -- flagged, not rewritten
+-- when:
+
+- the `mkdir` has no `--parents`. A plain `mkdir DIR` FAILS if `DIR`
+  already exists (the lock-directory idiom relies on that); `install -d`
+  reuses it, so the rewrite is not behavior-preserving. Only `--parents`,
+  already idempotent, maps cleanly to `install -d`. The atomic form here
+  is `mkdir --mode=MODE -- DIR` (one command, same fail-on-exists
+  semantics), NOT `install -d`.
+- the target is a multi-component path (contains `/`). `install -d -m`
+  modes only the final component and makes any parent it creates 0755
+  regardless of `-m`/umask, so a private path's parents would be exposed.
+  Keep `mkdir --parents` + `chmod` (whose parents follow the umask), or
+  set the parents' perms deliberately. The fixer judges this by a LITERAL
+  `/` in the source, so an opaque `"${dir}"` is treated as a single
+  component and still auto-rewritten -- if it may expand to a private
+  multi-component path, prefer the explicit forms above.
+- the `mkdir` carries any other option, or the `chmod` carries any flag.
+  The fix reconstructs `install -d -m`, so an option it does not
+  reproduce would be silently dropped -- notably `-Z` / `--context=`
+  (the SELinux/SMACK security context of the created directory).
+- the mode is symbolic (`u+rwx`: `chmod` applies it relative to the
+  existing bits, `install -m` sets absolute bits, so the two differ).
+- either command is wrapped (`sudo mkdir ...; sudo chmod ...`), carries a
+  redirection, or is backgrounded (`&`) or negated (`!`) -- shfmt attaches
+  those to the statement and the collapse would drop or mis-scope them.
+- a comment sits between the two.
+
+Waiver: `## style-ok: allow-mkdir-then-chmod` anywhere in the script.
+Reserve it for a case where the split is deliberate (a mode that must be
+widened only after the directory is populated, say).
+
+Enforcement: the gate flags a command-position `mkdir` with a single
+directory operand that is IMMEDIATELY followed, in the same statement
+list (or across `&&`), by a `chmod` on the textually same directory. A
+recursive `chmod -R`, a non-adjacent `chmod` (another command between),
+and a `chmod` on a different operand are not matched.
 
 
 **R-190: A substantial interpreter program does not belong in a
@@ -1785,7 +1889,7 @@ _auto-detected: yes | auto-fixed: no_
 
     # Good -- a required tool absent fails LOUD:
     if ! type -P helper-script >/dev/null; then
-       printf 'FATAL: helper-script absent\n' >&2
+       printf '%s\n' 'FATAL: helper-script absent' >&2
        exit 1
     fi
 

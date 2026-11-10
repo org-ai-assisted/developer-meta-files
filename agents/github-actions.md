@@ -103,12 +103,23 @@ decide which triggers fire on `pull_request` events. Adding a new
 PR merges to the base branch. To validate a new workflow before
 merging, merge to a feature branch and use that as the base.
 
-**G-A-004: Cross-repo `uses:` references the BASE branch of the
-referenced repo by name (`@master`) or commit (`@<sha>`).** SHA
-pinning gives supply-chain stability; branch tracking gives
-single-source-of-truth update propagation. Both are valid; pick
-per workflow based on how often the reusable changes vs. how
-strict the trust boundary is.
+**G-A-004: Cross-repo `uses:` references a first-party branch by
+name (`@ai`) or a commit (`@<sha>`).** Consumer workflows track the
+reusables at `@ai` - the org's active development branch - so CI
+exercises the current reusable logic rather than the lagging
+`master` copy. SHA pinning gives supply-chain stability; branch
+tracking gives single-source-of-truth update propagation (no
+per-consumer bump when a reusable changes). We branch-track because
+the reusables change often and the trust boundary is internal (see
+"`sha_pinning_required` intentionally OFF" below), so the refs stay
+unpinned.
+
+The `codeql-cpp` lane depends on this: the `security-and-quality`
+suite on `ai` drops three C/C++ style queries by query-filter
+(`cpp/poorly-documented-function`, `cpp/long-switch`,
+`cpp/commented-out-code`) - maintainability lint we do not churn C
+for - while every security query still runs; `master` does not carry
+that filter, so a consumer pinned to `@master` would re-raise them.
 
 **G-A-006: Concurrency policy - cancellable by default, singleton
 for quota-limited / release-pipeline.** Every top-level workflow
@@ -210,8 +221,10 @@ without integrity checks; an attacker with code-exec on a workflow
 that holds `ACTIONS_RUNTIME_TOKEN` can replace cache entries
 visible to the default branch for ~6h after the run. Mitigations
 in this repo: (1) no `pull_request_target` triggers anywhere,
-(2) fork-PR guard on every PR-triggered reusable, (3) cache keys
-pinned to `hashFiles(<this workflow>)` with no catch-all
+(2) fork-PR guard on every PR-triggered reusable, blocking fork
+PRs under `pull_request` and `pull_request_target` alike so (2)
+does not rely on (1) holding, (3) cache keys pinned to
+`hashFiles(<this workflow>)` with no catch-all
 `restore-keys:` fallback, (4) cached payloads are apt `.deb`s
 re-verified by `apt-get install` against fresh `Packages`
 metadata. See
@@ -246,11 +259,13 @@ per-repo equivalent). When `true`, every `uses:` reference must be
 a 40-char commit SHA; floating tags (`@v4`, `@master`) fail the
 run. We leave it `false` deliberately:
 
-- First-party reusable workflows (`org-ai-assisted/...` /
-  `Kicksecure/...` / `Whonix/...`) reference each other by
-  branch name (`@master`) on purpose - single-source-of-truth
-  update propagation, see G-A-004 above. Flipping
-  `sha_pinning_required: true` would reject every such call.
+- First-party consumer workflows (`org-ai-assisted/...` /
+  `Kicksecure/...` / `Whonix/...`) reference the reusables by
+  branch name (`@ai` - see G-A-004 above) on purpose -
+  single-source-of-truth update propagation. Resolving a mutable
+  ref on an internal repo is trusted transport under threat-model-A.
+  Flipping `sha_pinning_required: true` would reject every such
+  call.
 - Threat-model-A in `agents/security.md` explicitly trusts
   `github.com` and the org's own repos as transport. SHA-pin
   ceremony for internal refs is over-engineering for threats

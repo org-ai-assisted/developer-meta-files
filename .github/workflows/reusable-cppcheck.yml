@@ -49,7 +49,7 @@
 ##     contents: read
 ##   jobs:
 ##     cppcheck:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-cppcheck.yml@master
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-cppcheck.yml@ai
 ##       permissions:
 ##         contents: read
 ##
@@ -86,7 +86,7 @@ jobs:
     ## ANDed with the fork-PR guard, which stays.
     if: >-
       vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'
-      && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request')
+      && (github.event.pull_request.head.repo.full_name == github.repository || !startsWith(github.event_name, 'pull_request'))
 
     permissions:
       contents: read

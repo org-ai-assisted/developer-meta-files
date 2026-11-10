@@ -31,6 +31,7 @@ feedback loop.
 | GitHub Actions / reusable workflows | [`agents/github-actions.md`](agents/github-actions.md) |
 | Consumer-template propagation + per-repo overlays | [`agents/github-actions-consumer-templates.md`](agents/github-actions-consumer-templates.md) |
 | Threat model + trust boundaries | [`agents/security.md`](agents/security.md) |
+| Per-daemon W^X hardening of a systemd unit | [`agents/systemd-wx-hardening.md`](agents/systemd-wx-hardening.md) |
 
 ## developer-meta-files only
 

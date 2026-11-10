@@ -83,7 +83,7 @@
 ##
 ##   jobs:
 ##     actions:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codeql.yml@master
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codeql.yml@ai
 ##       with:
 ##         language: actions
 ##       permissions:
@@ -95,7 +95,7 @@
 ##
 ##   jobs:
 ##     python:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codeql.yml@master
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codeql.yml@ai
 ##       with:
 ##         language: python
 ##         dm-consumer-section: codeql-python
@@ -108,7 +108,7 @@
 ##
 ##   jobs:
 ##     c-cpp:
-##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codeql.yml@master
+##       uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codeql.yml@ai
 ##       with:
 ##         language: c-cpp
 ##         build-mode: manual
@@ -167,7 +167,7 @@ jobs:
     ## ANDed with the fork-PR guard, which stays.
     if: >-
       vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'
-      && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request')
+      && (github.event.pull_request.head.repo.full_name == github.repository || !startsWith(github.event_name, 'pull_request'))
 
     timeout-minutes: 30
 
@@ -248,6 +248,20 @@ jobs:
           config: |
             paths-ignore:
               - .github/dist-ai
+            ## Keep the full security-and-quality suite, but drop three C/C++
+            ## STYLE queries that only yield by-design noise on our code
+            ## (intentional commented-out blocks, long packet-dispatch switches,
+            ## undocumented statics) -- zero security/correctness content,
+            ## consistent with the CBMC-clean results. No-op for non-cpp
+            ## languages. Add an id here only for a query that is a false
+            ## positive across our repos, never to silence a real finding.
+            query-filters:
+              - exclude:
+                  id: cpp/commented-out-code
+              - exclude:
+                  id: cpp/poorly-documented-function
+              - exclude:
+                  id: cpp/long-switch
 
       ## Manual build path - dm-consumer.yml.<section>.build-command.
       ## Only runs when build-mode=manual.

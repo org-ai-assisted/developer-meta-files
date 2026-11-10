@@ -23,15 +23,22 @@ dist-ai-tests:
   ## with apt's own parser; the module is a declared hard dependency (it raises
   ## ImportError, exit 3, not a silent skip), and the runner's stock python3 lacks
   ## it. Without it test_pre_push_detect + test_pre_push_static_style_rules crash.
-  ## dpkg-dev (dpkg-parsechangelog): test_package_needs_rebuild sources
-  ## package-build-freshness.bsh, which reads the changelog Source field.
+  ## dpkg-dev (dpkg-parsechangelog) + dctrl-tools (grep-dctrl): test_package_needs_rebuild
+  ## sources package-build-freshness.bsh, which reads the changelog Source field and
+  ## greps debian/control via grep-dctrl; a present subject with either tool absent FATALs.
   ## strip-nondeterminism: test_prepare_release_libvirt_compress_reproducible
   ## drives the real reproducible-image pipeline. dosfstools (mkfs.fat) + mtools
   ## (mcopy, mmd) + xxd: test_normalize_fat_partition builds and re-images a real
   ## FAT partition and reads its volume serial with 'xxd -p' (xxd is its own
   ## package now, split from vim-common). Each is a hard requirement -- a present
   ## subject with the tool absent FATALs, not skips.
-  apt-packages: "jq python3-yaml python3-apt shellcheck shfmt safe-rm curl pre-commit-hooks pv xz-utils dpkg-dev strip-nondeterminism dosfstools mtools xxd"
+  ## mypy: test_wire_cache_redirect drives the real pytest+mypy cache-dir
+  ## redirection and FATALs on an absent prerequisite (pytest is in the baseline;
+  ## mypy is not). This is a tool dependency of that test, NOT a dist-ai mypy CI
+  ## gate (type-checking dist-ai's own code stays local-only).
+  ## reuse: test_spdx_reuse sources spdx-reuse.bsh and asserts 'reuse lint'
+  ## exit 0 on a converted fixture; FATALs if absent (in Debian trixie).
+  apt-packages: "jq python3-yaml python3-apt shellcheck shfmt safe-rm curl pre-commit-hooks pv xz-utils dpkg-dev dctrl-tools strip-nondeterminism dosfstools mtools xxd mypy reuse"
   ## The developer-meta-files-tests (style gate, dm-review-branch) and
   ## github-org-tools-tests suites drive this repo's tools, which source
   ## helper-scripts (sanitize-string, has.bsh, log_run_die) via
