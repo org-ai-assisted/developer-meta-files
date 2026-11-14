@@ -35,11 +35,16 @@
 ## bandit is a universal consumer template - no
 ## .github/dm-consumer.yml section needed. severity-level,
 ## confidence-level, and timeout-minutes are hardcoded here at
-## the previous defaults (medium / medium / 10 min). Per-repo
-## suppressions use bandit's `# nosec` inline comment, not a
-## workflow-side `skips:` list. If a real use case for per-repo
-## skip lists appears during migration, promote `bandit.skips`
-## to dm-consumer.yml at that point (see spec parameter table).
+## the previous defaults (medium / medium / 10 min). No
+## workflow-side skips: the fleet-wide B303,B324 weak-hash pair
+## is GATED (blocking); non-security digests are waived per-site
+## with bandit's `# nosec` inline comment (see the `bandit` step;
+## the apt bandit 1.6.2 version-skew is why B324's internal-error
+## noise is waived, not a per-repo choice). A per-repo REAL false
+## positive uses the same `# nosec` mechanism. If a real use case for
+## per-repo skip lists appears during migration, promote
+## `bandit.skips` to dm-consumer.yml at that point (see spec
+## parameter table).
 ##
 ## ## Caller responsibilities
 ##
@@ -129,6 +134,34 @@ jobs:
         ##
         ## -ll  severity threshold >= medium
         ## -ii  confidence threshold >= medium
+        ## B303 (md4/md5/sha1 calls) and B324 (hashlib.new insecure algo)
+        ##      GATE weak hashing fleet-wide: hashlib.sha1(password) and
+        ##      hashlib.new("md5", data) FAIL this lane. COVERAGE GAP on
+        ##      1.6.2: B324 matches only md4/md5, so hashlib.new("sha1" /
+        ##      "sha", ...) is NOT caught (sha1 added to B324 in 1.6.3); a
+        ##      direct hashlib.sha1() still is, via B303.
+        ##      apt-pinned bandit (Ubuntu noble ships 1.6.2, kept for the
+        ##      Debian-vetted supply chain) ignores usedforsecurity=False,
+        ##      so a legitimate NON-security digest
+        ##      (hashlib.sha1(..., usedforsecurity=False) for RFC 4122 v5
+        ##      UUIDs / reproducible-build manifest hashes) is waived at
+        ##      the call site with an inline `# nosec B303` / `# nosec
+        ##      B324` plus a one-line justification -- NEVER by a blanket
+        ##      -s skip, which would blind every consumer to real weak
+        ##      hashing. 1.6.2's hashlib_new (B324) plugin additionally
+        ##      raises an internal error on a non-literal hashlib.new()
+        ##      arg (logged, exit 0); `# nosec B324` silences that noise.
+        ##      WAIVER PLACEMENT: 1.6.2 ignores the `# nosec` test id and
+        ##      skips the WHOLE AST node (every check on it). The skip is
+        ##      keyed to the line where the node STARTS, so a `# nosec` on
+        ##      the opening line of a MULTILINE call masks sinks on its
+        ##      continuation lines too. Put it only on a single, self-
+        ##      contained line whose call is JUST the waived hash -- never
+        ##      the opening line of a multiline call, and never a line also
+        ##      carrying shell=True / eval / another sink, or that
+        ##      high-severity finding is masked too. High-severity checks
+        ##      (shell=True, eval, ...) fail the gate UNLESS co-located on
+        ##      a waived line; keep waived lines minimal.
         ## --   end of options (defensive; file list may begin
         ##      with names like './-foo.py' that would otherwise
         ##      be parsed as options).
@@ -156,4 +189,5 @@ jobs:
             --row "outcome=${JOB_STATUS}" \
             --row "severity=medium" \
             --row "confidence=medium" \
+            --row "weak-hash=B303,B324 gated (non-security digests waived per-site via # nosec)" \
             --row "discovery=.py extension + shebang scan"

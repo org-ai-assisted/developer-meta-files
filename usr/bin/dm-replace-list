@@ -15,6 +15,10 @@ export LC_ALL=C
 ## XXX: hardcoded path
 cd -- "${HOME}/derivative-maker"
 
+HELPER_SCRIPTS_PATH="${PWD}/packages/kicksecure/helper-scripts"
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
+source "${HELPER_SCRIPTS_PATH}/usr/libexec/helper-scripts/log_run_die.sh"
+
 ## NOTE: does not support spaces
 replace_list="\
 exception_handler_shell exception_handler_shell
@@ -46,17 +50,17 @@ while IFS= read -r -d $'\0' file_name; do
 
    while read -r line ; do
       if [ "${line}" = "" ]; then
-         error "ERROR! line is empty!"
+         die 1 "ERROR! line is empty!"
       fi
 
       true "line: '${line}'"
       read -r first second <<< "${line}"
 
       if [ "${first}" = "" ]; then
-         error "ERROR! first is empty!"
+         die 1 "ERROR! first is empty!"
       fi
       if [ "${second}" = "" ]; then
-         error "ERROR! second is empty!"
+         die 1 "ERROR! second is empty!"
       fi
 
       str_replace "${first}" "${second}" "${file_name}"
