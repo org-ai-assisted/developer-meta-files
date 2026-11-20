@@ -298,12 +298,12 @@ readonly POLICY_REPO_PROJECT_ENDPOINT='/repos/__OWNER__/__REPO__'
 readonly POLICY_REPO_PROJECT_METHOD='PATCH'
 readonly POLICY_REPO_PROJECT_LABEL='PROJECT: wiki/discussions off, issues on, secret-scan on'
 
-## STAGE orgs (kicksecure-stage, whonix-stage) each host one generated
-## *.github.io repo serving the noindex STAGING build of the wiki. It is
-## a published mirror of content maintained elsewhere, not a bug-tracked
-## project, so issues/wiki/projects/discussions are all off - same body
-## shape as MIRROR. The content source is the wiki, not an upstream
-## GitHub repo, so there is nothing to file issues against here either.
+## STAGE orgs each host one generated *.github.io repo serving a noindex
+## STAGING build of the wiki. It is a published mirror of content maintained
+## elsewhere, not a bug-tracked project, so issues/wiki/projects/discussions
+## are all off - same body shape as MIRROR. The content source is the wiki, not
+## an upstream GitHub repo, so there is nothing to file issues against here
+## either.
 readonly POLICY_REPO_STAGE='{
    has_wiki: false,
    has_issues: false,

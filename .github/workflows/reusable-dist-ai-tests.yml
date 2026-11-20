@@ -250,6 +250,18 @@ jobs:
           path: secure-terminal
           persist-credentials: false
 
+      - name: Enable trixie-backports (opt-in, for backports-only test deps)
+        if: steps.cfg.outputs.apt_backports == 'true'
+        ## A suite whose required tool ships only in trixie-backports (e.g. debsbom)
+        ## opts in via dm-consumer.yml 'apt-backports: true'. backports is NotAutomatic,
+        ## so only an explicitly-named backports-only package installs from it; the
+        ## test-deps step below names it, its dependencies still resolve from main.
+        run: |
+          printf '%s\n' \
+            'deb http://deb.debian.org/debian trixie-backports main' \
+            > /etc/apt/sources.list.d/trixie-backports.list
+          apt-get update --quiet
+
       - name: Install test dependencies (apt only)
         env:
           APT_PACKAGES: ${{ steps.cfg.outputs.apt_packages }}
@@ -273,12 +285,12 @@ jobs:
         ## anchor here (the maintainer re-verifies SLSA when bumping a pin). Needs
         ## 'helper-scripts: true' (the installer sources it), opted in alongside.
         run: |
-          # static-cli-install's `has stecho` / `sanitize-string` need the
-          # helper-scripts usr/bin tools on PATH, and sanitize-string is a python
-          # script that imports its sanitize_string module -- so also put the
-          # checkout's dist-packages on PYTHONPATH. The hs-runtime step above only
-          # symlinks the libexec SOURCING tree (helper-scripts: true is a
-          # co-requisite of static-analysis-tools).
+          ## static-cli-install's `has stecho` / `sanitize-string` need the
+          ## helper-scripts usr/bin tools on PATH, and sanitize-string is a python
+          ## script that imports its sanitize_string module -- so also put the
+          ## checkout's dist-packages on PYTHONPATH. The hs-runtime step above only
+          ## symlinks the libexec SOURCING tree (helper-scripts: true is a
+          ## co-requisite of static-analysis-tools).
           export PATH="${GITHUB_WORKSPACE}/helper-scripts/usr/bin:${PATH}"
           export PYTHONPATH="${GITHUB_WORKSPACE}/helper-scripts/usr/lib/python3/dist-packages${PYTHONPATH:+:${PYTHONPATH}}"
           component/usr/bin/static-cli-install --tool zizmor --no-attest --no-vt --install-dir /usr/local/bin

@@ -38,7 +38,14 @@ dist-ai-tests:
   ## gate (type-checking dist-ai's own code stays local-only).
   ## reuse: test_spdx_reuse sources spdx-reuse.bsh and asserts 'reuse lint'
   ## exit 0 on a converted fixture; FATALs if absent (in Debian trixie).
-  apt-packages: "jq python3-yaml python3-apt shellcheck shfmt safe-rm curl pre-commit-hooks pv xz-utils dpkg-dev dctrl-tools strip-nondeterminism dosfstools mtools xxd mypy reuse"
+  ## debsbom (trixie-BACKPORTS) + uuid-runtime (uuidgen) + python3-cyclonedx-lib:
+  ## test_sbom_resolved_archive sources dm-sbom-archive and drives the real
+  ## 'debsbom --from-pkglist' resolution against a fixture reprepro index; each is a
+  ## hard requirement (the test FATALs, not skips, if absent). debsbom pulls in
+  ## apt-backports below; its own deps resolve from trixie main.
+  apt-packages: "jq python3-yaml python3-apt shellcheck shfmt safe-rm curl pre-commit-hooks pv xz-utils dpkg-dev dctrl-tools strip-nondeterminism dosfstools mtools xxd mypy reuse debsbom uuid-runtime python3-cyclonedx-lib"
+  ## debsbom is packaged only in trixie-backports; enable it for the apt install.
+  apt-backports: true
   ## The developer-meta-files-tests (style gate, dm-review-branch) and
   ## github-org-tools-tests suites drive this repo's tools, which source
   ## helper-scripts (sanitize-string, has.bsh, log_run_die) via

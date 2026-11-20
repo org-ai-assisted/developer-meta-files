@@ -36,7 +36,7 @@ sign_cmd_signify() {
    ## To create a key for signify-openbsd, see:
    ## derivative-maker help-steps/signing-key-create
    ## https://forums.whonix.org/t/signify-openbsd/7842
-   ## $3: optional extra signify flag (e.g. -e for an embedded signature).
+   ## $3: optional extra signify args (e.g. -e for an embedded signature).
    # shellcheck disable=SC2086
    signify-openbsd -S -s "${signify_private_key}" -m "$1" -x "$2" ${3:-}
    ## Sanity test.
@@ -51,7 +51,6 @@ verify_cmd_openpgp() {
 }
 
 verify_cmd_signify() {
-   ## $3: optional extra signify flag (e.g. -e for an embedded signature).
    # shellcheck disable=SC2086
    signify-openbsd -V -p "${signify_public_key}" -m "$1" -x "$2" ${3:-}
 }

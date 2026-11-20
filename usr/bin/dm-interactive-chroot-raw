@@ -16,30 +16,14 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 cd -- "${MYDIR}"
+dmf_libexec_dir="${MYDIR}/../libexec/developer-meta-files"
 
-## This tool lives at
-## <derivative-maker>/packages/kicksecure/developer-meta-files/usr/bin; the parent
-## repo root (five levels up) holds help-steps. Derive it from our own location so
-## the tool works regardless of $HOME or where the checkout lives.
-dist_source_root="$( cd -- "${MYDIR}/../../../../.." && pwd )"
-if [ ! -f "${dist_source_root}/help-steps/pre" ]; then
-   for dist_source_root_candidate in \
-      "${DERIVATIVE_MAKER_ROOT:-}" \
-      "${source_code_folder_dist:-}" \
-      "${HOME:-}/derivative-maker" ; do
-      if [ -n "${dist_source_root_candidate}" ] \
-         && [ -f "${dist_source_root_candidate}/help-steps/pre" ]; then
-         dist_source_root="${dist_source_root_candidate}"
-         break
-      fi
-   done
-fi
-if [ ! -f "${dist_source_root}/help-steps/pre" ]; then
-   printf '%s\n' "ERROR: cannot locate the derivative-maker checkout (no help-steps/pre under '${dist_source_root}'). Run this from a checkout or set DERIVATIVE_MAKER_ROOT." >&2
-   exit 1
-fi
-source "${dist_source_root}/help-steps/pre"
-source "${dist_source_root}/help-steps/variables"
+# shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
+source "${dmf_libexec_dir}/source-tree-lib.bsh"
+derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
+
+source "${derivative_maker_source_code_dir}/help-steps/pre"
+source "${derivative_maker_source_code_dir}/help-steps/variables"
 
 error_handler_interactive_chroot_raw_shell() {
    trap "error_handler_interactive_chroot_raw" ERR INT TERM

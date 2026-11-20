@@ -44,16 +44,12 @@ for review_opt in "${review_opts[@]}"; do
    if [[ "${review_opt}" != -* ]]; then
       die 2 "forwarded argument '${review_opt}' must be a git-diff option in attached-value form (e.g. --opt=value)."
    fi
-   ## Reject options that SUPPRESS or REDIRECT the diff: forwarded to the review tools they
-   ## silently empty the review (no patch shown) or send it to a file, so the reviewer sees
-   ## nothing and the tool still exits 0 -- a quiet review bypass. A denylist, not an allowlist:
-   ## three different tools (git-diff-review / git-meld / git-kdiff3) accept different legitimate
-   ## view options, so an allowlist would over-block ordinary usage.
+   ## Reject options that suppress or redirect the diff.
    case "${review_opt%%=*}" in
       -s | --no-patch | --quiet | --name-only | --name-status \
          | --stat | --numstat | --shortstat | --check | -o | --output \
          | --no-ext-diff | --diff-filter)
-         die 2 "option '${review_opt}' suppresses or redirects the diff and would silently empty the review."
+         die 2 "option '${review_opt}' suppresses or redirects the diff, rejecting."
          ;;
    esac
 done

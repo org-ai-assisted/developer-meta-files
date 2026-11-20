@@ -38,7 +38,6 @@ source "${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts/u
 source "${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts/usr/libexec/helper-scripts/git.sh"
 source "${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts/usr/libexec/helper-scripts/parallel.bsh"
 source "${derivative_maker_source_code_dir}/packages/kicksecure/genmkfile/usr/share/genmkfile/make-helper-one.bsh"
-## Local dmf libexec helper (self-anchored: ../libexec from usr/bin, source or installed).
 source "${MYDIR}/../libexec/developer-meta-files/spdx-reuse.bsh"
 
 log_level=info
@@ -963,15 +962,10 @@ pkg_upstream_changelog_regenerate() {
    git status
 }
 
-## Convert the current package to the SPDX/REUSE hybrid layout: per-file SPDX
-## headers on comment-capable files + a narrow generic REUSE.toml for the
-## uncommentable ones. $PWD is the package dir (batch convention). Logic lives in
-## usr/libexec/developer-meta-files/spdx-reuse.bsh.
+## Convert a package repo to be REUSE-compliant.
 pkg_spdx_reuse_convert() {
-   ## Destructive in-place conversion; not representable as a dry-run, so skip
-   ## rather than mutate under --dry-run. Verify a real run via git diff + reuse lint.
    if [ "${batch_meta_dry_run:-false}" = "true" ]; then
-      printf '%s\n' "INFO: pkg_spdx_reuse_convert skipped under --dry-run (destructive; review a real run via 'git diff' + 'reuse lint')."
+      printf '%s\n' "INFO: pkg_spdx_reuse_convert skipped under --dry-run."
       return 0
    fi
    spdx_reuse_convert_tree "${PWD}"
@@ -2163,35 +2157,26 @@ pkg_git_commit_all() {
    return 0
 }
 
-## Commit the staged changes under the given pathspecs as a single commit,
-## skipping any pathspec with nothing staged. A plain 'git commit -- A B'
-## treats an UNMATCHED pathspec as fatal and aborts the WHOLE commit, so one
-## absent pathspec (e.g. 'auto-generated-man-pages' for a package with
-## hand-written man pages and no .ronn source) combined with a '|| true' mask
-## silently DROPPED the other pathspecs' staged changes. Filtering to the
-## pathspecs that actually have staged content removes that trap with no
-## error-swallowing '|| true'; a no-op (nothing staged anywhere) is not an
-## error. 'git diff --cached' is lenient on an unmatched pathspec (reports no
-## change), unlike 'git commit'.
+## Commits changes to specific files and dirs without erroring out if one of
+## them is missing.
 git_commit_pathspecs() {
    local msg pathspec
-   local -a to_commit=()
+   local -a to_commit_list=()
    msg="$1"
    shift
 
    if [ "${batch_meta_dry_run}" = 'true' ]; then
-      ## Staging did not run under dry-run; log the full would-commit.
       dry_run_or_run git commit -m "${msg}" -- "$@"
       return 0
    fi
 
    for pathspec in "$@"; do
       if ! git diff --cached --quiet -- "${pathspec}"; then
-         to_commit+=( "${pathspec}" )
+         to_commit_list+=( "${pathspec}" )
       fi
    done
-   if [ "${#to_commit[@]}" -gt '0' ]; then
-      git commit -m "${msg}" -- "${to_commit[@]}"
+   if [ "${#to_commit_list[@]}" -gt '0' ]; then
+      git commit -m "${msg}" -- "${to_commit_list[@]}"
    fi
 }
 
@@ -2206,13 +2191,6 @@ pkg_git_manpages() {
    dry_run_or_run genmkfile manpages
 
    msg='re-generate man pages (generated using "genmkfile manpages")'
-   ## Stage the whole dir, not a 'man'/* glob: the glob misses dotfiles and
-   ## tracked-file DELETIONS, leaving the worktree out of sync with the index.
-   ## git_commit_pathspecs then commits with 'git commit -- <dir>' (git commit
-   ## --only, which records the WORKTREE for the pathspec), so an index that
-   ## lags the worktree would drop a deletion or commit an unstaged edit. Adding
-   ## the dir wholesale keeps index == worktree so the commit is exactly the
-   ## staged state.
    dry_run_or_run git add -- 'man' || true
    dry_run_or_run git add -- 'auto-generated-man-pages' || true
    git_commit_pathspecs "${msg}" 'man' 'auto-generated-man-pages'
@@ -2239,32 +2217,22 @@ pkg_git_debinstfile() {
    return 0
 }
 
-## Generate a declared-floor CycloneDX SBOM per binary package (see
-## 'genmkfile sbom') and ship it inside the .deb. For a real package it also
-## refreshes the install mapping via 'genmkfile debinstfile' so the SBOM is
-## routed into the correct binary package, and commits the SBOM plus its routing
-## together so the two never drift apart. The SBOM rides the apt repository
-## signature once shipped; no separate signing. The derivative-maker parent repo
-## is included (it carries debian/control) but is not yet built as a Debian
-## package, so debinstfile is skipped there. Scoped to usr/share/sbom and
-## debian/*.install.
+## Generate an SBOM for a package.
 pkg_git_sbom() {
    local msg
 
-   ## Non-package repos (no debian/control) have nothing to describe.
+   ## Non-package repos don't need an SBOM.
    if [ ! -f 'debian/control' ]; then
       return 0
    fi
 
    dry_run_or_run genmkfile sbom
 
-   ## debinstfile routes the SBOM into the .deb; skip for the derivative-maker
-   ## parent, which is not yet built as a Debian package.
    if repo_skip 'derivative-maker'; then
       dry_run_or_run genmkfile debinstfile
    fi
 
-   msg='generate SBOM (generated using "genmkfile sbom")'
+   msg='generate SBOM'
    dry_run_or_run git add -- 'usr/share/sbom' || true
    dry_run_or_run git add -- 'debian/*.install' || true
    git_commit_pathspecs "${msg}" 'usr/share/sbom' 'debian/*.install'
@@ -2557,12 +2525,7 @@ pkg_git_packages_git_log_writer() {
       done <<< "${commit_msg_full}"
    done < <(git --no-pager -c log.showSignature=false log -z \
       --pretty=tformat:'%H%n%an%n%s%n%B' "${git_log_range}")
-   ## Propagate a git log failure. Process substitution runs the producer
-   ## asynchronously, so its non-zero exit is otherwise masked and is
-   ## indistinguishable from a legit empty range -- the package would then
-   ## silently vanish from the release changelog. $! is the producer's PID
-   ## (the consumer is this current-shell while-loop; nothing in the body
-   ## backgrounds a job to clobber it), so keep wait DIRECTLY after done.
+   ## Process substitution sets "$!".
    wait "$!" || die 1 "${FUNCNAME[0]}: git log failed for '${batch_current_package_reponame}' range '${git_log_range}'"
 
    if [ "${package_header_written}" = 'true' ]; then
@@ -2852,6 +2815,29 @@ pkg_need_version_bump_do() {
 ##
 ## NOTE: When calling this directly, redirect STDERR to /dev/null with
 ## 2>/dev/null.
+## Archive a resolved per-.deb CycloneDX SBOM for every binary package of the current
+## repo, from the local reprepro index (see the dm-sbom-archive command). Called after
+## reprepro-add -- the index then carries the freshly built .debs -- and before
+## deb-cleanup. Local-only provenance; nothing is pushed.
+pkg_sbom_archive() {
+   local archive_dir repo_dir
+
+   ## Non-package repo (no debian/control): nothing to archive. Guard FIRST, before expanding
+   ## derivative_repository_name / HOME below -- under 'set -o nounset' an unset
+   ## derivative_repository_name would otherwise abort the whole shell instead of no-op'ing.
+   [ -f debian/control ] || return 0
+
+   archive_dir="${dist_sbom_archive_dir:-${HOME}/sourcesown/dist-sbom}"
+   ## Authoritative local-repo path. help-steps/misc-helpers.bsh computes
+   ## dist_apt_repository_folder = apt_repo_output_base/aptrepo_local/<repo>; for the 'local'
+   ## codename apt_repo_output_base IS local_apt_repository_base (default /srv/derivative-maker,
+   ## variables.d/05_load-config.bsh). Prefer the exported value when the full dm env set it,
+   ## else reconstruct it with the same default reprepro-add itself used.
+   repo_dir="${dist_apt_repository_folder:-${local_apt_repository_base:-/srv/derivative-maker${dist_build_slot:+/${dist_build_slot}}}/aptrepo_local/${derivative_repository_name}}"
+
+   "${MYDIR}/dm-sbom-archive" "${repo_dir}" "${archive_dir}" "${derivative_repository_name}"
+}
+
 pkg_need_version_bump_and_pkg_build_and_reprepro_add() {
    repo_skip 'derivative-maker' || return 0
 
@@ -2911,6 +2897,11 @@ pkg_need_version_bump_and_pkg_build_and_reprepro_add() {
    dry_run_or_run genmkfile deb-pkg
    dry_run_or_run genmkfile reprepro-remove
    dry_run_or_run genmkfile reprepro-add
+   ## Archive the resolved per-.deb SBOM while the .debs are still in the reprepro index,
+   ## before deb-cleanup prunes the dist folder. Wrapped as one unit: under --dry-run
+   ## reprepro-add populated no repo, so the whole hook is a no-op WOULD -- and the body's
+   ## nounset-sensitive ${derivative_repository_name} expansion never runs.
+   dry_run_or_run pkg_sbom_archive
    dry_run_or_run genmkfile deb-cleanup
 
    return 0
@@ -3039,7 +3030,7 @@ https://www.${project_website}/wiki/Download
 ([What is a point release?](https://www.kicksecure.com/wiki/Point_Release))"
          end_text="(This forum post was previously a call for testers. No release critical bugs where found during the testing period. This forum post was therefore [transformed](https://forums.whonix.org/t/transform-whonix-testers-wanted-forum-news-post-into-whonix-release-forum-news-post-ok/11405) into a stable release announcement. See edit history.)"
       else
-         error "invalid derivative_release_type!"
+         die 1 "invalid derivative_release_type!"
       fi
 
       announce_target="${announcements_drafts_dir}/${project_name}.txt"
@@ -3091,11 +3082,6 @@ ${end_text}"
       if [ "${batch_meta_dry_run}" = 'true' ]; then
          log notice "[DRY-RUN] ${batch_current_package_reponame:-}: would write announcement ${announce_target}" >&2
       else
-         ## A derivative with no appended commits -- a --no-batch run on a
-         ## single package of the other project, or a release with zero commits
-         ## for this derivative -- leaves its giant_git_log.txt absent (rm'd at
-         ## setup, never recreated). Create it empty so the cat below does not
-         ## abort under errexit and leak announce_tmp.
          [ -e "${changelog_file}" ] || touch -- "${changelog_file}"
          announce_tmp="$(mktemp)"
          cat <(printf '%s\n' "${announce_pre}" '') \
@@ -3227,10 +3213,7 @@ parse_args() {
    fi
 }
 
-## Sanity-check the old and new version tag names. These are derivative-maker
-## release tags, so resolve them in the dm repo EXPLICITLY: a --repo run has
-## already cd'd into a package dir, where an unqualified rev-parse would look for
-## a dm tag in the package repo and spuriously FATAL.
+## Sanity-check the old and new version tag names.
 verify_release_tags() {
    local tag_ref
    for tag_ref in "${derivative_version_old_main}" "${derivative_version_new_main}"; do

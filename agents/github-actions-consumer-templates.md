@@ -389,12 +389,6 @@ missing section, because `build-command` is required there.
 All four wrappers reference the reusable at `@ai` (the org's active
 development branch), per G-A-004 in agents/github-actions.md - CI
 exercises the current reusable logic, not the lagging `master` copy.
-The `c-cpp` lane needs it specifically: the `security-and-quality`
-suite on `ai` drops three C/C++ style queries by query-filter
-(`cpp/poorly-documented-function`, `cpp/long-switch`,
-`cpp/commented-out-code`) - maintainability lint we do not churn C
-for - while every security query still runs; `master` does not carry
-that filter.
 
 Per-change consumer lanes also trigger on `ai` pushes and PRs
 (`branches: [master, ai]`), so direct work on an `ai` branch gets CI

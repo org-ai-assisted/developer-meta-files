@@ -20,46 +20,26 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 cd -- "${MYDIR}"
+dmf_libexec_dir="${MYDIR}/../libexec/developer-meta-files"
 
-## This tool lives at
-## <derivative-maker>/packages/kicksecure/developer-meta-files/usr/bin; the parent
-## repo root (five levels up) holds help-steps. Derive it from our own location so
-## the tool works regardless of $HOME or where the checkout lives.
-dist_source_root="$( cd -- "${MYDIR}/../../../../.." && pwd )"
-## When installed system-wide (MYDIR=/usr/bin) the five-levels-up assumption
-## resolves to '/', so fall back to an explicit checkout location.
-if [ ! -f "${dist_source_root}/help-steps/pre" ]; then
-   for dist_source_root_candidate in \
-      "${DERIVATIVE_MAKER_ROOT:-}" \
-      "${source_code_folder_dist:-}" \
-      "${HOME:-}/derivative-maker" ; do
-      if [ -n "${dist_source_root_candidate}" ] \
-         && [ -f "${dist_source_root_candidate}/help-steps/pre" ]; then
-         dist_source_root="${dist_source_root_candidate}"
-         break
-      fi
-   done
-fi
-if [ ! -f "${dist_source_root}/help-steps/pre" ]; then
-   printf '%s\n' "ERROR: cannot locate the derivative-maker checkout (no help-steps/pre under '${dist_source_root}'). Run this from a checkout or set DERIVATIVE_MAKER_ROOT." >&2
-   exit 1
-fi
-source "${dist_source_root}/help-steps/pre"
-source "${dist_source_root}/help-steps/variables"
+# shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
+source "${dmf_libexec_dir}/source-tree-lib.bsh"
+derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
+
+source "${derivative_maker_source_code_dir}/help-steps/pre"
+source "${derivative_maker_source_code_dir}/help-steps/variables"
 
 main() {
    trap "exception_handler_unchroot_unmount" ERR INT TERM
 
-   ## Fail fast, before any apt work: when 'pkg' is not overridden the meta-package
-   ## name is derived from the qubes axis below, and 'dist_build_qubes' is an
-   ## operator-supplied toggle that nothing in the build sets.
+   ## dist_build_qubes must be set if pkg isn't.
    if [ "${pkg:-}" = "" ]; then
       case "${dist_build_qubes:-}" in
          true|false)
             true
             ;;
          *)
-            error "${BASH_SOURCE[0]}: dist_build_qubes must be set to 'true' or 'false' (got: '${dist_build_qubes:-}', empty means unset). It selects the qubes vs nonqubes meta-package. Export it, or pass an explicit 'pkg'. Please report this bug if unexpected!"
+            error "${BASH_SOURCE[0]}: dist_build_qubes is '${dist_build_qubes:-}', not 'true' or 'false', and 'pkg' is empty or unset!"
             ;;
       esac
    fi
@@ -72,8 +52,6 @@ main() {
    fi
 
    ## This file doesn't include Whonix's APT repository.
-   ## CHROOT_FOLDER is the root-owned mounted image fs; this tool runs as the
-   ## unprivileged build user, so the write needs SUDO_TO_ROOT.
    ${SUDO_TO_ROOT} cp -- "${source_code_folder_dist}/packages/kicksecure/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
    ${SUDO_TO_ROOT} chmod o+r -- "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
 
@@ -83,7 +61,7 @@ main() {
    chroot_run apt-get "${DIST_APTGETOPT[@]}" ${apt_sourcelist_empty} ${apt_sourceparts} -o APT::Get::List-Cleanup="0" update
 
    if [ "${pkg:-}" = "" ]; then
-      ## Compose the canonical meta-package name from the flavor and qubes-ness:
+      ## Install the appropriate metapackage for the current build.
       ##   whonix-<gateway|workstation>-<qubes|nonqubes>-<cli|gui-lxqt>.
       local whonix_role whonix_ui whonix_virt
       case "${dist_build_flavor}" in

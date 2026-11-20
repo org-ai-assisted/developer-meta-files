@@ -409,17 +409,12 @@ policy_tag_ruleset_body() {
 ## Registration-drift report
 ## ============================================================================
 
-## Compare the orgs the tool is configured to manage (registered_csv:
-## MIRROR + PROJECT + STAGE) against the orgs the bot is actually an
-## admin of (admin_csv, from GET /user/memberships/orgs filtered
-## role=admin + state=active). Prints one line per finding to STDOUT,
-## nothing when the two sets agree:
-##   UNREGISTERED <org>   bot is admin of <org> but no kind claims it,
-##                        so every --apply silently SKIPS it and the
-##                        writable public org sits UNHARDENED.
+## Compare the orgs the tool is configured to manage against the orgs the bot
+## is actually an admin of. Prints one line per finding to STDOUT, nothing when
+## the two sets agree:
+##   UNREGISTERED <org>   bot is admin of <org> but no kind claims it.
 ##   STALE <org>          <org> is registered but the bot is not an
-##                        admin of it, so --apply cannot reach it - the
-##                        registration is dead or the access was lost.
+##                        admin of it.
 ##
 ## Pure: no network, no caller-scope globals. The caller does the GET
 ## and folds each line into the mode's failure signal, so this stays

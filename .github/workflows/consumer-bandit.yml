@@ -33,6 +33,10 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
+  ## Cancel only superseded PR runs. A push to master must run to
+  ## completion so the lane reports a real pass/fail: on a fast-moving,
+  ## multi-session master 'true' cancels every master run before it
+  ## finishes, leaving the lane perpetually 'cancelled' (no signal).
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

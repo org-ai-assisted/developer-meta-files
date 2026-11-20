@@ -114,13 +114,6 @@ the reusables change often and the trust boundary is internal (see
 "`sha_pinning_required` intentionally OFF" below), so the refs stay
 unpinned.
 
-The `codeql-cpp` lane depends on this: the `security-and-quality`
-suite on `ai` drops three C/C++ style queries by query-filter
-(`cpp/poorly-documented-function`, `cpp/long-switch`,
-`cpp/commented-out-code`) - maintainability lint we do not churn C
-for - while every security query still runs; `master` does not carry
-that filter, so a consumer pinned to `@master` would re-raise them.
-
 **G-A-006: Concurrency policy - cancellable by default, singleton
 for quota-limited / release-pipeline.** Every top-level workflow
 declares a top-level `concurrency:` block (reusables follow
